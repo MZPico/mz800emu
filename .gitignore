@@ -1,0 +1,56 @@
+*~
+/.vscode
+
+# Binaries
+mz800emu.exe
+mz1500emu.exe
+mz700emu-pal.exe
+mz700emu-ntsc.exe
+
+# Build artefakty
+/dist/
+/build/
+/doxygen/*
+/src/build_revision/build_revision.c
+# Testovací dočasné soubory
+/tests/data/tmp/
+/tests/data/visual_refs/
+# Zkompilované lokalizační soubory (generované z .po)
+*.mo
+
+# Sourcetrail
+*.srctrlprj
+*.srctrldb
+*.srctrlbm
+
+# Runtime artefakty z emu testovacího běhu
+/SD-mz700/
+/SD-mz800/
+/SD-mz1500/
+/hdd[0-1]-mz[7-8]00.img
+/mz[7-8]00*.ini
+/mz[7-8]00*.bpt
+/mz[7-8]00*.vars
+/mz[7-8]00*.bookmarks
+/rd-mz[7-8]00.dat
+/mz[7-8]00*.lbl
+/mz[7-8]00*.watch
+/hdd[0-1]-mz1500.img
+/mz1500*.ini
+/mz1500*.bpt
+/mz1500*.vars
+/mz1500*.bookmarks
+/rd-mz1500.dat
+/mz1500*.lbl
+/mz1500*.watch
+
+# Testovací dočasné soubory
+/MZdata/
+# /MRS/
+# /DSK/
+# *.mzf
+# *.m12
+# *.mzt
+# *.tap
+# *.wav
+# *.mzs

@@ -1,0 +1,20 @@
+#ifndef MZ800_FRAMEBUFFER_DONE_H
+#define MZ800_FRAMEBUFFER_DONE_H
+
+#include <string.h>
+
+#include <stdint.h>
+#include "hw-generic/gdg/video.h"
+#include "iface/iface_video.h"
+
+static inline void framebuffer_screen_done(void)
+{
+    iface_video_framebuffer_screen_done(g_framebuffer.pixels);
+    g_framebuffer.pixels_id = (g_framebuffer.pixels_id + 1) % GDG_FRAMEBUFFER_PIXBUF_COUNT;
+    uint8_t *pixels_old = g_framebuffer.pixels;
+    g_framebuffer.pixels = g_framebuffer.pixbuff[g_framebuffer.pixels_id];
+    memcpy(g_framebuffer.pixels, pixels_old, GDG_FRAMEBUFFER_PIXBUF_SIZE);
+    g_framebuffer.framebuffer_state = FB_STATE_NOT_CHANGED;
+}
+
+#endif // MZ800_FRAMEBUFFER_DONE_H

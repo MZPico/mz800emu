@@ -1,0 +1,44 @@
+# tests/CMakeLists.txt
+#
+# Root testovacího adresáře. Definice individuálních testů jsou rozdělené
+# podle skupin do per-folder CMakeLists.txt.
+#
+# Test typy (viz cmake/AddMzTest.cmake pro mz_add_test()):
+#   STANDALONE - jen lib + Unity (žádné emu core)
+#   LIB        - lib + emu core + headless stuby
+#   EMU        - full emu core + stuby
+#   UI         - full + ImGui + SDL3 + OpenGL
+#
+# Po build je dostupné:
+#   ctest --test-dir build               (všechny testy)
+#   ctest --test-dir build -L lib         (jen LIB testy)
+#   ctest --test-dir build -R cfgfile    (regex match)
+#   make test                            (= ctest)
+
+# Standalone (lib + Unity)
+add_subdirectory(libs/iasm)
+add_subdirectory(libs/cmtspeed)
+add_subdirectory(libs/cpu_z80)
+add_subdirectory(libs/sdlapp)
+add_subdirectory(libs/z80meta)
+add_subdirectory(libs/dasm_sym)
+
+# Lib (lib + emu core + stuby)
+add_subdirectory(libs/cfgfile)
+add_subdirectory(libs/cmt_stream)
+add_subdirectory(libs/dsk)
+add_subdirectory(libs/generic_driver)
+add_subdirectory(libs/mzf)
+add_subdirectory(libs/mztape)
+add_subdirectory(libs/wav)
+add_subdirectory(libs/zxtape)
+
+# Emu core
+add_subdirectory(sanity)
+add_subdirectory(debugger)
+add_subdirectory(memory)
+add_subdirectory(peripherals)
+add_subdirectory(snapshot)
+
+# UI
+add_subdirectory(ui)

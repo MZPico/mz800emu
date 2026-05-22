@@ -1,0 +1,29 @@
+{
+  "breakpoints" : [
+    {
+      "id" : 1,
+      "name" : "Legacy PC",
+      "addr" : 5000,
+      "type" : "PC_EXEC",
+      "enabled" : true,
+      "skip_count" : 0,
+      "hit_count" : 0,
+      "expr" : null,
+      "action" : null,
+      "edge_triggered" : false
+    },
+    {
+      "id" : 2,
+      "name" : "Legacy MEM_W",
+      "addr" : 16384,
+      "type" : "MEM_W",
+      "enabled" : true,
+      "skip_count" : 0,
+      "hit_count" : 0,
+      "expr" : null,
+      "action" : null,
+      "edge_triggered" : false
+    }
+  ],
+  "groups" : []
+}

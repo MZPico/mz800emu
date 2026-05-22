@@ -1,0 +1,73 @@
+#include "main.h"
+#include <glib.h>
+#include "hw-generic/gdg/video.h"
+#include "mzarch/mzarch.h"
+#include "customspeed.h"
+#include "emulator.h"
+
+/*******************************************************************************
+ *
+ *
+ *                  Custom CPU speed synchronisation
+ *                  ================================
+ *
+ *
+ *******************************************************************************/
+
+st_CUSTOMSPEED g_customspeed;
+
+void customspeed_print(void)
+{
+    float frame_time = ((float)VIDEO_SCREEN_TICKS / g_customspeed.speed_frame_width_requested) * (1000.0f / VIDEO_SCREENS_PER_SEC);
+    float fps = (1 / frame_time) * 1000;
+    g_print("%s speed: %d %% => frame time: %0.2f ms, FPS: %0.2f\n", (EMULATOR_TEST_CUSTOM_SPEED) ? "Custom" : "Normal", g_customspeed.speed_in_percentage_requested, frame_time, fps);
+}
+
+void customspeed_set_request(int speed_in_percentage)
+{
+    if (speed_in_percentage > CUSTOMSPEED_MAX_VALUE)
+        speed_in_percentage = CUSTOMSPEED_MAX_VALUE;
+    if (speed_in_percentage < 1)
+        speed_in_percentage = 1;
+    g_customspeed.speed_in_percentage_requested = speed_in_percentage;
+    g_customspeed.speed_frame_width_requested = VIDEO_SCREEN_TICKS * g_customspeed.speed_in_percentage_requested / 100;
+    customspeed_print();
+}
+
+void customspeed_init(int speed_in_percentage)
+{
+    customspeed_set_request(speed_in_percentage);
+    g_customspeed.previous_speed_in_percentage = g_customspeed.speed_in_percentage_requested;
+    g_customspeed.speed_sync_event.event_name = MZEVENT_CUSTOM_SPEED_SYNCHRONISATION;
+    g_customspeed.speed_sync_event.ticks = g_customspeed.speed_frame_width_requested;
+    g_customspeed.speed_in_percentage = g_customspeed.speed_in_percentage_requested;
+    g_customspeed.speed_frame_width = g_customspeed.speed_frame_width_requested;
+}
+
+void customspeed_step_up_request(int step)
+{
+    int speed_in_percentage = g_customspeed.speed_in_percentage_requested + step;
+    customspeed_set_request(speed_in_percentage);
+}
+
+void customspeed_step_down_request(int step)
+{
+    int speed_in_percentage = g_customspeed.speed_in_percentage_requested - step;
+    customspeed_set_request(speed_in_percentage);
+}
+
+void customspeed_store_speed(void)
+{
+    if (g_customspeed.speed_in_percentage != 100)
+    {
+        g_customspeed.previous_speed_in_percentage = g_customspeed.speed_in_percentage;
+    };
+}
+
+void customspeed_restore_speed(void)
+{
+    if ((g_customspeed.speed_in_percentage == 100) && (g_customspeed.previous_speed_in_percentage != 100))
+    {
+        customspeed_set_request(g_customspeed.previous_speed_in_percentage);
+    };
+}

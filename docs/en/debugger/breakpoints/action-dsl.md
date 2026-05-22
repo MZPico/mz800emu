@@ -1,0 +1,382 @@
+# Breakpoint - action on trigger (Action mini-DSL)
+
+A breakpoint action is a sequence of commands that runs when the BP
+fires (= the `condition` returned true and the hit/skip counts have
+elapsed). In the Edit BP dialog the action is selected by the Mode
+radio button:
+
+| Mode | Effect | Action string |
+|------|--------|---------------|
+| Stop | Classic BP - stops the emulator | (empty action, NULL) |
+| Log only | Prints to TTY and continues | `log "BP <name>"` |
+| Custom | Full mini-DSL script | the user's text |
+
+This document describes the mini-DSL syntax for Custom mode in the
+breakpoint system.
+
+## "Stop vs continue" semantics
+
+The action mini-DSL has no explicit `stop` command. The decision to
+halt the emulator is driven solely by whether the action string is
+empty:
+
+- **action == NULL or whitespace-only** -> the emulator stops
+  (= classic BP stop).
+- **action with any non-empty content** -> after evaluating all the
+  commands the emulator continues (= implicit continue).
+
+Consequence: if you want a BP that logs and then stops, it is **not
+possible** to express that directly (it would require `stop`). The
+workaround for stop-on-N is incrementing `$hits` plus an external Stop
+BP, or Stop mode without a Custom script.
+
+## Basic rules
+
+- Commands are separated by a semicolon `;` or a newline.
+- A comment starts at `#` and runs to the end of the physical line.
+  A `#` inside `"..."` is not treated as a comment.
+- Whitespace (outside strings) is ignored.
+- Identifiers are case-insensitive (= consistent with the expression
+  evaluator).
+- Expression-type arguments are parsed by the same grammar as the
+  condition - see `expression-syntax.md`.
+- The parser is strict: an unknown command, wrong arity or an
+  unterminated string literal = error; a BP with an unparsable action
+  shows an inline error in the UI below the textbox, and the runtime
+  behaves as an empty action (= stop fallback).
+
+## Commands
+
+The action mini-DSL provides 11 commands.
+
+### `log "fmt"[, expr...]`
+
+Prints a formatted message to stdout (`[BP-LOG] ...\n`). The format
+string is the first argument, a string literal in double quotes with
+escape sequences `\n`, `\t`, `\"`, `\\`.
+
+| Spec | Meaning |
+|------|---------|
+| `%X` | hex uppercase (`%04X` etc. **NOT supported** - only plain `%X`) |
+| `%x` | hex lowercase |
+| `%d` | signed decimal |
+| `%u` | unsigned decimal (32-bit) |
+| `%b` | binary (= no leading zeros, "0" for zero) |
+| `%c` | character (low byte of the value as ASCII) |
+| `%s` | arg = expression (address); lookup in sym_db, prints the symbol `name` or the placeholder `<no-symbol-at-0xADDR>` |
+| `%%` | literal `%` |
+
+Important: format width / padding (`%04X`, `%8d`) is **not supported**
+by the parser - the spec is always a single character. If you want
+zero-padded hex, create a fixed-width output externally (or use
+multiple `log` calls).
+
+Maximum of 8 arguments.
+
+```
+log "PC=%X A=%X HL=%X", PC, A, HL
+log "frame=%d cycle=%d", Frame, Cycle
+log "flags: C=%d Z=%d S=%d", Cf, Zf, Sf
+log "JP target=%X (%s)", HL, HL          # %s lookup in sym_db
+log "ret to %X (%s)", {SP}, {SP}         # %s with a 16-bit memory deref
+```
+
+Semantics of `%s`:
+
+- arg is evaluated as a 16-bit address (low 16 bits, the rest is ignored)
+- lookup in the global symbols ("CPU view", see `../symbols.md`)
+- if a symbol is found, prints its `name` (= identifier from
+  .lbl/.map/.noi/.sym)
+- if not found, prints the placeholder `<no-symbol-at-0xADDR>` (4 hex
+  digits)
+
+A bank-specific lookup is not exposed in the action DSL.
+
+The output goes to stdout.
+
+### `continue`
+
+A no-side-effect marker. The default is already continue (see the
+"Stop vs continue semantics" above), so `continue` only serves as
+readable self-documentation for the script reader.
+
+```
+continue
+```
+
+### `disable_self`
+
+Disables the BP that triggered the action (= one-shot pattern).
+
+If the action is being evaluated outside of enforcement (= Test Eval,
+manual trigger), the command prints a warning to stderr and is a no-op.
+
+```
+disable_self
+```
+
+### `enable <name>`
+
+Activates the BP with the given name (= sets `enabled = true`). The
+name is searched case-sensitively by linear scan over the breakpoint
+`name`.
+
+```
+enable trace_isr
+```
+
+If the BP does not exist, the command prints a warning to stderr and
+is a no-op. The argument is not quoted - the name is taken as the rest
+of the line after the keyword + whitespace.
+
+### `disable <name>`
+
+Deactivates the BP with the given name (= `enabled = false`). Same
+lookup semantics as `enable`.
+
+```
+disable trace_isr
+```
+
+The argument is mandatory; without it the parser reports the error
+"disable: missing target name".
+
+### `poke <addr> <value>`
+
+Writes 1 byte into memory. Both arguments are expressions separated by
+whitespace (= not by a comma). The split finds the first whitespace
+outside parentheses / brackets / strings.
+
+```
+poke 0x8000 0x42
+poke HL A
+poke 0xE000 + Y A & 0x0F
+```
+
+`value` is masked to the low byte (`& 0xFF`); `addr` to 16 bits.
+
+### `set <reg> <value>`
+
+Writes a value into a Z80 register. `reg` is an identifier (alpha +
+digits + `_`), case-insensitive. `value` is an expression.
+
+Supported registers:
+
+- 8-bit: `A`, `F`, `B`, `C`, `D`, `E`, `H`, `L`
+- 16-bit: `AF`, `BC`, `DE`, `HL`, `IX`, `IY`, `SP`, `PC`
+- 8-bit halves of index registers: `IXH`, `IXL`, `IYH`, `IYL`
+- shadow pairs (16-bit): `AF'`, `BC'`, `DE'`, `HL'`
+  (the apostrophe is part of the name; the parser allows it at the
+  end of an identifier)
+- special: `I`, `R`, `IM` (`& 3`), `IFF1` (`& 1`), `IFF2` (`& 1`)
+
+```
+set A 0x42
+set HL 0x8000
+set PC 0x100  # forced jump
+set IFF1 1    # enable interrupts
+set BC' 0x1234  # write into shadow BC'
+set IXH 0xFF  # high byte of IX, low byte preserved
+```
+
+Outside of enforcement (without a CPU context) it prints a warning and
+is a no-op.
+
+### `mark "name"`
+
+Marker into trace-suite + optional stdout printout. `name` is a string
+literal in double quotes with escape sequences (like the `log` fmt).
+
+```
+mark "ISR enter"
+mark "frame boundary"
+```
+
+**Two-branch behavior:**
+
+When a BP with the `mark "name"` action fires, **each of the following
+branches runs independently** according to configuration:
+
+1. **Marklog binary record** - if `[TRACE_MARKLOG] mode` is
+   `WITH_WINDOW` or `ALWAYS` (and the writer is active), a 24 B record
+   is written into `<dir>/<name>.NNN.bin` with a pre-resolved
+   `marker_id`. The id -> name mapping is in `meta.json`.
+2. **Stdout printout** `[BP-MARK] <name>` - if
+   `[TRACE_MARKLOG].stdout_enabled` is `1` (default).
+
+Default behavior without configuration = stdout only.
+
+**Marker name limits:**
+
+- Max 63 chars (+ NUL terminator = 64 B). Longer ones are truncated at
+  parse time + a stderr warning.
+- Max 65535 unique markers per session. Overflow = stderr warning, the
+  marklog branch is a no-op for that BP action (stdout still works if
+  cfg ON).
+
+**Format details:** `docs/cz/debugger/formats/MARK-log_format.md`
+
+The marker ID is registered during BP parse. The hot-path fire then
+calls no string operations - it writes a 24 B record from the
+pre-resolved id.
+
+### `$name = <expr>`, `$name <op>= <expr>`
+
+Assignment to a user variable. `$name` is an identifier validated by
+the regex `^[a-zA-Z_][a-zA-Z0-9_]*$` (= first character alpha or `_`,
+continuation alpha / digits / `_`), max 31 characters. No reserved
+keywords (= the `$` prefix is itself distinctive). Variable lifetime
+is per-emulator-session; they are shared across all BPs and persist
+into the `.bpt` JSON `vars` section plus a per-arch standalone
+`.vars` file. Detail in `vars.md`.
+
+Operators:
+
+| Op | Semantics |
+|----|-----------|
+| `=` | plain assignment |
+| `+=` | `cur + rhs` |
+| `-=` | `cur - rhs` |
+| `*=` | `cur * rhs` |
+| `/=` | `cur / rhs` (division by zero -> 0) |
+| `<<=` | shift left (rhs masked to 5 bits) |
+| `>>=` | shift right |
+| `&=` | bitwise AND |
+| `\|=` | bitwise OR |
+| `^=` | bitwise XOR |
+
+If `$name` does not yet exist, the current value is 0 (= consistent
+with the read-side default). A compound operator then works with 0 as
+the left-hand side.
+
+```
+$hits += 1
+$mask = 0xFF
+$last_pc = PC
+$accumulator |= 1 << bit_pos
+```
+
+A single `=` is rejected by the evaluator (= the condition expression
+has no assignment); in the action DSL, on the contrary, assignment is
+the only valid meaning.
+
+### `clear_vars`
+
+Clears the values of all existing `$name` variables (the entries
+**remain** in storage; comment + persist_value flag are preserved).
+Semantics "state machine reset" - the UI panel then sees the same
+identifiers with value 0.
+
+This is not the same as deleting the entries - to fully remove a
+variable use the `x` button in the table row or the bulk "Delete"
+button + selection.
+
+```
+clear_vars
+```
+
+### `if <expr> then <stmt> [else <stmt>]`
+
+A single-line conditional. After evaluating `expr` (= an expression
+per `expression-syntax.md`), if it is non-zero the `<stmt>` in the
+then-body runs. If it is zero and an `else` branch is present, the
+`<stmt>` in the else-body runs.
+
+`else` is optional. There is no multi-statement block, no nested
+`if/then/if/then` block (the parser does not technically forbid it,
+but it is not tested).
+
+For a multi-statement body use several separate `if`s with the same
+condition, or a `$flag` variable:
+
+```
+if A == 0x42 then log "match A=0x42"
+if A == 0x42 then $matched = 1
+```
+
+The keywords `then` and `else` must be whole words (= surrounded by
+whitespace or at the end of the string), at the top-level depth (= not
+inside `()` / `[]` / `{}` / a string).
+
+```
+if PC >= 0x1000 && PC < 0x2000 then log "in code seg PC=%X", PC
+if $hits >= 5 then disable_self
+if HL == 0 then mark "HL underflow"
+if A == 0 then log "zero" else log "nonzero=%X", A
+if $state == 1 then enable trace_bp else disable trace_bp
+```
+
+## Full examples
+
+### Trace without stopping (= classic Log only equivalent)
+
+```
+log "PC=%X HL=%X A=%X", PC, HL, A
+```
+
+### Hit counter with one-shot disable
+
+```
+$hits += 1
+log "hit #%d at PC=%X", $hits, PC
+if $hits >= 5 then disable_self
+```
+
+### Conditional poke (= patch ROM call result)
+
+```
+if A == 0xFF then poke HL 0x00
+if A == 0xFF then log "patched HL=%X", HL
+```
+
+### Cross-BP enable / disable (= state machine)
+
+BP "isr_enter":
+```
+enable isr_trace
+mark "ISR enter"
+```
+
+BP "isr_exit":
+```
+disable isr_trace
+mark "ISR exit"
+```
+
+BP "isr_trace" (initially disabled):
+```
+log "ISR step PC=%X", PC
+```
+
+### Forced jump after N repetitions
+
+```
+$count += 1
+if $count >= 100 then set PC 0x8000
+if $count >= 100 then $count = 0
+```
+
+## Error states
+
+### Parse-time
+
+A lexer / parser error (bad keyword, unterminated string, bad `set` /
+`poke` syntax, missing `then`, ...) is shown as an inline error below
+the action textbox in the Edit BP dialog. The BP runtime behaves as
+an empty action (= Stop fallback - the emulator stops) until you fix
+the error.
+
+### Runtime
+
+Most runtime errors are tolerant with a stderr warning:
+
+- `enable` / `disable` with a non-existent target -> warning, no-op.
+- `set` with an unknown register -> warning, no-op.
+- `set` without a CPU context -> warning, no-op.
+- `disable_self` outside enforcement (= Test Eval) -> warning, no-op.
+- `poke` outside addressable RAM (= banking) -> typically a no-op or a
+  write into the bank-aliased area, depending on the memory subsystem
+  behavior.
+
+`/` and `%` in $var compound and in expr arguments: division by zero
+-> 0.

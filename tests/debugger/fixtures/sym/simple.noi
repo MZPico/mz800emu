@@ -1,0 +1,3 @@
+DEF wboot 0xD8A2
+DEF cpm_bdos_shim 0xD9C4
+DEF print_char 0x4042

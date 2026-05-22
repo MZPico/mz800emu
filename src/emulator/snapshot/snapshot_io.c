@@ -1,0 +1,419 @@
+/**
+ * @file snapshot_io.c
+ * @brief I/O vrstva snapshot systému — implementace nad minizip-ng
+ */
+
+#include "snapshot_io.h"
+#include "snapshot_xml.h"
+
+#include <mz.h>
+#include <mz_strm.h>
+#include <mz_zip.h>
+#include <mz_zip_rw.h>
+
+#include <glib.h>
+#include <stdio.h>
+#include <string.h>
+
+
+/* Interní struktura I/O handle */
+struct snapshot_io_t {
+    void *handle;           /* minizip-ng writer nebo reader */
+    bool writing;           /* true = zápis, false = čtení */
+    int compression_level;  /* kompresní úroveň (jen pro zápis) */
+    /* Pro inkrementální výpočet checksumu při zápisu */
+    GPtrArray *written_names;  /* seznam názvů zapsaných entries */
+    GPtrArray *written_data;   /* seznam GBytes* s daty entries */
+};
+
+
+/* ========================================================================= */
+/*                            Pomocné funkce                                 */
+/* ========================================================================= */
+
+/**
+ * Kontrola bezpečnosti názvu entry (ochrana proti path traversal)
+ */
+static bool io_validate_entry_name(const char *entry_name)
+{
+    if (!entry_name || entry_name[0] == '\0') return false;
+
+    /* Žádné absolutní cesty */
+    if (entry_name[0] == '/' || entry_name[0] == '\\') return false;
+
+    /* Žádné ".." v cestě */
+    if (strstr(entry_name, "..") != NULL) return false;
+
+    /* Žádné zpětné lomítko (Windows cesty) */
+    if (strchr(entry_name, '\\') != NULL) return false;
+
+    return true;
+}
+
+
+/* ========================================================================= */
+/*                           Otevření / zavření                              */
+/* ========================================================================= */
+
+snapshot_io_t *snapshot_io_open_write(const char *filepath, int compression_level)
+{
+    if (!filepath) return NULL;
+
+    void *writer = mz_zip_writer_create();
+    if (!writer) return NULL;
+
+    /* Nastavení kompresní metody a úrovně */
+    mz_zip_writer_set_compress_method(writer, MZ_COMPRESS_METHOD_DEFLATE);
+    mz_zip_writer_set_compress_level(writer, (int16_t)compression_level);
+
+    /* Otevření souboru pro zápis (disk_size=0 = jednodílný archiv, append=0) */
+    int32_t err = mz_zip_writer_open_file(writer, filepath, 0, 0);
+    if (err != MZ_OK) {
+        SNAP_ERR("io", "cannot open file for writing: %s (err=%d)", filepath, err);
+        mz_zip_writer_delete(&writer);
+        return NULL;
+    }
+
+    snapshot_io_t *io = g_new0(snapshot_io_t, 1);
+    io->handle = writer;
+    io->writing = true;
+    io->compression_level = compression_level;
+    io->written_names = g_ptr_array_new_with_free_func(g_free);
+    io->written_data = g_ptr_array_new_with_free_func((GDestroyNotify)g_bytes_unref);
+
+    return io;
+}
+
+
+snapshot_io_t *snapshot_io_open_read(const char *filepath)
+{
+    if (!filepath) return NULL;
+
+    void *reader = mz_zip_reader_create();
+    if (!reader) return NULL;
+
+    int32_t err = mz_zip_reader_open_file(reader, filepath);
+    if (err != MZ_OK) {
+        SNAP_ERR("io", "cannot open file for reading: %s (err=%d)", filepath, err);
+        mz_zip_reader_delete(&reader);
+        return NULL;
+    }
+
+    snapshot_io_t *io = g_new0(snapshot_io_t, 1);
+    io->handle = reader;
+    io->writing = false;
+
+    return io;
+}
+
+
+void snapshot_io_close(snapshot_io_t *io)
+{
+    if (!io) return;
+
+    if (io->writing) {
+        mz_zip_writer_close(io->handle);
+        mz_zip_writer_delete(&io->handle);
+        if (io->written_names) g_ptr_array_free(io->written_names, TRUE);
+        if (io->written_data) g_ptr_array_free(io->written_data, TRUE);
+    } else {
+        mz_zip_reader_close(io->handle);
+        mz_zip_reader_delete(&io->handle);
+    }
+
+    g_free(io);
+}
+
+
+/* ========================================================================= */
+/*                              Zápis                                        */
+/* ========================================================================= */
+
+en_SNAPSHOT_RESULT snapshot_io_write_bin(snapshot_io_t *io,
+                                        const char *entry_name,
+                                        const uint8_t *data,
+                                        size_t size)
+{
+    if (!io || !io->writing || !entry_name || !data) return SNAPSHOT_ERR_IO;
+    if (!io_validate_entry_name(entry_name)) return SNAPSHOT_ERR_IO;
+
+    /* Připravit file_info pro nový entry */
+    mz_zip_file file_info;
+    memset(&file_info, 0, sizeof(file_info));
+    file_info.filename = entry_name;
+    file_info.compression_method = MZ_COMPRESS_METHOD_DEFLATE;
+    file_info.modified_date = time(NULL);
+
+    int32_t err = mz_zip_writer_add_buffer(io->handle, data, (int32_t)size, &file_info);
+    if (err != MZ_OK) {
+        SNAP_ERR("io", "write error '%s' (err=%d)", entry_name, err);
+        return SNAPSHOT_ERR_ZIP;
+    }
+
+    /* Uložit kopii dat pro výpočet checksumu */
+    if (io->written_names && strcmp(entry_name, "manifest.xml") != 0) {
+        g_ptr_array_add(io->written_names, g_strdup(entry_name));
+        g_ptr_array_add(io->written_data, g_bytes_new(data, size));
+    }
+
+    return SNAPSHOT_OK;
+}
+
+
+en_SNAPSHOT_RESULT snapshot_io_write_xml(snapshot_io_t *io,
+                                        const char *entry_name,
+                                        const char *xml_string)
+{
+    if (!io || !xml_string) return SNAPSHOT_ERR_IO;
+
+    size_t len = strlen(xml_string);
+    return snapshot_io_write_bin(io, entry_name, (const uint8_t *)xml_string, len);
+}
+
+
+/* ========================================================================= */
+/*                              Čtení                                        */
+/* ========================================================================= */
+
+en_SNAPSHOT_RESULT snapshot_io_read_bin(snapshot_io_t *io,
+                                       const char *entry_name,
+                                       uint8_t **out_data,
+                                       size_t *out_size)
+{
+    if (!io || io->writing || !entry_name || !out_data || !out_size)
+        return SNAPSHOT_ERR_IO;
+
+    /* Najít entry v archivu */
+    int32_t err = mz_zip_reader_locate_entry(io->handle, entry_name, 0);
+    if (err != MZ_OK) {
+        return SNAPSHOT_ERR_MISSING_FILE;
+    }
+
+    /* Otevřít entry pro čtení */
+    err = mz_zip_reader_entry_open(io->handle);
+    if (err != MZ_OK) {
+        SNAP_ERR("io", "cannot open entry '%s' (err=%d)", entry_name, err);
+        return SNAPSHOT_ERR_ZIP;
+    }
+
+    /* Zjistit velikost */
+    int32_t buf_len = mz_zip_reader_entry_save_buffer_length(io->handle);
+    if (buf_len < 0) {
+        mz_zip_reader_entry_close(io->handle);
+        SNAP_ERR("io", "cannot get size of entry '%s'", entry_name);
+        return SNAPSHOT_ERR_ZIP;
+    }
+
+    /* Kontrola velikosti */
+    if ((size_t)buf_len > SNAPSHOT_MAX_ARCHIVE_SIZE) {
+        mz_zip_reader_entry_close(io->handle);
+        SNAP_ERR("io", "entry '%s' is too large (%d B)", entry_name, buf_len);
+        return SNAPSHOT_ERR_CORRUPTED;
+    }
+
+    /* Alokovat buffer a přečíst data */
+    uint8_t *buffer = g_malloc(buf_len);
+    if (!buffer) {
+        mz_zip_reader_entry_close(io->handle);
+        return SNAPSHOT_ERR_ALLOC;
+    }
+
+    err = mz_zip_reader_entry_save_buffer(io->handle, buffer, buf_len);
+    mz_zip_reader_entry_close(io->handle);
+
+    if (err != MZ_OK) {
+        g_free(buffer);
+        SNAP_ERR("io", "read error in entry '%s' (err=%d)", entry_name, err);
+        return SNAPSHOT_ERR_ZIP;
+    }
+
+    *out_data = buffer;
+    *out_size = (size_t)buf_len;
+    return SNAPSHOT_OK;
+}
+
+
+en_SNAPSHOT_RESULT snapshot_io_read_bin_into(snapshot_io_t *io,
+                                            const char *entry_name,
+                                            uint8_t *buffer,
+                                            size_t buffer_size)
+{
+    uint8_t *data = NULL;
+    size_t data_size = 0;
+
+    en_SNAPSHOT_RESULT result = snapshot_io_read_bin(io, entry_name, &data, &data_size);
+    if (result != SNAPSHOT_OK) return result;
+
+    /* Ověřit velikost */
+    if (data_size != buffer_size) {
+        SNAP_ERR("io", "size of '%s' mismatch: expected %zu, got %zu",
+                 entry_name, buffer_size, data_size);
+        g_free(data);
+        return SNAPSHOT_ERR_CORRUPTED;
+    }
+
+    memcpy(buffer, data, data_size);
+    g_free(data);
+    return SNAPSHOT_OK;
+}
+
+
+en_SNAPSHOT_RESULT snapshot_io_read_xml(snapshot_io_t *io,
+                                       const char *entry_name,
+                                       char **out_xml_string)
+{
+    uint8_t *data = NULL;
+    size_t data_size = 0;
+
+    en_SNAPSHOT_RESULT result = snapshot_io_read_bin(io, entry_name, &data, &data_size);
+    if (result != SNAPSHOT_OK) return result;
+
+    /* Přidat null terminator */
+    char *str = g_malloc(data_size + 1);
+    if (!str) {
+        g_free(data);
+        return SNAPSHOT_ERR_ALLOC;
+    }
+
+    memcpy(str, data, data_size);
+    str[data_size] = '\0';
+    g_free(data);
+
+    *out_xml_string = str;
+    return SNAPSHOT_OK;
+}
+
+
+bool snapshot_io_entry_exists(snapshot_io_t *io, const char *entry_name)
+{
+    if (!io || io->writing || !entry_name) return false;
+
+    int32_t err = mz_zip_reader_locate_entry(io->handle, entry_name, 0);
+    return (err == MZ_OK);
+}
+
+
+/* ========================================================================= */
+/*                           SHA-256 checksum                                */
+/* ========================================================================= */
+
+/**
+ * Porovnávací funkce pro qsort — abecední řazení názvů entries
+ */
+static int compare_entry_names(const void *a, const void *b)
+{
+    const char *name_a = *(const char **)a;
+    const char *name_b = *(const char **)b;
+    return strcmp(name_a, name_b);
+}
+
+
+/**
+ * Výpočet checksumu ze zapsaných dat (writer mode)
+ */
+static char *compute_checksum_from_written_data(snapshot_io_t *io)
+{
+    if (!io->written_names || io->written_names->len == 0) return NULL;
+
+    /* Vytvořit pole indexů seřazených dle jmen */
+    guint count = io->written_names->len;
+    guint *sorted_indices = g_new(guint, count);
+    for (guint i = 0; i < count; i++) sorted_indices[i] = i;
+
+    /* Seřadit indexy dle jmen */
+    /* Bubble sort — jednoduchý pro malý počet entries */
+    for (guint i = 0; i < count - 1; i++) {
+        for (guint j = 0; j < count - i - 1; j++) {
+            const char *a = g_ptr_array_index(io->written_names, sorted_indices[j]);
+            const char *b = g_ptr_array_index(io->written_names, sorted_indices[j + 1]);
+            if (strcmp(a, b) > 0) {
+                guint tmp = sorted_indices[j];
+                sorted_indices[j] = sorted_indices[j + 1];
+                sorted_indices[j + 1] = tmp;
+            }
+        }
+    }
+
+    GChecksum *checksum = g_checksum_new(G_CHECKSUM_SHA256);
+    for (guint i = 0; i < count; i++) {
+        GBytes *bytes = g_ptr_array_index(io->written_data, sorted_indices[i]);
+        gsize size;
+        const guint8 *data = g_bytes_get_data(bytes, &size);
+        g_checksum_update(checksum, data, size);
+    }
+
+    const char *hex = g_checksum_get_string(checksum);
+    char *result = g_strdup(hex);
+
+    g_checksum_free(checksum);
+    g_free(sorted_indices);
+
+    return result;
+}
+
+
+/**
+ * Výpočet checksumu z archivu (reader mode)
+ */
+static char *compute_checksum_from_archive(snapshot_io_t *io)
+{
+    /* Shromáždit názvy všech entries kromě manifest.xml */
+    GPtrArray *entry_names = g_ptr_array_new_with_free_func(g_free);
+
+    int32_t err = mz_zip_reader_goto_first_entry(io->handle);
+    while (err == MZ_OK) {
+        mz_zip_file *file_info = NULL;
+        if (mz_zip_reader_entry_get_info(io->handle, &file_info) == MZ_OK && file_info->filename) {
+            if (strcmp(file_info->filename, "manifest.xml") != 0) {
+                g_ptr_array_add(entry_names, g_strdup(file_info->filename));
+            }
+        }
+        err = mz_zip_reader_goto_next_entry(io->handle);
+    }
+
+    g_ptr_array_sort(entry_names, compare_entry_names);
+
+    GChecksum *checksum = g_checksum_new(G_CHECKSUM_SHA256);
+    if (!checksum) {
+        g_ptr_array_free(entry_names, TRUE);
+        return NULL;
+    }
+
+    for (guint i = 0; i < entry_names->len; i++) {
+        const char *name = g_ptr_array_index(entry_names, i);
+
+        err = mz_zip_reader_locate_entry(io->handle, name, 0);
+        if (err != MZ_OK) continue;
+
+        err = mz_zip_reader_entry_open(io->handle);
+        if (err != MZ_OK) continue;
+
+        uint8_t buf[8192];
+        int32_t bytes_read;
+        while ((bytes_read = mz_zip_reader_entry_read(io->handle, buf, sizeof(buf))) > 0) {
+            g_checksum_update(checksum, buf, bytes_read);
+        }
+
+        mz_zip_reader_entry_close(io->handle);
+    }
+
+    const char *hex = g_checksum_get_string(checksum);
+    char *result = g_strdup(hex);
+
+    g_checksum_free(checksum);
+    g_ptr_array_free(entry_names, TRUE);
+
+    return result;
+}
+
+
+char *snapshot_io_compute_checksum(snapshot_io_t *io)
+{
+    if (!io) return NULL;
+
+    if (io->writing) {
+        return compute_checksum_from_written_data(io);
+    } else {
+        return compute_checksum_from_archive(io);
+    }
+}

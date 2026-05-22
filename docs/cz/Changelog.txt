@@ -1,0 +1,391 @@
+
+2026-05-21 - Released version 2.0.2 - preview
+
+	- vytvořeno hlavní okno debuggeru + IASM + 4 pomocné disassembled window, CPU registers a Memory map window, Symbols, Bookmarks, Watch
+
+	- vytvořen systém "chytrých" breakpointů + variables a scripting
+
+	- CDL + Memory heatmap window + CDL export/import
+
+	- Trace suite pro offline analytiku: CPU track, IORQ Log, Interrupt Log, HW log
+
+	- Stack Monitor, Stack regions analytics, Stack History
+
+	- I/O Ports monitor + tracking history
+
+	- Event log, vizualizace + analytika a tools
+
+	- Callstack: experimentální heuristika
+
+	- CPU profiler
+
+	- nově přepsána kompletní emulace FDC + HW state monitor
+
+	- nově přepsána kompletní emulace QD image + HW state monitor
+
+	- z80ex a nahrazen vlastním, výkonnějším a přesnějším z80-mz800 https://github.com/michalhucik/z80-mz800
+
+	- GDG MZ-800: doplněny některé doposud přesně nezdokumentované vlastnosti, viz projekt GDG Documented https://www.ordoz.com/gdg-documented/
+	Jedinou neimplemenvovanou vlastností zůstává zcela záměrně Suporimpose bit, který by z hlediska emulace nepřinesl nic zásadního, ale zbytečně by zkomplikoval počítání screens podle uplynulých pxCLK.
+
+	- Unicard: plná integrace kompletního FS API pro firmware uc1 rev.60 a uc3 v0.26 (u ovou verzí se stále používá původní QD bootstrap)
+
+	- nyní máme projekt oficiálně rozdělen na tři MZ architektury: MZ-800 / MZ-1500 / MZ-700 (PAL, NTSC).
+	Primární architekturou však zůstává MZ-800.
+
+	- odstraněno DSK tools: nahrazeno samostatným projektem MZdisk https://github.com/michalhucik/mzdisk
+
+	- bugfix: okno emulátoru se při spuštění z konzole (Windows) nezobrazilo v popředí
+
+	- bugfix: odstraněn VRAM latch u MZ-1500 (ten zřejmě umí jen MZ-800 - neověřeno)
+
+	- bugfix: načítání předvolené ROM z konfiguračního souboru (.ini)
+	  nastavení ROM se při startu ignorovalo a vždy se načetla výchozí ROM
+
+	- komplexní refaktorizace všech interních knihoven
+
+	- kompletně nově přepsaná komunikace vláken přes dbgapi, implementace EE + spousta dalších drobností, bugfixů a nových bugů
+
+	- upgrade Dear ImGui 1.91.9 WIP → 1.92.6-docking
+
+	- implicitně po spuštění je program nastaven vždy na jazyk lokalizace Angličtina, protože v této verzi bývá zpravidla i nejlépe otestován
+
+	- přesun projektu na Github https://github.com/michalhucik/mz800emu - zdrojáky na SourceForge již nebudou dále udržovány
+
+
+2026-03-12 - Released version 2.0.1 - preview
+
+	- do vývojářského týmu byl naverbován mladý a výkonný AI pomocník :)
+
+	- bugfix: oprava zamrznutí při ukončení aplikace v Linuxu
+
+	- doplněny chybějící moduly ze staré verze emulátoru: 
+
+        - FDC Tools - new FD image
+        - Ramdisk: PEZIK Settings
+        - Memext: Memory Content
+        - Memext: Memory Map Settings
+        - ROM: User Settings
+        - Keyboard: Autotype
+        - JOY: kompletně nový SDL3 interface + UI
+
+	- MZ-800 má experimentálně možnost přidání PSG1 pro stereo audio. Port 0xF2 obsluhuje 
+	  oba kanály najednou (mono). Port 0xF3 PSG0 (levý), 0xF9 PSG1 (pravý).
+
+	- development: k projektu byla doplněna sekce pro automatické testování některých vybraných modulů
+
+
+	Implementace i18n - Lokalizace
+	==============================
+
+	- emulátor má nyní oficiální lokalizaci do několika vybraných jazyků
+
+	- volba jazyka se implicitně provádí standardně podle proměnných v prostředí.
+	  V Menu Interface → Jazyk - je možnost nastavení změnit.
+
+	- lokalizace probíhala automatizovaně a u většiny jazyků nemám schopnost ověřit správnost
+
+
+    --------------------------------------------------------------------------
+	PROSÍM: pokud objevíte v lokalizaci chyby (text, formátování, atp.), 
+	        tak se mi ozvěte - opravíme to.
+	--------------------------------------------------------------------------
+
+
+	Emulátor je nyní oficiálně multiplatformní pro: MZ-800/MZ-1500 a v plánu je i MZ-700.
+	=====================================================================================
+
+	- každá platforma se ze společných zdrojových kódů generuje, jako samostatný EXE.
+	  Doporučuji provozovat každou platformu v samostatném pracovním adresáři.
+
+	- nutno podotknout, že u MZ-1500 jsem na skutečném HW udělál jen pár základních měření a 
+	  u většiny vlastností vycházím z ověřených poznatků, které jsem získal na MZ-800, takže je možné, 
+	  že se zde objení nepřesnosti v emulaci
+
+
+	Implementován kompletní snapshot systém umožňující uložit a načíst stav emulátoru.
+	==================================================================================
+
+	  Snapshot je ZIP archiv s příponou .mzs obsahující:
+	  - manifest.xml s metadaty (architektura, verze, popis, SHA-256 checksum)
+	  - XML soubory s kompletním stavem všech HW komponent
+	  - binární dumpy pamětí (RAM, VRAM, framebuffer, volitelně MEMEXT/ramdisk)
+	  - PNG screenshot aktuálního stavu obrazovky
+
+	  Uložení a načtení snapshotu:
+	  - Menu Snapshot → Save Snapshot Alt + F6 / Load Snapshot Alt + F7 (souborové dialogy)
+	  - Load dialog obsahuje náhled: screenshot, architektura, datum, popis, velikost
+	  - Emulátor se automaticky pozastaví na dobu operace
+
+	  Quick Save Alt + F8 / Quick Load Alt + F9:
+	  - Rychlé uložení/načtení bez dialogu (z menu Snapshot)
+	  - Tři módy: Basic (jeden soubor), Incremental (číslované soubory),
+	    Rotational (jako Incremental s automatickým mazáním nejstarších)
+	  - Konfigurovatelné v Snapshot → Snapshot Setup
+
+	  Snapshot Setup dialog:
+	  - Výchozí adresář pro snapshoty
+	  - Úroveň komprese ZIP archivu
+	  - Zahrnutí ramdisků a paměťového rozšíření
+	  - Mód Quick Save a maximální počet slotů
+
+	  Ukládané HW komponenty (19 handlerů):
+	  - CPU Z80 (všechny registry včetně alternativních sad)
+	  - Paměti: RAM, VRAM, EXVRAM/PCG, paměťový stav (mapování)
+	  - Video: GDG registry, časování, synchronizační signály, framebuffer
+	  - VRAM Control: WF/RF registry (MZ-800), latch (MZ-1500)
+	  - Zvuk: PSG registry (mono i stereo), CTC8253 čítače, audio log
+	  - I/O: PIO8255, PIO Z80
+	  - Zařízení: CMT (pozice v souboru), FDC (stav + reference na DSK),
+	    Quick Disk, Ramdisk, IDE8, MEMEXT, Unicard
+	  - Řídicí struktury: mzarch stav, HW konfigurace
+
+	  Bezpečnost a integrita:
+	  - SHA-256 checksum chrání proti poškození archivu
+	  - Atomický zápis (temp soubor + rename) chrání existující snapshot
+	  - Ověření kompatibility architektury při načítání (MZ-700/800/1500)
+	  - Po selhání načtení emulátor zůstane v pauze (ochrana před nekonzistentním stavem)
+
+	  Stav modulu: alpha — základní funkčnost implementována, testováno jen automatizovaně.
+
+
+2025-04-21 - Released version 2.0.0 - preview
+
+	- Přepracováno jádro emulátoru, včetně drobných oprav chyb. Zásadnější využití multithreadingu.
+	  Výrazné celkové zrychlení.
+
+	- Zahájena postupná integrace lokalizačních maker. Budoucí verze programu už by mohly mít
+	  lokalizované GUI. Rád uvítám jakoukoliv pomoc při lokalizaci GUI textu do dalších jazyků.
+
+	- Přidána možnost variabilní změny rychlosti (doposud běžel emulátor jen v režimu rychlosti NORMAL a MAX).
+	  Nyní lze rychlost libovolně zvyšovat, nebo snižovat o 1%, 10%, nebo 100%. Po nastavení variabilní rychlosti
+	  lze volně přecházet mezi všemi třemi rychlostními režimy.
+
+	- Přechod na SDL3. Úplně přepracován video a audio interface.
+	  CHYBÍ: low-level podpora joysticku
+
+	- Přechod z libsoup na libcurl (modul version_check) - ve Windows je tak lepší přenositelnost z komplexu MSYS2 na
+	  samostatnou aplikaci s knihovnami ve vlastním adresáři.
+
+	- Zahájen přechod z GTK3 na ImGui.
+	  CHYBÍ:
+	  		- FDC Tools
+	        - Pežik Settings
+	        - MemExt - Memory Content a Memory Map Settings
+    	    - ROM User Settings
+    		- Interface - Keyboard autotype
+			- Interface - JOY Settings
+			- Debugger, Memory Browser, Breakpoints
+
+	- Vydána preview verze, která bude postupně doplněna o chybějící moduly a jazykové lokalizace.
+
+
+2023-04-28 - Released version 1.0.8
+
+	- Windows - bugfix: aktualizace GTK-3 runtime na verzi gtk-3.24.38
+	  Krom jineho se tim opravila chyba ve zobrazovanmi topmenu na systemech s vice monitory.
+	  Modul pro kontrolu posledni verze programu nyni pouziva SSL. 
+	  Program lze nyni ve Windows sestavit ve 32bit i 64bit variante.
+
+	- bugfix: WD279x - u prikazu typ III read track addr bylo potreba
+	  osetrit stav prazdne FD mechaniky
+
+	- bugfix: pred 4 lety jsem omylem znefunkcnil CMT extenzi TAP, nikdo si toho nevsiml :( - opraveno
+
+	- v topmenu je nova sekce Audio ve ktere lze nastavovat hlasitost pro jednotlive kanaly
+
+	- implicitni meritko vykreslovani hlavniho okna je nyni nastaveno na Bigger - 150%
+	  V sekci Display lze nyni zvolit startup window size z jedne ze tri preddefinovanych velikosti - 100%, 150% a 300%.
+
+	- virtual CMT nyni podporuje ovladani motoru pres i8255
+
+	  Uzivatel muze menit stav motoru prostrednictvim prepinace (toggle button :) "Pause" v ovladani CMT.
+
+	  Play / Record + Pause => motor OFF
+	  Play / Record         => motor ON
+
+	  Pokud bezi motor a i8255 posle signal k jeho zastaveni, tak se
+	  aktivuje prepinac "Pause".
+
+	  CMT ukladani se nyni po otevreni noveho souboru implicitne prepne do rezimu "Record + Pause".
+
+	- do CMT menu pridana moznost zapnout/vypnout kontrolu a opravu delky MZF (implicitne zapnuto)
+
+
+2022-01-27 - Released version 1.0.7
+
+	- v menu pridana volba HW compatibility -> MZ-700 mode - fixed 0xE008
+
+	Jedna se o castecny HW bugfix toho, ze pocitac MZ-800 pri cteni
+	regDMD z adresy 0xE008 nastavuje bity 1 - 6 na hodnotu '0'.
+	Puvodni MZ-700 vsak ma na techto bitech JOY stick a tak na MZ-800
+	dochazi k jeho falesne identifikaci. Bugfix nastavuje nepouzite bity
+	na hodnotu '1'.
+
+
+2021-10-27 - Released version 1.0.6
+
+
+	- opravena chyba v HW scroll
+	- pridana moznost sestaveni pomoci cmake (diky Ysblokje) - cti cmake_README.md
+	- drobne opravy
+	- do top menu pridana experimentalni volba HW compatibility -> MZ-700 (PAL) VRAM timing
+	  V rezimu 700 umoznuje pomalejsi pristup k VRAM tak, jak to
+	  odpovida realnemu MZ-700 hardware.
+
+
+2020-08-09 - Verze 1.0.5
+
+
+	- k virtualni klavesnici byla pridana funkce Auto Type
+	- oprava: vkbd spatne mapovani jedne klavesy
+	- oprava: emulator v pauze mel zbytecne vysokou rezii CPU
+	- Debugger: v settings pridany options pro auto forced full screen
+	  refresh (bez ohledu na pozici paprsku)
+	  Lze jej nyni v debuggeru zavolat i manualne pres CTRL+R.
+
+	- Nekolik oprav a drobnych vylepseni v mem. browseru
+	- CMTHACK: pridana volba "Fixing FNAME terminator" 
+	- oprava: "rychla" verze CTC0 v rezimu M2 (bylo nefunkcni demo Madonna2)
+	- oprava: zmena inicializace signalu z virtual CMT (nyni funguje ESC v TurboCopy)
+	- display: pridano uzamknuti pomeru stran (implicitne vypnuto, navic
+	  funkcni jen ve Windows)
+	- display: Alt+W, Alt+H - opravi pomer stran podle sirky, nebo podle vysky
+
+
+
+2018-09-16 - Verze 1.0.4
+
+
+
+Novinky a zmeny v emulaci:
+
+	- CMT: kliknutim na "hodiny" se prepina zobrazeni mezi "play time" a 
+	  "remaining time"
+
+	- CMT: nyni lze prehravat krom MZF, ci M12 souboru take WAV
+
+	- CMT: nyni lze prehravat paskove archivy MZT a TAP (TAP sice neni pro MZ-800 nativni
+	  format zaznamu, nicmene existuje tu male mnozstvi her a programu, ktere
+	  pracuji s nativnim ZX CMT formatem)
+	  Soubory MZT lze jednoduse vytvaret spojenim nekolika MZF za sebe,
+	  napr. http://ordoz.com/mz800emu/files/interkarate/
+	  Vypnete CMT->CMT hack do virtual CMT nahrajte interkarate.mzt,
+	  otevrte tape filelist a nastavte u prvniho souboru rychlost 
+	  1200 Bd a u dalsich napr. 3600 Bd, nasledne v emulatoru F12 + C a
+	  ve virtual CMT play, nebo dvojklik na prvnim souboru ve
+	  filelistu...
+
+	- moznost nastavit "zadni switch" pro prepinani MZ-800 / MZ-700 rezimu
+	  a pro zmenu polarity CMT signalu
+
+	- novy nastroj Virtual keyboard (Alt + K)
+
+	- moznost vypnout hotkeys v main window
+
+	- pridana podpora joysticku, je mozno pripojit bud nativni JOY, nebo
+	  emulovany pres numericky keybord
+
+	- PEZIK: pridana moznost zalohovani ramdisku a moznost volby obsazenych bank
+
+	- implementovany dalsi nedokumentovane vlastnosti okolo PIOZ80, PSG a GDG
+
+	- velke mnozstvi drobnych bugfixu
+
+	- optimalizace vykonu
+
+	- Linux: lepsi casova synchronizace
+
+	- QDISC: novy nastroj na tvorbu QD image
+
+	- QDISC: zvyseni max limitu pro velikost media
+
+	- Display: pridana moznost Forced full screen redrawing (melo by to
+	  pomoci pokud mate potize s prekreslovanim hlavniho okna, napr. v
+	  Linuxu :)
+
+	- novy nastroj pro vytvoreni DSK souboru
+
+	- pridana zjednodusena emulace Unicard. Implicitni adresar pro SD
+-	  root je "./SD". Zmenu adresare SD root lze provest pouze tehdy,
+	  pokud je zarizeni odpojeno. S pripojenim Unicard, provede emulator
+	  inicializaci SD root adresare na ulozi do nej soubory, ktere jsou potrebne
+	  pro spusteni SD managera. Pokud je pripojen Quickdisk a je zapnuty
+	  do rezimu "Unicard Boot Loader", tak staci stisknout RESET (F12) + Q
+	  a nabootuje se Unicard Manager.
+	  Prozatim je implementovano jen cteni RTC, nastaveni pracovniho
+	  adresare, cteni CWD, cteni adresare v rezimu FILELIST, otevreni a cteni
+	  souboru, cteni statusu. Dale je mozne mountovat a ejectovat DSK z
+	  SDROOT.
+
+	- filechooser: u MZF souboru je v nahledu zobrazeno info z MZF
+	  headeru
+
+	- pridana podpora numericke klavesnice
+
+	- pridana zjednodusena implementace IDE8 
+	  (podporovano systemem NIPOS od Marka Smihly - https://www.ordoz.com/mz800emu/files/nipos/ )
+	  Radic podporuje standardni CHS a "ztratovy" 16 bit rezim, nicmene jsem 
+	  naimplementoval (a zatim neodzkousel) i LBA + podporu nativni 8 bit
+	  datove sbernice, tak jak to umi napr. CF disky
+
+	- nyni lze definovat externi ROM s podporou CMT hack
+
+	- implementovany oba typy MemExt. U MemExt-u Davida Luftnera se obsah FLASH nahrava ze souboru
+	  a neni emulovano jeji prepisovani primo ze Sharpa. ROM FLASH rovnez neni emulovana.
+	 (Zarizeni by mela byt podporovana napr. systemem MZIX https://sourceforge.net/projects/umzix/ )
+
+	- virtual CMT: pridana volba CPU boost
+	
+	- CMT: nyni je mozny save do WAV
+
+	- CMT: bugfix - u konverze z MZF byl prodlouzen GAP
+
+Debugger:
+
+	- pridana historie vykonanych instrukci
+
+	- po dvojkliku na jmeno registru se nastavi dissassembled focus na 
+	  adresu z hodnoty registru
+
+	- po dvojkliku na adresu v zasobniku se nastavi dissassembled focus 
+	  na adresu z hodnoty ulozene v zasobniku
+
+	- byly pridany informace o stavu PIO8255, CTC8253, PIOZ80 a info
+	  o stavu interrupt signalu
+
+	- pridana moznost zmenit stav maskovani interruptu z CTC2 
+	  (Vystupem z PIO8255)
+
+	- pridana informace o GDG signalech a moznost nastavovat regBorder, 
+	  regPal, regWF a regWF
+
+	- pridan 32 bitovy uzivatelsky citac vykonanych CPU taktu
+
+	- v dissassembled window je nyni mozne scrollovat v rozsahu cele 
+	  pameti pomoci Up, Down, PgUp a PgDown a koleckem mysi
+
+	- krom puvodniho "step into" byly pridany take funkce "step over" a 
+	  "run to cursor"
+
+	- v debuggeru lze nyni nahravat MZF soubory do RAM
+
+	- mame nove ikony v toolbaru :)
+
+	- vytvoren nastroj pro dissassemblovani libovolneho bloku z RAM, 
+	  nebo z aktualne mapovane pameti (Alt + I)
+
+	- vytvoren novy Memory Browser (Alt + E), ktery umoznuje prohlizeni,
+	  nebo editaci libovolneho bloku z RAM, VRAM, ROM, MemExt a vsech ramdisku.
+	  Komparativni mod umoznuje vizualizovat zmeny v pameti oproti 
+	  posledni refreshi. Dale take nabizi moznost ulozit, libovolnou 
+	  cast kterekoliv pameti do souboru, nebo ji naopak z jakehokoliv
+	  binarniho souboru nahrat
+
+	- pridana moznost potlacit audio pri animaci debuggeru
+
+Obecne:
+
+	- prizpusobeni interface pro SDL-2.0.5
+
+	- pridana automaticka kontrola novych verzi

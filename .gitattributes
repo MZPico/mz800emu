@@ -136,10 +136,11 @@ Doxyfile      text eol=lf
 *.dsk         binary
 *.DSK         binary
 
-# Debug/symboly (binární výstupy nástrojů)
-*.map         binary
-*.idx         binary
-*.md5         binary
+# Linker/symbolové mapy - v tomto projektu textové (sdcc, ld output)
+*.map         text eol=lf
+*.lbl         text eol=lf
+*.sym         text eol=lf
+*.noi         text eol=lf
 
 # Sourcetrail (i kdyby unikly do repa)
 *.srctrlprj   binary

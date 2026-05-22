@@ -1,0 +1,220 @@
+/**
+ * @file snapshot_config.c
+ * @brief Konfigurace snapshotů — registrace do cfgmain INI systému
+ */
+
+#include "snapshot.h"
+#include "snapshot_config.h"
+#include "cfgmain.h"
+#include "libs/cfgfile/cfgroot.h"
+#include "libs/cfgfile/cfgmodule.h"
+#include "libs/cfgfile/cfgelement.h"
+
+#include <glib.h>
+#include <string.h>
+
+
+/* ========================================================================= */
+/*                       Propagate callbacky                                 */
+/* ========================================================================= */
+
+static void propagatecfg_include_ramdisk(void *e, void *data)
+{
+    (void)data;
+    st_CFGELEMENT *elm = (st_CFGELEMENT *)e;
+    g_snapshot_settings.include_ramdisk = cfgelement_get_bool_value(elm) ? true : false;
+}
+
+static void propagatecfg_include_memext(void *e, void *data)
+{
+    (void)data;
+    st_CFGELEMENT *elm = (st_CFGELEMENT *)e;
+    g_snapshot_settings.include_memext = cfgelement_get_bool_value(elm) ? true : false;
+}
+
+static void propagatecfg_compression_level(void *e, void *data)
+{
+    (void)data;
+    st_CFGELEMENT *elm = (st_CFGELEMENT *)e;
+    g_snapshot_settings.compression_level = (int)cfgelement_get_unsigned_value(elm);
+}
+
+static void propagatecfg_default_directory(void *e, void *data)
+{
+    (void)data;
+    st_CFGELEMENT *elm = (st_CFGELEMENT *)e;
+    char *dir = cfgelement_get_text_value(elm);
+    if (dir) {
+        snprintf(g_snapshot_settings.default_directory,
+                 sizeof(g_snapshot_settings.default_directory),
+                 "%s", dir);
+    }
+}
+
+static void propagatecfg_quicksave_filename(void *e, void *data)
+{
+    (void)data;
+    st_CFGELEMENT *elm = (st_CFGELEMENT *)e;
+    char *name = cfgelement_get_text_value(elm);
+    if (name) {
+        snprintf(g_snapshot_settings.quicksave_filename,
+                 sizeof(g_snapshot_settings.quicksave_filename),
+                 "%s", name);
+    }
+}
+
+static void propagatecfg_quicksave_mode(void *e, void *data)
+{
+    (void)data;
+    st_CFGELEMENT *elm = (st_CFGELEMENT *)e;
+    g_snapshot_settings.quicksave_mode = (int)cfgelement_get_unsigned_value(elm);
+}
+
+static void propagatecfg_quicksave_max_slots(void *e, void *data)
+{
+    (void)data;
+    st_CFGELEMENT *elm = (st_CFGELEMENT *)e;
+    g_snapshot_settings.quicksave_max_slots = (int)cfgelement_get_unsigned_value(elm);
+}
+
+static void propagatecfg_load_resume_mode(void *e, void *data)
+{
+    (void)data;
+    st_CFGELEMENT *elm = (st_CFGELEMENT *)e;
+    g_snapshot_settings.load_resume_mode = (int)cfgelement_get_unsigned_value(elm);
+}
+
+static void propagatecfg_quickload_resume_mode(void *e, void *data)
+{
+    (void)data;
+    st_CFGELEMENT *elm = (st_CFGELEMENT *)e;
+    g_snapshot_settings.quickload_resume_mode = (int)cfgelement_get_unsigned_value(elm);
+}
+
+
+/* ========================================================================= */
+/*                         Save callbacky                                    */
+/* ========================================================================= */
+
+static void savecfg_include_ramdisk(void *e, void *data)
+{
+    (void)data;
+    st_CFGELEMENT *elm = (st_CFGELEMENT *)e;
+    cfgelement_set_bool_value(elm, g_snapshot_settings.include_ramdisk ? 1 : 0);
+}
+
+static void savecfg_include_memext(void *e, void *data)
+{
+    (void)data;
+    st_CFGELEMENT *elm = (st_CFGELEMENT *)e;
+    cfgelement_set_bool_value(elm, g_snapshot_settings.include_memext ? 1 : 0);
+}
+
+static void savecfg_compression_level(void *e, void *data)
+{
+    (void)data;
+    st_CFGELEMENT *elm = (st_CFGELEMENT *)e;
+    cfgelement_set_unsigned_value(elm, (unsigned)g_snapshot_settings.compression_level);
+}
+
+static void savecfg_default_directory(void *e, void *data)
+{
+    (void)data;
+    st_CFGELEMENT *elm = (st_CFGELEMENT *)e;
+    cfgelement_set_text_value(elm, g_snapshot_settings.default_directory);
+}
+
+static void savecfg_quicksave_filename(void *e, void *data)
+{
+    (void)data;
+    st_CFGELEMENT *elm = (st_CFGELEMENT *)e;
+    cfgelement_set_text_value(elm, g_snapshot_settings.quicksave_filename);
+}
+
+static void savecfg_quicksave_mode(void *e, void *data)
+{
+    (void)data;
+    st_CFGELEMENT *elm = (st_CFGELEMENT *)e;
+    cfgelement_set_unsigned_value(elm, (unsigned)g_snapshot_settings.quicksave_mode);
+}
+
+static void savecfg_quicksave_max_slots(void *e, void *data)
+{
+    (void)data;
+    st_CFGELEMENT *elm = (st_CFGELEMENT *)e;
+    cfgelement_set_unsigned_value(elm, (unsigned)g_snapshot_settings.quicksave_max_slots);
+}
+
+static void savecfg_load_resume_mode(void *e, void *data)
+{
+    (void)data;
+    st_CFGELEMENT *elm = (st_CFGELEMENT *)e;
+    cfgelement_set_unsigned_value(elm, (unsigned)g_snapshot_settings.load_resume_mode);
+}
+
+static void savecfg_quickload_resume_mode(void *e, void *data)
+{
+    (void)data;
+    st_CFGELEMENT *elm = (st_CFGELEMENT *)e;
+    cfgelement_set_unsigned_value(elm, (unsigned)g_snapshot_settings.quickload_resume_mode);
+}
+
+
+/* ========================================================================= */
+/*                              Init                                         */
+/* ========================================================================= */
+
+void snapshot_config_init(void)
+{
+    CFGMOD *cmod = cfgroot_register_new_module(g_cfgmain, "SNAPSHOT");
+
+    CFGELM *elm;
+
+    elm = cfgmodule_register_new_element(cmod, "include_ramdisk", CFGENTYPE_BOOL, 0);
+    cfgelement_set_propagate_cb(elm, propagatecfg_include_ramdisk, NULL);
+    cfgelement_set_save_cb(elm, savecfg_include_ramdisk, NULL);
+
+    elm = cfgmodule_register_new_element(cmod, "include_memext", CFGENTYPE_BOOL, 1);
+    cfgelement_set_propagate_cb(elm, propagatecfg_include_memext, NULL);
+    cfgelement_set_save_cb(elm, savecfg_include_memext, NULL);
+
+    elm = cfgmodule_register_new_element(cmod, "compression_level", CFGENTYPE_UNSIGNED, 6, 0, 9);
+    cfgelement_set_propagate_cb(elm, propagatecfg_compression_level, NULL);
+    cfgelement_set_save_cb(elm, savecfg_compression_level, NULL);
+
+    elm = cfgmodule_register_new_element(cmod, "default_directory", CFGENTYPE_TEXT, "");
+    cfgelement_set_propagate_cb(elm, propagatecfg_default_directory, NULL);
+    cfgelement_set_save_cb(elm, savecfg_default_directory, NULL);
+
+    elm = cfgmodule_register_new_element(cmod, "quicksave_filename", CFGENTYPE_TEXT, "quicksave");
+    cfgelement_set_propagate_cb(elm, propagatecfg_quicksave_filename, NULL);
+    cfgelement_set_save_cb(elm, savecfg_quicksave_filename, NULL);
+
+    elm = cfgmodule_register_new_element(cmod, "quicksave_mode", CFGENTYPE_UNSIGNED, 0, 0, 2);
+    cfgelement_set_propagate_cb(elm, propagatecfg_quicksave_mode, NULL);
+    cfgelement_set_save_cb(elm, savecfg_quicksave_mode, NULL);
+
+    elm = cfgmodule_register_new_element(cmod, "quicksave_max_slots", CFGENTYPE_UNSIGNED, 5, 2, 20);
+    cfgelement_set_propagate_cb(elm, propagatecfg_quicksave_max_slots, NULL);
+    cfgelement_set_save_cb(elm, savecfg_quicksave_max_slots, NULL);
+
+    elm = cfgmodule_register_new_element(cmod, "load_resume_mode", CFGENTYPE_UNSIGNED, SNAPSHOT_RESUME_PREVIOUS, 0, 2);
+    cfgelement_set_propagate_cb(elm, propagatecfg_load_resume_mode, NULL);
+    cfgelement_set_save_cb(elm, savecfg_load_resume_mode, NULL);
+
+    elm = cfgmodule_register_new_element(cmod, "quickload_resume_mode", CFGENTYPE_UNSIGNED, SNAPSHOT_RESUME_PREVIOUS, 0, 2);
+    cfgelement_set_propagate_cb(elm, propagatecfg_quickload_resume_mode, NULL);
+    cfgelement_set_save_cb(elm, savecfg_quickload_resume_mode, NULL);
+}
+
+
+void snapshot_config_load(void)
+{
+    /* Konfigurace se načítá automaticky přes cfgroot_propagate */
+}
+
+
+void snapshot_config_save(void)
+{
+    /* Konfigurace se ukládá automaticky přes cfgroot_save */
+}

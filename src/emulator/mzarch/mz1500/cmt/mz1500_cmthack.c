@@ -1,0 +1,122 @@
+/*
+ * File:   mz1500_cmthack.c
+ * Author: Michal Hucik <hucik@ordoz.com>
+ *
+ * Created on 2. července 2015, 20:49
+ *
+ *
+ * ----------------------------- License -------------------------------------
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * ---------------------------------------------------------------------------
+ */
+
+#include "main.h"
+#include "hw-generic/memory/memory.h"
+#include "hw-generic/memory/rom.h"
+#include "hw-generic/cmt/cmt.h"
+#include "hw-generic/cmt/cmthack.h"
+
+static void mz1500_cmthack_install_rom_patch(void)
+{
+
+    /* ROM hack */
+
+    /*
+     * Precteni hlavicky z CMT
+     *
+     *	RHEAD (0x04D8):
+     *
+     *	Vystup: CY = 1  doslo k chybe
+     *			A = 1  chyba kontrolniho souctu
+     *			A = 2  detekovano BREAK
+     *		CY = 0  O.K.
+     *
+     */
+    g_memory.ROM[0x04d8] = 0xe5; /* push HL */
+    g_memory.ROM[0x04d9] = 0x21; /* ld HL, 0x10f0 */
+    g_memory.ROM[0x04da] = 0xf0;
+    g_memory.ROM[0x04db] = 0x10;
+    g_memory.ROM[0x04dc] = 0xd3; /* out (0x01), a */
+    g_memory.ROM[0x04dd] = 0x01;
+    g_memory.ROM[0x04de] = 0xe1; /* pop HL */
+    g_memory.ROM[0x04df] = 0xc9; /* ret */
+
+    /*
+     *	RDATA (0x04F8):
+     *
+     * Precte program z CMT podle informaci z hlavicky
+     * HL = adresa kam ukladat (z 0x1104)
+     * BC = delka dat (z 0x1102)
+     *
+     *	vystup:  CY s vyznamem jako u RHEAD
+     *
+     */
+    g_memory.ROM[0x04f8] = 0xe5; /* push HL */
+    g_memory.ROM[0x04f9] = 0xc5; /* push BC */
+    g_memory.ROM[0x04fa] = 0x2a; /* ld HL, (0x1104) */
+    g_memory.ROM[0x04fb] = 0x04;
+    g_memory.ROM[0x04fc] = 0x11;
+    g_memory.ROM[0x04fd] = 0xed; /* ld BC, (0x1102) */
+    g_memory.ROM[0x04fe] = 0x4b;
+    g_memory.ROM[0x04ff] = 0x02;
+    g_memory.ROM[0x0500] = 0x11;
+    g_memory.ROM[0x0501] = 0xd3; /* out (0x02), A */
+    g_memory.ROM[0x0502] = 0x02;
+    g_memory.ROM[0x0503] = 0xc1; /* pop BC */
+    g_memory.ROM[0x0504] = 0xe1; /* pop HL */
+    g_memory.ROM[0x0505] = 0xc9; /* ret */
+
+    cmt_stop();
+}
+
+void cmthack_mzarch_reinstall_rom_patch(void)
+{
+    if (!TEST_ROM_CMTHACK_INCOMP)
+    {
+        if ((!TEST_ROM_USER_DEFINED) || (g_rom.user_defined_cmthack_type == ROM_CMTHACK_DEFAULT))
+        {
+            if (g_cmthack.load_patch_installed)
+            {
+                mz1500_cmthack_install_rom_patch();
+            };
+        };
+    };
+}
+
+void cmthack_mzarch_load_rom_patch(unsigned enabled)
+{
+    if (!TEST_ROM_CMTHACK_INCOMP)
+    {
+        if ((!TEST_ROM_USER_DEFINED) || (g_rom.user_defined_cmthack_type == ROM_CMTHACK_DEFAULT))
+        {
+            if (enabled)
+            {
+                mz1500_cmthack_install_rom_patch();
+            }
+            else
+            {
+                memcpy(&g_memory.ROM[0x04d8], &g_rom.mz700rom[0x04d8], 8);
+                memcpy(&g_memory.ROM[0x04f8], &g_rom.mz700rom[0x04f8], 14);
+            };
+            g_cmthack.load_patch_installed = enabled & 1;
+        }
+        else if (g_rom.user_defined_cmthack_type == ROM_CMTHACK_CUSTOM)
+        {
+            g_cmthack.load_patch_installed = enabled & 1;
+            rom_reinstall(g_rom.rom_cfg);
+        };
+    };
+}

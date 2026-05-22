@@ -1,0 +1,521 @@
+/**
+ * @file snapshot_mgr.c
+ * @brief Snapshot Manager — registrace komponent, orchestrace save/load
+ */
+
+#include "snapshot_mgr.h"
+#include "snapshot_io.h"
+#include "snapshot_xml.h"
+#include "snapshot_screenshot.h"
+
+#include "emulator.h"
+#include "cfgmain.h"
+#include "mzarch/mzarch.h"
+#include "mzarch/mzarch_config.h"
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+#include "debugger/trace/eventlog.h"
+#endif
+
+#include <glib.h>
+#include <glib/gstdio.h>
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+
+
+/* ========================================================================= */
+/*                        Globální nastavení                                 */
+/* ========================================================================= */
+
+st_SNAPSHOT_SETTINGS g_snapshot_settings = {
+    .include_ramdisk = false,
+    .include_memext = true,
+    .compression_level = 6,
+    .default_directory = "",
+    .quicksave_filename = "quicksave",
+    .quicksave_mode = 0,        /* Basic */
+    .quicksave_max_slots = 5,
+    .load_resume_mode = SNAPSHOT_RESUME_PREVIOUS,
+    .quickload_resume_mode = SNAPSHOT_RESUME_PREVIOUS,
+};
+
+
+/* ========================================================================= */
+/*                         Registr komponent                                 */
+/* ========================================================================= */
+
+#define SNAPSHOT_MAX_COMPONENTS 32
+
+static struct {
+    const char *name;
+    en_SNAPSHOT_PRIORITY priority;
+    snapshot_save_cb_t save_cb;
+    snapshot_load_cb_t load_cb;
+    bool is_optional;
+} g_snapshot_registry[SNAPSHOT_MAX_COMPONENTS];
+
+static int g_snapshot_registry_count = 0;
+
+
+int snapshot_register_component(const char *name,
+                                en_SNAPSHOT_PRIORITY priority,
+                                snapshot_save_cb_t save_cb,
+                                snapshot_load_cb_t load_cb,
+                                bool is_optional)
+{
+    if (g_snapshot_registry_count >= SNAPSHOT_MAX_COMPONENTS) {
+        SNAP_ERR("mgr", "component registry is full (max %d)", SNAPSHOT_MAX_COMPONENTS);
+        return -1;
+    }
+
+    /* Najít správnou pozici pro vložení (seřazeno dle priority) */
+    int pos = g_snapshot_registry_count;
+    for (int i = 0; i < g_snapshot_registry_count; i++) {
+        if (priority < g_snapshot_registry[i].priority) {
+            pos = i;
+            break;
+        }
+    }
+
+    /* Posunout existující záznamy */
+    for (int i = g_snapshot_registry_count; i > pos; i--) {
+        g_snapshot_registry[i] = g_snapshot_registry[i - 1];
+    }
+
+    /* Vložit nový záznam */
+    g_snapshot_registry[pos].name = name;
+    g_snapshot_registry[pos].priority = priority;
+    g_snapshot_registry[pos].save_cb = save_cb;
+    g_snapshot_registry[pos].load_cb = load_cb;
+    g_snapshot_registry[pos].is_optional = is_optional;
+    g_snapshot_registry_count++;
+
+    return 0;
+}
+
+
+int snapshot_mgr_get_component_count(void)
+{
+    return g_snapshot_registry_count;
+}
+
+
+/* ========================================================================= */
+/*                         Manifest save/load                                */
+/* ========================================================================= */
+
+/**
+ * Uložení manifestu do archivu
+ */
+static en_SNAPSHOT_RESULT snapshot_save_manifest(st_SNAPSHOT_CONTEXT *ctx,
+                                                  const char *description,
+                                                  const char *checksum)
+{
+    snapshot_xml_writer_t *w = snapshot_xml_writer_new();
+    snapshot_xml_write_header(w);
+
+    /* Kořenový element s verzí formátu */
+    char ver_str[16];
+    snprintf(ver_str, sizeof(ver_str), "%d", SNAPSHOT_FORMAT_VERSION);
+    snapshot_xml_open_element_attr(w, "mzs_snapshot", "version", ver_str);
+
+    /* Identifikace emulátoru */
+    snapshot_xml_open_element(w, "emulator");
+    snapshot_xml_write_string(w, "name", MZARCH_NAME "emu");
+    snapshot_xml_write_string(w, "version", CFGMAIN_EMULATOR_VERSION);
+    snapshot_xml_write_string(w, "build_date", cfgmain_get_build_date());
+    snapshot_xml_close_element(w); /* /emulator */
+
+    /* Architektura */
+    snapshot_xml_write_int(w, "architecture", MZARCH);
+
+    /* Metadata */
+    /* cfgmain_create_timestamp() vrací statický buffer — nepoužívat g_free! */
+    const char *timestamp = cfgmain_create_timestamp();
+    snapshot_xml_write_string(w, "created", timestamp ? timestamp : "unknown");
+
+    snapshot_xml_write_string(w, "description", description ? description : "");
+
+    /* Nastavení snapshotu */
+    snapshot_xml_open_element(w, "settings");
+    snapshot_xml_write_bool(w, "include_ramdisk", g_snapshot_settings.include_ramdisk);
+    snapshot_xml_write_bool(w, "include_memext", g_snapshot_settings.include_memext);
+    snapshot_xml_close_element(w); /* /settings */
+
+    /* SHA-256 checksum — jako element s atributem a child elementem pro hodnotu */
+    if (checksum) {
+        snapshot_xml_open_element_attr(w, "checksum", "algorithm", "sha256");
+        snapshot_xml_write_string(w, "value", checksum);
+        snapshot_xml_close_element(w);
+    }
+
+    snapshot_xml_close_element(w); /* /mzs_snapshot */
+
+    char *xml = snapshot_xml_writer_finish(w);
+
+    en_SNAPSHOT_RESULT res = snapshot_io_write_xml(ctx->io, "manifest.xml", xml);
+    g_free(xml);
+    return res;
+}
+
+
+/**
+ * Načtení manifestu z archivu
+ */
+static en_SNAPSHOT_RESULT snapshot_load_manifest_from_io(snapshot_io_t *io,
+                                                          st_SNAPSHOT_METADATA *metadata)
+{
+    char *xml = NULL;
+    en_SNAPSHOT_RESULT result = snapshot_io_read_xml(io, "manifest.xml", &xml);
+    if (result != SNAPSHOT_OK) return result;
+
+    snapshot_xml_reader_t *r = snapshot_xml_reader_new(xml);
+    if (!r) {
+        g_free(xml);
+        return SNAPSHOT_ERR_XML_PARSE;
+    }
+
+    /* Vstoupit do kořenového elementu */
+    if (!snapshot_xml_enter_element(r, "mzs_snapshot")) {
+        snapshot_xml_reader_free(r);
+        g_free(xml);
+        return SNAPSHOT_ERR_XML_PARSE;
+    }
+
+    /* Verze formátu z atributu */
+    char *version_str = NULL;
+    if (snapshot_xml_read_attr(r, "version", &version_str)) {
+        metadata->format_version = (uint32_t)atoi(version_str);
+        g_free(version_str);
+    } else {
+        metadata->format_version = 1;
+    }
+
+    /* Emulator info */
+    if (snapshot_xml_enter_element(r, "emulator")) {
+        char *ver = NULL;
+        if (snapshot_xml_read_string(r, "version", &ver)) {
+            snprintf(metadata->emulator_version, sizeof(metadata->emulator_version), "%s", ver);
+            g_free(ver);
+        }
+        snapshot_xml_leave_element(r);
+    }
+
+    /* Architektura */
+    snapshot_xml_read_int(r, "architecture", &metadata->architecture);
+
+    /* Časové razítko */
+    char *created = NULL;
+    if (snapshot_xml_read_string(r, "created", &created)) {
+        snprintf(metadata->created, sizeof(metadata->created), "%s", created);
+        g_free(created);
+    }
+
+    /* Popis */
+    char *desc = NULL;
+    if (snapshot_xml_read_string(r, "description", &desc)) {
+        snprintf(metadata->description, sizeof(metadata->description), "%s", desc);
+        g_free(desc);
+    }
+
+    /* Checksum — uložen jako <checksum algorithm="sha256"><value>HASH</value></checksum> */
+    if (snapshot_xml_enter_element(r, "checksum")) {
+        char *cs_value = NULL;
+        if (snapshot_xml_read_string(r, "value", &cs_value)) {
+            snprintf(metadata->checksum, sizeof(metadata->checksum), "%s", cs_value);
+            g_free(cs_value);
+        }
+        snapshot_xml_leave_element(r);
+    }
+
+    snapshot_xml_leave_element(r); /* /mzs_snapshot */
+    snapshot_xml_reader_free(r);
+    g_free(xml);
+
+    return SNAPSHOT_OK;
+}
+
+
+/* ========================================================================= */
+/*                         Textový popis chyby                               */
+/* ========================================================================= */
+
+const char *snapshot_result_to_string(en_SNAPSHOT_RESULT result)
+{
+    switch (result) {
+        case SNAPSHOT_OK:               return "OK";
+        case SNAPSHOT_ERR_IO:           return "I/O error";
+        case SNAPSHOT_ERR_ZIP:          return "ZIP archive error";
+        case SNAPSHOT_ERR_XML_PARSE:    return "XML parse error";
+        case SNAPSHOT_ERR_XML_WRITE:    return "XML write error";
+        case SNAPSHOT_ERR_VERSION:      return "Unsupported snapshot version";
+        case SNAPSHOT_ERR_ARCHITECTURE: return "Incompatible architecture";
+        case SNAPSHOT_ERR_MISSING_FILE: return "Missing file in archive";
+        case SNAPSHOT_ERR_CORRUPTED:    return "Data corrupted (checksum mismatch)";
+        case SNAPSHOT_ERR_COMPONENT:    return "Component save/load error";
+        case SNAPSHOT_ERR_ALLOC:        return "Memory allocation error";
+        case SNAPSHOT_ERR_EXTERNAL_REF: return "Missing external reference";
+        case SNAPSHOT_ERR_NOT_PAUSED:   return "Emulator is not paused";
+        default:                        return "Unknown error";
+    }
+}
+
+
+/* ========================================================================= */
+/*                        Inicializace / ukončení                            */
+/* ========================================================================= */
+
+void snapshot_init(void)
+{
+    g_snapshot_registry_count = 0;
+
+    /* Registrace všech handlerů */
+    snap_z80_register();
+    snap_memory_register();
+    snap_gdg_register();
+    snap_mzarch_register();
+    snap_framebuffer_register();
+    snap_vramctrl_register();
+
+    snap_ctc8253_register();
+    snap_pio8255_register();
+    snap_psg_register();
+
+#if HAVE_PIOZ80
+    snap_pioz80_register();
+#endif
+
+    snap_audio_register();
+
+    snap_cmt_register();
+
+#if CFG_HWEXT_HAVE_FDC
+    snap_fdc_register();
+#endif
+
+#if CFG_HWEXT_HAVE_QDISK
+    snap_qdisk_register();
+#endif
+
+#if CFG_HWEXT_HAVE_RAMDISK
+    snap_ramdisk_register();
+#endif
+
+#if CFG_HWEXT_HAVE_IDE8
+    snap_ide8_register();
+#endif
+
+#if 1 /* MEMEXT */
+    snap_memext_register();
+#endif
+
+    snap_unicard_register();
+
+    snap_hwconfig_register();
+
+    fprintf(stderr, "Snapshot: registered %d component(s)\n", g_snapshot_registry_count);
+}
+
+
+void snapshot_exit(void)
+{
+    g_snapshot_registry_count = 0;
+}
+
+
+/* ========================================================================= */
+/*                        Save / Load                                        */
+/* ========================================================================= */
+
+en_SNAPSHOT_RESULT snapshot_save(const char *filepath, const char *description)
+{
+    /* 1. Ověřit, že je emulátor v pauze */
+    if (!EMULATOR_TEST_PAUSED) return SNAPSHOT_ERR_NOT_PAUSED;
+
+    /* 2. Otevřít ZIP archiv pro zápis do TEMP souboru (atomicita) */
+    char tmp_path[1024];
+    snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", filepath);
+    snapshot_io_t *io = snapshot_io_open_write(tmp_path,
+                                              g_snapshot_settings.compression_level);
+    if (!io) return SNAPSHOT_ERR_IO;
+
+    /* 3. Vytvořit kontext */
+    st_SNAPSHOT_CONTEXT ctx = {
+        .io = io,
+        .format_version = SNAPSHOT_FORMAT_VERSION,
+        .architecture = MZARCH,
+        .saving = true
+    };
+
+    en_SNAPSHOT_RESULT result;
+
+    /* 4. Zavolat save handlery všech registrovaných komponent (seřazeno dle priority) */
+    for (int i = 0; i < g_snapshot_registry_count; i++) {
+        result = g_snapshot_registry[i].save_cb(&ctx);
+        if (result != SNAPSHOT_OK) {
+            SNAP_ERR("save", "error in component '%s': %s",
+                     g_snapshot_registry[i].name,
+                     snapshot_result_to_string(result));
+            snapshot_io_close(io);
+            g_remove(tmp_path);
+            return result;
+        }
+    }
+
+    /* 5. Uložit screenshot framebufferu */
+    result = snapshot_screenshot_save(io);
+    if (result != SNAPSHOT_OK) {
+        SNAP_WARN("save", "failed to save screenshot: %s",
+                  snapshot_result_to_string(result));
+        /* Screenshot je nepovinný — pokračujeme i při chybě */
+    }
+
+    /* 6. Vypočítat SHA-256 checksum ze zapsaných dat */
+    char *checksum = snapshot_io_compute_checksum(io);
+
+    /* 7. Uložit manifest (poslední — obsahuje checksum) */
+    result = snapshot_save_manifest(&ctx, description, checksum);
+    g_free(checksum);
+
+    /* 8. Zavřít archiv */
+    snapshot_io_close(io);
+
+    if (result != SNAPSHOT_OK) {
+        g_remove(tmp_path);
+        return result;
+    }
+
+    /* 9. Atomicky přejmenovat tmp → cílový soubor */
+    g_remove(filepath);  /* Windows vyžaduje smazat cíl před rename */
+    if (g_rename(tmp_path, filepath) != 0) {
+        g_remove(tmp_path);
+        return SNAPSHOT_ERR_IO;
+    }
+
+    fprintf(stderr, "Snapshot: saved to '%s'\n", filepath);
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    /* Vlna 5 Commit 31 - SYS lifecycle event do Event Viewer. */
+    eventlog_sys_event ( EVENTLOG_SYS_SNAPSHOT_SAVE, eventlog_filename_hash ( filepath ) );
+#endif
+    return SNAPSHOT_OK;
+}
+
+
+en_SNAPSHOT_RESULT snapshot_load(const char *filepath)
+{
+    /* 1. Ověřit, že je emulátor v pauze */
+    if (!EMULATOR_TEST_PAUSED) return SNAPSHOT_ERR_NOT_PAUSED;
+
+    /* 2. Otevřít ZIP archiv pro čtení */
+    snapshot_io_t *io = snapshot_io_open_read(filepath);
+    if (!io) return SNAPSHOT_ERR_IO;
+
+    /* 3. Načíst a ověřit manifest */
+    st_SNAPSHOT_METADATA metadata;
+    memset(&metadata, 0, sizeof(metadata));
+    en_SNAPSHOT_RESULT result = snapshot_load_manifest_from_io(io, &metadata);
+    if (result != SNAPSHOT_OK) {
+        snapshot_io_close(io);
+        return result;
+    }
+
+    /* 4. Ověřit kompatibilitu architektury */
+    if (metadata.architecture != MZARCH) {
+        SNAP_ERR("load", "incompatible architecture: snapshot=%d, emulator=%d",
+                 metadata.architecture, MZARCH);
+        snapshot_io_close(io);
+        return SNAPSHOT_ERR_ARCHITECTURE;
+    }
+
+    /* 5. Ověřit SHA-256 checksum */
+    if (metadata.checksum[0] != '\0') {
+        char *computed = snapshot_io_compute_checksum(io);
+        if (computed && g_strcmp0(computed, metadata.checksum) != 0) {
+            SNAP_ERR("load", "checksum mismatch - snapshot was modified or corrupted");
+            g_free(computed);
+            snapshot_io_close(io);
+            return SNAPSHOT_ERR_CORRUPTED;
+        }
+        g_free(computed);
+    }
+
+    /* 6. Vytvořit kontext */
+    st_SNAPSHOT_CONTEXT ctx = {
+        .io = io,
+        .format_version = metadata.format_version,
+        .architecture = metadata.architecture,
+        .saving = false
+    };
+
+    /* 7. Zavolat load handlery všech registrovaných komponent (dle priority) */
+    for (int i = 0; i < g_snapshot_registry_count; i++) {
+        result = g_snapshot_registry[i].load_cb(&ctx);
+        if (result != SNAPSHOT_OK) {
+            if (g_snapshot_registry[i].is_optional) {
+                SNAP_WARN("load", "optional component '%s': %s",
+                          g_snapshot_registry[i].name,
+                          snapshot_result_to_string(result));
+                continue;
+            }
+            SNAP_ERR("load", "error in component '%s': %s",
+                     g_snapshot_registry[i].name,
+                     snapshot_result_to_string(result));
+            snapshot_io_close(io);
+            return result;
+        }
+    }
+
+    /* 8. Zavřít archiv */
+    snapshot_io_close(io);
+
+    fprintf(stderr, "Snapshot: loaded from '%s'\n", filepath);
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    /* Vlna 5 Commit 31 - SYS lifecycle event do Event Viewer. */
+    eventlog_sys_event ( EVENTLOG_SYS_SNAPSHOT_LOAD, eventlog_filename_hash ( filepath ) );
+#endif
+    return SNAPSHOT_OK;
+}
+
+
+en_SNAPSHOT_RESULT snapshot_read_metadata(const char *filepath,
+                                         st_SNAPSHOT_METADATA *metadata)
+{
+    snapshot_io_t *io = snapshot_io_open_read(filepath);
+    if (!io) return SNAPSHOT_ERR_IO;
+
+    memset(metadata, 0, sizeof(*metadata));
+    en_SNAPSHOT_RESULT result = snapshot_load_manifest_from_io(io, metadata);
+
+    snapshot_io_close(io);
+    return result;
+}
+
+
+en_SNAPSHOT_RESULT snapshot_extract_screenshot(const char *filepath,
+                                              uint8_t **png_data,
+                                              size_t *png_size)
+{
+    snapshot_io_t *io = snapshot_io_open_read(filepath);
+    if (!io) return SNAPSHOT_ERR_IO;
+
+    en_SNAPSHOT_RESULT result;
+
+    if (!snapshot_io_entry_exists(io, "screenshot.png")) {
+        snapshot_io_close(io);
+        return SNAPSHOT_ERR_MISSING_FILE;
+    }
+
+    result = snapshot_io_read_bin(io, "screenshot.png", png_data, png_size);
+    snapshot_io_close(io);
+    return result;
+}
+
+
+en_SNAPSHOT_RESULT snapshot_recalculate_checksum(const char *filepath)
+{
+    /* TODO: implementovat v pozdější fázi — vyžaduje otevření, přepočet a
+     * znovuzápis manifestu, což je netriviální s minizip-ng */
+    (void)filepath;
+    SNAP_WARN("recalc", "checksum recompute not yet implemented");
+    return SNAPSHOT_ERR_IO;
+}

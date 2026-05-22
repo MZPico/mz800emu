@@ -1,0 +1,5 @@
+# Test fixture for sym_lbl loader
+# <addr_hex>  <name>  <bank>  ; comment
+D8A2  wboot                     0
+2A00  ccp_main                  9   ; CCP entry, jen v PEHU bank 9
+4042  print_char                0   ; user note about printing

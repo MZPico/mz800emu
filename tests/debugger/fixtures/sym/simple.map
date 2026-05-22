@@ -1,0 +1,16 @@
+ASxxxx Linker V03.00/V05.40 + sdld,  page 1.
+Hexadecimal  [32-Bits]
+
+Area                                    Addr        Size        Decimal Bytes (Attributes)
+--------------------------------        ----        ----        ------- ----- ------------
+.  .ABS.                            00000000    00000000 =           0. bytes (ABS,CON)
+
+      Value  Global                              Global Defined In Module
+      -----  --------------------------------   ------------------------
+     00000000  .__.ABS.                           vectors
+     00000000  l__BSEG
+     0000D8A2  wboot                              bdos
+     0000D9C4  cpm_bdos_shim                      bdos
+     00004042  print_char                         crt0
+
+ASxxxx Linker V03.00/V05.40 + sdld,  page 2.

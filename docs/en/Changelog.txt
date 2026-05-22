@@ -1,0 +1,343 @@
+
+2026-05-21 - Released version 2.0.2 - preview
+
+	- Added main debugger window + IASM + 4 auxiliary disassembled windows, CPU Registers and Memory Map windows, Symbols, Bookmarks, Watch
+
+	- Created a system of "smart" breakpoints + variables and scripting
+
+	- CDL + Memory Heatmap window + CDL export/import
+
+	- Trace suite for offline analytics: CPU track, IORQ Log, Interrupt Log, HW log
+
+	- Stack Monitor, Stack regions analytics, Stack History
+
+	- I/O Ports monitor + tracking history
+
+	- Event log, visualization + analytics and tools
+
+	- Callstack: experimental heuristics
+
+	- CPU profiler
+
+	- Completely rewritten FDC emulation + HW state monitor
+
+	- Completely rewritten QD image emulation + HW state monitor
+
+	- z80ex replaced with our own, faster and more accurate z80-mz800 https://github.com/michalhucik/z80-mz800
+
+	- GDG MZ-800: added some previously undocumented features, see the GDG Documented project https://www.ordoz.com/gdg-documented/
+	The only intentionally unimplemented feature remains the Superimpose bit, which would not bring anything fundamental from an emulation standpoint but would unnecessarily complicate the counting of screens by elapsed pxCLK.
+
+	- Unicard: full integration of the complete FS API for firmware uc1 rev.60 and uc3 v0.26 (the latter still uses the original QD bootstrap)
+
+	- The project is now officially split into three MZ architectures: MZ-800 / MZ-1500 / MZ-700 (PAL, NTSC).
+	The primary architecture remains MZ-800.
+
+	- DSK tools removed: replaced by the standalone MZdisk project https://github.com/michalhucik/mzdisk
+
+	- bugfix: emulator window did not come to the foreground when launched from a console (Windows)
+
+	- bugfix: removed VRAM latch on MZ-1500 (it seems to be implemented only on MZ-800 - unverified)
+
+	- bugfix: loading of the preselected ROM from the configuration file (.ini)
+	  the ROM setting was ignored at startup and the default ROM was always loaded
+
+	- comprehensive refactoring of all internal libraries
+
+	- completely rewritten thread communication via dbgapi, EE implementation + many other minor improvements, bugfixes and new bugs
+
+	- upgrade Dear ImGui 1.91.9 WIP -> 1.92.6-docking
+
+	- by default the program is always set to English localization on launch, as this version is usually the best tested
+
+	- project is moved to Github https://github.com/michalhucik/mz800emu - Source code is no longer updated on SourceForge
+
+
+2026-03-12 - Released version 2.0.1 - preview
+
+	- A young and capable AI assistant has been recruited into the development team :)
+
+	- bugfix: fixed application freeze on exit in Linux
+
+	- Added missing modules from the old version of the emulator:
+
+		- FDC Tools - new FD image
+		- Ramdisk: PEZIK Settings
+		- Memext: Memory Content
+		- Memext: Memory Map Settings
+		- ROM: User Settings
+		- Keyboard: Autotype
+		- JOY: completely new SDL3 interface + UI
+
+	- MZ-800 now experimentally supports adding PSG1 for stereo audio. Port 0xF2 handles
+	  both channels simultaneously (mono). Port 0xF3 PSG0 (left), 0xF9 PSG1 (right).
+
+	- development: automated testing section added for selected modules
+
+
+	i18n Implementation - Localization
+	===================================
+
+	- The emulator now has official localization into several selected languages
+
+	- The language is selected by default according to environment variables.
+	  In Menu Interface → Language, the setting can be changed.
+
+	- Localization was done automatically and for most languages I am not able to verify correctness
+
+
+	--------------------------------------------------------------------------
+	PLEASE: if you find any errors in the localization (text, formatting, etc.),
+	        let me know — we will fix it.
+	--------------------------------------------------------------------------
+
+
+	The emulator is now officially multiplatform for: MZ-800/MZ-1500, with MZ-700 planned.
+	=======================================================================================
+
+	- Each platform is generated from the shared source code as a standalone EXE.
+	  It is recommended to run each platform in its own working directory.
+
+	- It should be noted that for MZ-1500 I have only done a few basic measurements on real HW,
+	  and for most features I rely on verified knowledge gained from MZ-800, so inaccuracies
+	  in the emulation may appear.
+
+
+	Implemented a complete snapshot system for saving and loading the emulator state.
+	=================================================================================
+
+	  A snapshot is a ZIP archive with the .mzs extension containing:
+	  - manifest.xml with metadata (architecture, version, description, SHA-256 checksum)
+	  - XML files with the complete state of all HW components
+	  - binary dumps of memories (RAM, VRAM, framebuffer, optionally MEMEXT/ramdisk)
+	  - PNG screenshot of the current screen state
+
+	  Saving and loading snapshots:
+	  - Menu Snapshot → Save Snapshot Alt + F6 / Load Snapshot Alt + F7 (file dialogs)
+	  - The Load dialog includes a preview: screenshot, architecture, date, description, size
+	  - The emulator is automatically paused during the operation
+
+	  Quick Save Alt + F8 / Quick Load Alt + F9:
+	  - Fast save/load without dialog (from the Snapshot menu)
+	  - Three modes: Basic (single file), Incremental (numbered files),
+	    Rotational (like Incremental with automatic deletion of the oldest)
+	  - Configurable in Snapshot → Snapshot Setup
+
+	  Snapshot Setup dialog:
+	  - Default directory for snapshots
+	  - ZIP archive compression level
+	  - Include ramdisks and memory extension
+	  - Quick Save mode and maximum number of slots
+
+	  Saved HW components (19 handlers):
+	  - CPU Z80 (all registers including alternate sets)
+	  - Memory: RAM, VRAM, EXVRAM/PCG, memory state (mapping)
+	  - Video: GDG registers, timing, sync signals, framebuffer
+	  - VRAM Control: WF/RF registers (MZ-800), latch (MZ-1500)
+	  - Sound: PSG registers (mono and stereo), CTC8253 counters, audio log
+	  - I/O: PIO8255, PIO Z80
+	  - Devices: CMT (file position), FDC (state + DSK reference),
+	    Quick Disk, Ramdisk, IDE8, MEMEXT, Unicard
+	  - Control structures: mzarch state, HW configuration
+
+	  Safety and integrity:
+	  - SHA-256 checksum protects against archive corruption
+	  - Atomic write (temp file + rename) protects existing snapshots
+	  - Architecture compatibility check on load (MZ-700/800/1500)
+	  - After a failed load, the emulator stays paused (protection against inconsistent state)
+
+	  Status: alpha — basic functionality implemented, tested only in automatic mode.
+
+
+2025-04-21 - Released version 2.0.0 - preview
+
+	- The emulator core has been reworked, including minor bug fixes. Significant use of
+	  multithreading introduced. Noticeable overall performance improvement.
+
+	- Initial integration of localization macros has begun. Future versions of the program may 
+	  feature localized GUI. 
+	  Any help with translating the GUI text into other languages is welcome.
+
+	- Added support for variable speed control (until now the emulator only ran in NORMAL and MAX speed modes).
+	  Speed can now be freely increased or decreased by 1%, 10%, or 100%. Once variable 
+	  speed is set, you can freely switch between all three speed modes.
+
+	- Migrated to SDL3. Video and audio interfaces have been completely reworked.
+	  MISSING: low-level joystick support
+
+	- Switched from libsoup to libcurl (version_check module) — improves portability on Windows 
+	  when distributing as a standalone application with libraries in its own directory 
+	  (rather than relying on MSYS2).
+
+	- Migration from GTK3 to ImGui has started.
+	  MISSING:
+				- FDC Tools
+				- Pežik Settings
+				- MemExt - Memory Content and Memory Map Settings
+				- ROM User Settings
+				- Interface - Keyboard Autotype
+				- Interface - JOY Settings
+				- Debugger, Memory Browser, Breakpoints
+
+	- Preview version released, to be gradually completed with missing modules and 
+	  language localizations.
+
+2023-04-28 - Released version 1.0.8
+
+	- Windows - bugfix: upgraded to GTK-3 runtime gtk-3.24.38
+	  Among other things, this fixed an error in the display of the topmenu on systems with multiple monitors.
+	  The module for checking the latest version of the program now uses SSL.
+	  The program can now be compiled in Windows in both 32-bit and 64-bit versions.
+
+	- bugfix: WD279x - command type III read track addr - fixed empty FD
+
+	- bugfix: 4 years ago I accidentally disabled the CMT extension TAP,  no one noticed :(
+
+	- added new topmenu section the Audio, now is posible to setup audio volume for all channels or individualy per channel
+
+	- the default main window rendering scale is now set to Bigger - 150%
+	  In the Display section you can now select the startup window size from one of three predefined sizes - 100%, 150% and 300%.
+
+	- virtual CMT now supports motor control via i8255
+
+	  Engine state may by controlled manualy by the "Pause" toggle button in the CMT control pannel.
+
+	  Play / Record + Pause => motor OFF
+	  Play / Record         => motor ON
+
+	  If the engine is running and the i8255 sends a signal to stop it, the "Pause" switch is activated.
+
+	  CMT saving: after opening a new file is now switched default to mode "Record + Pause".
+
+	- into CMT menu added option for enable/disable MZF filesize check and fix (default is enabled)
+
+
+2022-01-27 - Released version 1.0.7
+
+	- added menu option HW compatibility -> MZ-700 mode - fixed 0xE008
+
+	This is a partial HW bugfix for reading regDMD status at address 0xE008 in MZ-700 mode.
+	The MZ-800 computer has permanent value '0' on bits 1 to 6. This causes a false identification 
+	of the JOY stick on the original MZ-700 games. The option sets these bits to value '1'.
+
+
+2021-10-27 - Released version 1.0.6
+
+
+	- bugfix in HW scroll
+	- added the ability to assemble project via cmake (thanks Ysblokje) - see cmake_README.md
+	- small bugfixes
+	- in top menu added experimental option HW compatibility -> MZ-700 (PAL) VRAM timing
+	  This option allows slow VRAM read/write acces like real MZ-700 hardware.
+
+
+2020-08-09 - Released version 1.0.5
+
+
+	- new function: Auto Type Keyboard
+	- BUGFIX: vkbd keybord mapping
+	- BUGFIX: added 20ms sleep to the main cycle, when emulator is paused
+	- Debugger settings: added options for auto forced full screen refresh
+	  (without dependency on beam position)
+	  May by called manually by CTRL+R from debugger window.
+
+	- several improvements and bugfixes in the memory browser
+	- CMTHACK: added option "Fixing FNAME terminator"
+	- bugfix: in "fast" version of CTC0 on MODE2 (Madonna2 demo did not work)
+	- bugfix: changed initialization of virtual CMT output sig. (ESC key in Turbo Copy now works)
+	- display: added "Lock window aspect ratio" (default off, working only in Windows)
+	- display: Alt+W, Alt + H - fix window aspect ratio by width, or by height
+
+
+2018-09-16 - Released version 1.0.4
+
+
+	In this released emulator version is integrated a huge amount of bugfixes,
+	improvements, features and new bugs, which I gradually collected over the last 
+	two years.
+	Thanks to some improvements was the emulation be significantly accelerated and  
+	this achieved performance was instantly used for the new features, which this 
+	slows down a bit :)
+	Some peripherals have revealed new secrets and all of that has been integrated 
+	into emulation.
+
+	Just in the short:
+	
+	- virtual CMT now supports a multiple file formats (MZF, MZT, TAP, WAV) and allows 
+	  the save into WAV
+
+	- added a virtual keyboard and creation tools for DSK and QD images
+
+	- added a simple simulation of the "Unicard" and IDE8 (supported by NIPOPS cp/m)
+
+	- implemented both types of MemExt (supported by MZIX - Unix)
+
+	- many many improvements in the debugger..., added new memory browser / editor, 
+	  memory dissassembler, etc...
+
+	- better synchronisation in the Linux, some changes about ROMs, and lots of other 
+	  little things in the different places
+
+	- added online check for new versions
+	  Emulator sometimes at the startup checks the my web site and if they discover 
+	  a new version of the emulator, then show the information window - this feature 
+	  can be turned off and version checks can be performed manually.
+
+	If you want to ask about some emulator features or peripherals of the MZ-800, 
+	do not hesitate and ask me on the SourceForge, or by email.
+
+
+2016-03-01
+
+	Released version 1.0.3
+
+	- bugfix: in the Pezik ramdisk
+	- added breakpoints and memory dump viewer
+	- added Quick Disk emulation
+
+	- added an additional Sharp ROM's, possible to switch between:
+
+		Standard MZ-800 ROM
+		JSS v1.08C - for MR-1R18 compatibile ramdisk
+		JSS v1.06A - for the Pezik (0x0e8 - 0x0ef) ramdisk
+		WILLY English
+		WILLY German
+		WILLY Japanese
+
+	- many litle improvements and bugfixes
+
+
+2015-09-23
+
+	Released version 1.0.2
+
+	- trivial bugfix: locale encoded errors and warning messages in console
+        - trivial bugxix: step mode in debugger sometime stepped over multiple lines
+	- a little improved emulation speed
+        - inline assembler bugfix: fixed instructions with relative
+        - inline assembler bug fixed of generating instruction with relative
+        - value (JR %, DJNZ %, etc.)
+
+
+
+2015-09-20
+	
+	Released version 1.0.1
+
+
+	Bugfix:
+		- trivial bugfix in memory allocation
+		- added loging into error.log
+ 		- localized file names and paths are now fully supported
+
+        This is tested only in my Czech localization of Windows 7.
+
+        Does it work in other codepages? For example in the Japanese localization of Windows?
+
+
+
+2015-09-17
+
+	Released version 1.0
+
+

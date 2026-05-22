@@ -1,0 +1,4 @@
+; sjasmplus symbol export
+print_char EQU $4042
+some_const EQU 0x0010
+counter    EQU 100

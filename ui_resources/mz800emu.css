@@ -1,0 +1,64 @@
+
+/* 
+  Here is space for you games :)
+ 
+
+  Some description about structure of this file:
+  https://developer.gnome.org/gtk3/stable/GtkCssProvider.html#GtkCssProvider.description
+  https://developer.gnome.org/gtk3/stable/gtk-migrating-GtkStyleContext-css.html
+  https://developer.gnome.org/gtk3/stable/chap-css-overview.html
+
+*/
+
+
+GtkMenu GtkLabel {                
+        margin-top: 50px;
+        margin-right: 50px;
+        margin-bottom: 50px;
+        margin-left: 50px;
+	padding: 2px;
+}
+
+
+.class_iasm_help_textview {
+	font-family: Arial;
+	font-size: 16px;
+	color: black;
+}
+
+
+.class_membrowser_textview {
+	font-family: Monospace;
+	font-size: 16px;
+	background-color: blue;
+}
+
+.class_membrowser_textview text {
+	background-color: #3465a4;
+	color: #bec7c9
+}
+
+.class_file_chooser_preview_label {
+	font-family: Monospace;
+	font-size: 14px;
+}
+
+* {
+	/* Arial, etc... */
+	/* font-family: Segoe UI, Arial, Helvetica, sans-serif; */
+	font-family: Segoe UI;
+        
+        /* font-style: [normal|oblique|italic]; */
+        font-style: normal;
+        
+        /* font-variant: [normal|small-caps]; */
+        font-variant: normal;
+        
+        /* font-weight: [normal|bold|bolder|lighter|100|200|300|400|500|600|700|800|900]; */
+        font-weight: normal;
+        
+        /* font-size: [absolute-size|relative-size|percentage]; */
+	/* font-size: 11; */
+	/* font-size: small; */
+	/* font-size: large; */
+}

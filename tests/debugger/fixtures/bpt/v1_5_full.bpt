@@ -1,0 +1,126 @@
+{
+  "breakpoints" : [
+    {
+      "id" : 1,
+      "name" : "PC range",
+      "addr" : 16384,
+      "addr_end" : 16639,
+      "addr_match_mode" : "RANGE",
+      "addr_mask" : 65535,
+      "type" : "PC_EXEC",
+      "enabled" : true,
+      "skip_count" : 0,
+      "hit_count" : 0,
+      "expr" : null,
+      "action" : null,
+      "edge_triggered" : false,
+      "zone" : "CPU_VIEW",
+      "bank_id" : 0,
+      "bank_id_end" : 0,
+      "bank_match_mode" : "SINGLE",
+      "bank_id_mask" : 255,
+      "port" : 0,
+      "port_end" : 0,
+      "port_match_mode" : "SINGLE",
+      "port_mask" : 65535,
+      "port_mode" : "8BIT"
+    },
+    {
+      "id" : 2,
+      "name" : "IORQ 16bit",
+      "addr" : 0,
+      "type" : "IORQ_W",
+      "enabled" : true,
+      "skip_count" : 0,
+      "hit_count" : 0,
+      "expr" : null,
+      "action" : null,
+      "edge_triggered" : false,
+      "port" : 65486,
+      "port_end" : 0,
+      "port_match_mode" : "SINGLE",
+      "port_mask" : 65535,
+      "port_mode" : "16BIT"
+    },
+    {
+      "id" : 3,
+      "name" : "IRQ filter",
+      "addr" : 0,
+      "type" : "IRQ",
+      "enabled" : true,
+      "skip_count" : 0,
+      "hit_count" : 0,
+      "expr" : null,
+      "action" : null,
+      "edge_triggered" : false,
+      "im0_enabled" : true,
+      "im1_enabled" : false,
+      "im2_enabled" : true,
+      "im0_rst_mask" : 165,
+      "im2_vector_enabled" : true,
+      "im2_vector_addr" : 65040,
+      "im2_isr_enabled" : true,
+      "im2_isr_addr" : 4660
+    },
+    {
+      "id" : 4,
+      "name" : "IRQ_SIG mask",
+      "addr" : 0,
+      "type" : "IRQ_SIG",
+      "enabled" : true,
+      "skip_count" : 0,
+      "hit_count" : 0,
+      "expr" : null,
+      "action" : null,
+      "edge_triggered" : false,
+      "irq_sig_sources" : ["PIOZ80_A", "CTC2", "FDC"]
+    },
+    {
+      "id" : 5,
+      "name" : "HWE raster",
+      "addr" : 0,
+      "type" : "HW_EVENT",
+      "enabled" : true,
+      "skip_count" : 0,
+      "hit_count" : 0,
+      "expr" : null,
+      "action" : null,
+      "edge_triggered" : false,
+      "event_name" : "raster:192",
+      "event_trigger" : "rising"
+    },
+    {
+      "id" : 6,
+      "name" : "HWE vsync falling",
+      "addr" : 0,
+      "type" : "HW_EVENT",
+      "enabled" : true,
+      "skip_count" : 0,
+      "hit_count" : 0,
+      "expr" : null,
+      "action" : null,
+      "edge_triggered" : false,
+      "event_name" : "vsync",
+      "event_trigger" : "falling"
+    }
+  ],
+  "groups" : [],
+  "vars" : [
+    {
+      "name" : "score",
+      "value" : 100,
+      "comment" : "hra body",
+      "persist_value" : true
+    },
+    {
+      "name" : "lives",
+      "value" : 3,
+      "persist_value" : true
+    },
+    {
+      "name" : "runtime",
+      "comment" : "ephemeral runtime counter",
+      "persist_value" : false
+    }
+  ]
+}

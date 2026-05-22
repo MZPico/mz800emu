@@ -1,0 +1,554 @@
+/**
+ * @file   cputrack.c
+ * @brief  Implementace CPU Tracking Log subsystému trace-suite.
+ *
+ * Viz @ref cputrack.h pro popis formátu eventů a HALT collapse logiky.
+ *
+ * @author Michal Hucik <hucik@ordoz.com>
+ */
+
+#include "main.h"
+
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+
+#include "cputrack.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <glib.h>
+#include <glib/gstdio.h>
+#include <json-glib/json-glib.h>
+
+#include "main.h"
+#include "libs/sdlapp/sdlapp.h"
+#include "libs/sdlapp/sdlapp_options.h"
+#include "libs/cfgfile/cfgmodule.h"
+#include "emulator/cfgmain.h"
+#include "emulator/mzarch/mzarch.h"
+#include "emulator/mzarch/mzarch_config.h"
+#include "emulator/debugger/debugger.h"
+#include "emulator/debugger/trace/tlog_common.h"
+#include "hw-generic/memory/memory.h"
+#include "hw-generic/memory/memext.h"
+
+#if MZARCH == 800
+#include "emulator/mzarch/mz800/gdg/mz800_gdg.h"
+#elif MZARCH == 1500
+#include "emulator/mzarch/mz1500/gdg/mz1500_gdg.h"
+#endif
+
+/* Globální konfigurace + stav */
+st_CPUTRACK_CONFIG g_cputrack_config;
+int g_cputrack_active = 0;
+
+/* Writer + collapse stav (private) */
+static st_TLOG_WRITER s_writer;
+static int s_writer_open = 0;
+
+/* HALT/self-loop collapse state */
+static uint16_t s_prev_pc = 0xFFFF;     /**< PC před poslední vykonanou instr */
+static int s_prev_pc_valid = 0;         /**< Inicializace flagu */
+static uint64_t s_pending_wait_clk = 0; /**< Akumulované T-states v collapse */
+static uint16_t s_collapse_pc = 0;      /**< PC instrukce která se opakuje */
+static uint8_t s_collapse_insn_len = 1; /**< Délka instr (bytes) */
+static uint8_t s_collapse_insn_bytes[ 4 ];
+
+/**
+ * @brief Sestavit jeden 12-byte event záznam a appendovat do writeru.
+ */
+static int emit_event ( uint16_t pc, uint8_t insn_len, const uint8_t *insn_bytes,
+                        uint32_t wait_clk )
+{
+    if ( !s_writer_open ) return -1;
+
+    uint8_t buf[ 12 ];
+    buf[ 0 ] = (uint8_t)( pc & 0xFF );
+    buf[ 1 ] = (uint8_t)( ( pc >> 8 ) & 0xFF );
+    buf[ 2 ] = insn_len;
+    /* insn_bytes - copy first insn_len, zero zbytek do 4 B */
+    buf[ 3 ] = ( insn_len >= 1 ) ? insn_bytes[ 0 ] : 0;
+    buf[ 4 ] = ( insn_len >= 2 ) ? insn_bytes[ 1 ] : 0;
+    buf[ 5 ] = ( insn_len >= 3 ) ? insn_bytes[ 2 ] : 0;
+    buf[ 6 ] = ( insn_len >= 4 ) ? insn_bytes[ 3 ] : 0;
+    buf[ 7 ] = (uint8_t)( wait_clk & 0xFF );
+    buf[ 8 ] = (uint8_t)( ( wait_clk >> 8 ) & 0xFF );
+    buf[ 9 ] = (uint8_t)( ( wait_clk >> 16 ) & 0xFF );
+    buf[ 10 ] = (uint8_t)( ( wait_clk >> 24 ) & 0xFF );
+    buf[ 11 ] = 0;
+
+    return tlog_writer_append ( &s_writer, buf, sizeof ( buf ) );
+}
+
+
+/**
+ * @brief Pomocná - přečíst N bajtů instrukce přes debugger_dasm read cb.
+ *
+ * Vrací reálný počet přečtených bajtů (1-4). Použito pro emit eventu -
+ * potřebujeme přečíst skutečné opcode bajty z pohledu CPU (= aktuální
+ * mapping). debugger_dasm_read_cb to umí.
+ */
+static uint8_t read_insn_bytes ( uint16_t pc, uint8_t out_buf[ 4 ] )
+{
+    /* Délku instrukce zjistíme dasm metodou - máme z80ex_dasm. */
+    char mnemonic[ 64 ];
+    int t_states, t_states2;
+    extern uint8_t debugger_dasm_read_cb ( uint16_t addr, void *user_data );
+    extern unsigned z80ex_dasm ( char *output, unsigned output_size, int eindex,
+                                 int *t_states, int *t_states2,
+                                 uint8_t (*read_cb)( uint16_t addr, void *user_data ),
+                                 uint16_t base_addr, void *user_data );
+    unsigned len = z80ex_dasm ( mnemonic, sizeof ( mnemonic ) - 1, 0,
+                                &t_states, &t_states2,
+                                debugger_dasm_read_cb, pc, NULL );
+    if ( len < 1 ) len = 1;
+    if ( len > 4 ) len = 4;
+    for ( unsigned i = 0; i < len; i++ ) {
+        out_buf[ i ] = debugger_dasm_read_cb ( (uint16_t)( pc + i ), NULL );
+    }
+    for ( unsigned i = len; i < 4; i++ ) out_buf[ i ] = 0;
+    return (uint8_t)len;
+}
+
+
+/**
+ * @brief Add accumulated T-states do pending_wait_clk se saturací na 0xFFFFFFFF.
+ */
+static void accumulate_wait ( uint8_t tstates )
+{
+    if ( s_pending_wait_clk + tstates >= 0xFFFFFFFFu ) {
+        s_pending_wait_clk = 0xFFFFFFFFu;
+    } else {
+        s_pending_wait_clk += tstates;
+    }
+}
+
+
+void cputrack_reset_collapse_state ( void )
+{
+    s_prev_pc = 0xFFFF;
+    s_prev_pc_valid = 0;
+    s_pending_wait_clk = 0;
+    s_collapse_pc = 0;
+    s_collapse_insn_len = 1;
+    memset ( s_collapse_insn_bytes, 0, 4 );
+}
+
+
+void cputrack_on_instruction_complete ( uint16_t pc,
+                                        uint8_t insn_tstates,
+                                        uint32_t wait_extra_tstates )
+{
+    if ( !s_writer_open ) return;
+
+    /* Nový PC po z80_step() - zjistíme z CPU. Caller předal pc = adresu
+     * právě vykonané instrukce (= PC PŘED stepem = instruction_addr).
+     * Aktuální cpu->pc je PC PO stepu (target další instrukce). */
+    uint16_t new_pc = (uint16_t) g_mzarch_main.cpu->pc;
+
+    if ( s_prev_pc_valid && new_pc == pc ) {
+        /* Self-loop / HALT detection: PC nedrobil = stejná instrukce
+         * se znova vykoná. Suppress emit, akumuluj T-states. */
+        if ( s_pending_wait_clk == 0 ) {
+            /* První iterace collapse - zapamatuj insn_bytes. */
+            s_collapse_pc = pc;
+            s_collapse_insn_len = read_insn_bytes ( pc, s_collapse_insn_bytes );
+        }
+        accumulate_wait ( insn_tstates );
+        if ( wait_extra_tstates > 0 ) {
+            uint64_t sum = (uint64_t) s_pending_wait_clk + wait_extra_tstates;
+            s_pending_wait_clk = ( sum > 0xFFFFFFFFu ) ? 0xFFFFFFFFu : (uint32_t) sum;
+        }
+        s_prev_pc = pc;
+        return;
+    }
+
+    /* PC se změnilo (nebo první instr) - flush případný pending collapse. */
+    if ( s_pending_wait_clk > 0 ) {
+        uint32_t w = ( s_pending_wait_clk > 0xFFFFFFFFu ) ?
+                     0xFFFFFFFFu : (uint32_t) s_pending_wait_clk;
+        emit_event ( s_collapse_pc, s_collapse_insn_len, s_collapse_insn_bytes, w );
+        s_pending_wait_clk = 0;
+    }
+
+    /* Emit běžný event pro právě vykonanou instr. */
+    uint8_t insn_bytes[ 4 ];
+    uint8_t insn_len = read_insn_bytes ( pc, insn_bytes );
+    emit_event ( pc, insn_len, insn_bytes, wait_extra_tstates );
+
+    s_prev_pc = pc;
+    s_prev_pc_valid = 1;
+}
+
+
+/* ===========================================================================
+ *  Header / RAM dumps
+ * =========================================================================== */
+
+/**
+ * @brief Zapsat pomocný binární soubor.
+ */
+static int write_bin_file ( const char *dir, const char *basename,
+                            const char *suffix, const void *data, size_t n )
+{
+    char fname[ 256 ];
+    g_snprintf ( fname, sizeof ( fname ), "%s_%s.bin", basename, suffix );
+    char *path = g_build_filename ( dir, fname, NULL );
+
+    FILE *fp = g_fopen ( path, "wb" );
+    if ( !fp ) {
+        fprintf ( stderr, "[trace-suite] cputrack: cannot open '%s' for writing: %s\n",
+                  path, g_strerror ( errno ) );
+        g_free ( path );
+        return -1;
+    }
+    size_t wrote = fwrite ( data, 1, n, fp );
+    int err = ferror ( fp );
+    fclose ( fp );
+    int rc = ( wrote == n && !err ) ? 0 : -1;
+    if ( rc != 0 ) {
+        fprintf ( stderr, "[trace-suite] cputrack: short write to '%s' (%zu/%zu)\n",
+                  path, wrote, n );
+    }
+    g_free ( path );
+    return rc;
+}
+
+
+/**
+ * @brief Zapsat všechny initial memory dumps.
+ */
+static int write_initial_memory_dumps ( const char *dir, const char *basename )
+{
+    int rc = 0;
+    rc |= write_bin_file ( dir, basename, "initial_ram",
+                           g_memory.RAM, MEMORY_SIZE_RAM );
+    rc |= write_bin_file ( dir, basename, "initial_vram",
+                           g_memory.VRAM, MEMORY_SIZE_VRAM );
+#if MZARCH == 800
+    rc |= write_bin_file ( dir, basename, "initial_exvram",
+                           g_memory.EXVRAM, MEMORY_SIZE_VRAM );
+#elif MZARCH == 1500
+    rc |= write_bin_file ( dir, basename, "initial_pcg",
+                           g_memory.PCG, MEMORY_SIZE_PCG );
+#endif
+    if ( MEMEXT_TEST_CONNECTED ) {
+        rc |= write_bin_file ( dir, basename, "initial_memext",
+                               g_memext.RAM, MEMEXT_RAM_SIZE );
+    }
+    /* Ramdisky - TODO: ramdisk dump v navazující fázi (zatím jen RAM). */
+    return rc;
+}
+
+
+/**
+ * @brief Sestavit subsys_header JSON fragment (initial state CPU regs).
+ *
+ * Caller g_free() na vrácený string.
+ */
+static char *build_subsys_header_json ( void )
+{
+    z80_t *cpu = g_mzarch_main.cpu;
+    JsonBuilder *b = json_builder_new ( );
+    json_builder_begin_object ( b );
+
+    json_builder_set_member_name ( b, "start_pxclk" );
+    json_builder_add_int_value ( b, (gint64) tlog_common_get_pxclk_total ( ) );
+
+    json_builder_set_member_name ( b, "start_pxclk_in_screen" );
+    json_builder_add_int_value ( b, (gint64) tlog_common_get_pxclk_in_screen ( ) );
+
+    json_builder_set_member_name ( b, "start_screens" );
+    json_builder_add_int_value ( b, (gint64) tlog_common_get_screens_total ( ) );
+
+    json_builder_set_member_name ( b, "start_cpuclk" );
+    json_builder_add_int_value ( b, (gint64) tlog_common_get_cpuclk_total ( ) );
+
+    json_builder_set_member_name ( b, "initial_regs" );
+    json_builder_begin_object ( b );
+
+#define ADD_REG_INT( name_str, value_expr ) \
+    do { json_builder_set_member_name ( b, name_str ); \
+         json_builder_add_int_value ( b, (gint64) ( value_expr ) ); } while (0)
+
+    ADD_REG_INT ( "AF",     z80_get_reg ( cpu, Z80_REG_AF ) );
+    ADD_REG_INT ( "BC",     z80_get_reg ( cpu, Z80_REG_BC ) );
+    ADD_REG_INT ( "DE",     z80_get_reg ( cpu, Z80_REG_DE ) );
+    ADD_REG_INT ( "HL",     z80_get_reg ( cpu, Z80_REG_HL ) );
+    ADD_REG_INT ( "AF_alt", z80_get_reg ( cpu, Z80_REG_AF2 ) );
+    ADD_REG_INT ( "BC_alt", z80_get_reg ( cpu, Z80_REG_BC2 ) );
+    ADD_REG_INT ( "DE_alt", z80_get_reg ( cpu, Z80_REG_DE2 ) );
+    ADD_REG_INT ( "HL_alt", z80_get_reg ( cpu, Z80_REG_HL2 ) );
+    ADD_REG_INT ( "IX",     z80_get_reg ( cpu, Z80_REG_IX ) );
+    ADD_REG_INT ( "IY",     z80_get_reg ( cpu, Z80_REG_IY ) );
+    ADD_REG_INT ( "SP",     z80_get_reg ( cpu, Z80_REG_SP ) );
+    ADD_REG_INT ( "PC",     z80_get_reg ( cpu, Z80_REG_PC ) );
+    ADD_REG_INT ( "WZ",     z80_get_reg ( cpu, Z80_REG_WZ ) );
+    ADD_REG_INT ( "IR",     z80_get_reg ( cpu, Z80_REG_IR ) );
+    ADD_REG_INT ( "I",      cpu->i );
+    ADD_REG_INT ( "R",      cpu->r );
+    ADD_REG_INT ( "IM",     cpu->im );
+    ADD_REG_INT ( "IFF1",   cpu->iff1 );
+    ADD_REG_INT ( "IFF2",   cpu->iff2 );
+    ADD_REG_INT ( "Q",      cpu->q );
+    ADD_REG_INT ( "halted", (unsigned) cpu->halted );
+
+#undef ADD_REG_INT
+    json_builder_end_object ( b );
+
+    char fname_buf[256];
+    g_snprintf ( fname_buf, sizeof ( fname_buf ),
+                 "%s_initial_ram.bin", g_cputrack_config.name );
+    json_builder_set_member_name ( b, "initial_ram_file" );
+    json_builder_add_string_value ( b, fname_buf );
+
+    g_snprintf ( fname_buf, sizeof ( fname_buf ),
+                 "%s_initial_vram.bin", g_cputrack_config.name );
+    json_builder_set_member_name ( b, "initial_vram_file" );
+    json_builder_add_string_value ( b, fname_buf );
+
+#if MZARCH == 800
+    g_snprintf ( fname_buf, sizeof ( fname_buf ),
+                 "%s_initial_exvram.bin", g_cputrack_config.name );
+    json_builder_set_member_name ( b, "initial_exvram_file" );
+    json_builder_add_string_value ( b, fname_buf );
+#elif MZARCH == 1500
+    g_snprintf ( fname_buf, sizeof ( fname_buf ),
+                 "%s_initial_pcg.bin", g_cputrack_config.name );
+    json_builder_set_member_name ( b, "initial_pcg_file" );
+    json_builder_add_string_value ( b, fname_buf );
+#endif
+
+    json_builder_set_member_name ( b, "initial_memext_file" );
+    if ( MEMEXT_TEST_CONNECTED ) {
+        g_snprintf ( fname_buf, sizeof ( fname_buf ),
+                     "%s_initial_memext.bin", g_cputrack_config.name );
+        json_builder_add_string_value ( b, fname_buf );
+        json_builder_set_member_name ( b, "memext_size" );
+        json_builder_add_int_value ( b, (gint64) MEMEXT_RAM_SIZE );
+    } else {
+        json_builder_add_null_value ( b );
+    }
+
+    json_builder_set_member_name ( b, "event_record_size" );
+    json_builder_add_int_value ( b, 12 );
+
+    json_builder_end_object ( b );
+
+    JsonGenerator *gen = json_generator_new ( );
+    JsonNode *root = json_builder_get_root ( b );
+    json_generator_set_root ( gen, root );
+    json_generator_set_pretty ( gen, TRUE );
+    json_generator_set_indent ( gen, 2 );
+
+    gsize len = 0;
+    gchar *out = json_generator_to_data ( gen, &len );
+
+    g_object_unref ( gen );
+    g_object_unref ( b );
+
+    return out;
+}
+
+
+/* ===========================================================================
+ *  Lifecycle: start / stop / finalize
+ * =========================================================================== */
+
+int cputrack_start ( void )
+{
+    if ( s_writer_open ) return 0;
+    if ( !g_cputrack_config.dir || !g_cputrack_config.dir[0]
+         || !g_cputrack_config.name || !g_cputrack_config.name[0] ) {
+        fprintf ( stderr, "[trace-suite] cputrack: empty dir or name, recording NOT started\n" );
+        return -1;
+    }
+
+    /* Resolve dir relative to work_dir (output operation). */
+    char *resolved_dir = sdlapp_paths_resolve_work ( g_sdlapp->paths,
+                                                     g_cputrack_config.dir );
+
+    uint64_t init_px = tlog_common_get_pxclk_total ( );
+    uint64_t init_cpu = tlog_common_get_cpuclk_total ( );
+    uint32_t init_sc = tlog_common_get_screens_total ( );
+
+    if ( tlog_writer_open ( &s_writer, "cputrack",
+                            resolved_dir, g_cputrack_config.name,
+                            g_cputrack_config.chunk_mb,
+                            g_cputrack_config.max_total_mb,
+                            init_px, init_cpu, init_sc ) != 0 ) {
+        g_free ( resolved_dir );
+        return -1;
+    }
+    s_writer_open = 1;
+    cputrack_reset_collapse_state ( );
+
+    /* Memory dumps + meta.json initial. */
+    write_initial_memory_dumps ( resolved_dir, g_cputrack_config.name );
+    char *hdr = build_subsys_header_json ( );
+    tlog_writer_update_meta ( &s_writer, hdr );
+    g_free ( hdr );
+    g_free ( resolved_dir );
+
+    fprintf ( stderr, "[trace-suite] cputrack: recording started (dir='%s', name='%s')\n",
+              g_cputrack_config.dir, g_cputrack_config.name );
+    return 0;
+}
+
+
+void cputrack_stop ( void )
+{
+    if ( !s_writer_open ) return;
+
+    /* Flush případný pending collapse před close. */
+    if ( s_pending_wait_clk > 0 ) {
+        uint32_t w = ( s_pending_wait_clk > 0xFFFFFFFFu ) ?
+                     0xFFFFFFFFu : (uint32_t) s_pending_wait_clk;
+        emit_event ( s_collapse_pc, s_collapse_insn_len, s_collapse_insn_bytes, w );
+        s_pending_wait_clk = 0;
+    }
+
+    uint64_t now_px = tlog_common_get_pxclk_total ( );
+    uint64_t now_cpu = tlog_common_get_cpuclk_total ( );
+    uint32_t now_sc = tlog_common_get_screens_total ( );
+    tlog_writer_close ( &s_writer, now_px, now_cpu, now_sc );
+
+    /* Refresh meta s subsys_header (final). Pozn.: writer je už closed,
+     * tedy ho znovu nepoužijeme - meta byl flushnut v close. */
+    s_writer_open = 0;
+    fprintf ( stderr, "[trace-suite] cputrack: recording stopped\n" );
+}
+
+
+void cputrack_finalize ( void )
+{
+    if ( g_cputrack_config.save_on_exit && s_writer_open ) {
+        cputrack_stop ( );
+    }
+    g_free ( g_cputrack_config.dir );
+    g_free ( g_cputrack_config.name );
+    g_cputrack_config.dir = NULL;
+    g_cputrack_config.name = NULL;
+}
+
+
+int cputrack_is_truncated ( void )
+{
+    /* Pokud writer není otevřený, recording neexistuje, tedy ani
+     * "truncated" stav nedává smysl. */
+    if ( !s_writer_open ) return 0;
+    return tlog_writer_is_truncated ( &s_writer );
+}
+
+
+/* ===========================================================================
+ *  Mode logic + active recompute
+ * =========================================================================== */
+
+void cputrack_recompute_active ( int debugger_active )
+{
+    int new_active = 0;
+    switch ( g_cputrack_config.mode ) {
+        case TLOG_MODE_OFF:         new_active = 0; break;
+        case TLOG_MODE_WITH_WINDOW: new_active = debugger_active; break;
+        case TLOG_MODE_ALWAYS:      new_active = 1; break;
+    }
+
+    if ( new_active && !g_cputrack_active ) {
+        if ( cputrack_start ( ) == 0 ) {
+            g_cputrack_active = 1;
+        }
+    } else if ( !new_active && g_cputrack_active ) {
+        cputrack_stop ( );
+        g_cputrack_active = 0;
+    }
+}
+
+
+/* ===========================================================================
+ *  Init / config / CLI options
+ * =========================================================================== */
+
+void cputrack_init ( void )
+{
+    memset ( &g_cputrack_config, 0, sizeof ( g_cputrack_config ) );
+    g_cputrack_config.mode = TLOG_MODE_OFF;
+    g_cputrack_config.chunk_mb = TLOG_DEFAULT_CHUNK_MB;
+    g_cputrack_config.max_total_mb = TLOG_DEFAULT_MAX_TOTAL_MB;
+    g_cputrack_config.save_on_exit = 1;
+
+    CFGMOD *cmod = cfgroot_register_new_module ( g_cfgmain, "TRACE_CPUTRACK" );
+    CFGELM *elm;
+
+    elm = cfgmodule_register_new_element ( cmod, "mode", CFGENTYPE_KEYWORD, TLOG_MODE_OFF,
+                                           TLOG_MODE_OFF,         "OFF",
+                                           TLOG_MODE_WITH_WINDOW, "WITH_WINDOW",
+                                           TLOG_MODE_ALWAYS,      "ALWAYS",
+                                           -1 );
+    cfgelement_set_handlers ( elm, (void*) &g_cputrack_config.mode, (void*) &g_cputrack_config.mode );
+
+    elm = cfgmodule_register_new_element ( cmod, "dir", CFGENTYPE_TEXT, "trace-suite" );
+    cfgelement_bind ( elm, (void*) &g_cputrack_config.dir );
+
+    elm = cfgmodule_register_new_element ( cmod, "name", CFGENTYPE_TEXT, "cputrack" );
+    cfgelement_bind ( elm, (void*) &g_cputrack_config.name );
+
+    elm = cfgmodule_register_new_element ( cmod, "chunk_mb", CFGENTYPE_UNSIGNED, TLOG_DEFAULT_CHUNK_MB, 1, 4096 );
+    cfgelement_set_handlers ( elm, (void*) &g_cputrack_config.chunk_mb, (void*) &g_cputrack_config.chunk_mb );
+
+    elm = cfgmodule_register_new_element ( cmod, "max_total_mb", CFGENTYPE_UNSIGNED, TLOG_DEFAULT_MAX_TOTAL_MB, 0, 1048576 );
+    cfgelement_set_handlers ( elm, (void*) &g_cputrack_config.max_total_mb, (void*) &g_cputrack_config.max_total_mb );
+
+    elm = cfgmodule_register_new_element ( cmod, "save_on_exit", CFGENTYPE_BOOL, 1 );
+    cfgelement_set_handlers ( elm, (void*) &g_cputrack_config.save_on_exit, (void*) &g_cputrack_config.save_on_exit );
+
+    /* Načíst hodnoty z .ini (pokud sekce existuje) a propagovat do g_cputrack_config.
+     * Bez tohoto kroku zůstanou pole NULL (zejm. dir/name) i když cfgmodule_register
+     * deklaruje default values - ty se aplikují až přes propagate. CLI override pak
+     * běží nad propagovanými hodnotami v cputrack_apply_cli_options(). */
+    cfgmodule_parse ( cmod );
+    cfgmodule_propagate ( cmod );
+}
+
+
+void cputrack_apply_cli_options ( void )
+{
+    const char *v;
+
+    v = sdlapp_option_value ( "--cputrack-mode" );
+    if ( v ) {
+        if ( g_ascii_strcasecmp ( v, "off" ) == 0 ) g_cputrack_config.mode = TLOG_MODE_OFF;
+        else if ( g_ascii_strcasecmp ( v, "window" ) == 0 ) g_cputrack_config.mode = TLOG_MODE_WITH_WINDOW;
+        else if ( g_ascii_strcasecmp ( v, "always" ) == 0 ) g_cputrack_config.mode = TLOG_MODE_ALWAYS;
+        else fprintf ( stderr, "Invalid --cputrack-mode value: %s (expected off|window|always)\n", v );
+    }
+    v = sdlapp_option_value ( "--cputrack-dir" );
+    if ( v ) {
+        char *new_dir = g_strdup ( v );
+        if ( new_dir ) {
+            g_free ( g_cputrack_config.dir );
+            g_cputrack_config.dir = new_dir;
+        }
+    }
+    v = sdlapp_option_value ( "--cputrack-name" );
+    if ( v ) {
+        char *new_name = g_strdup ( v );
+        if ( new_name ) {
+            g_free ( g_cputrack_config.name );
+            g_cputrack_config.name = new_name;
+        }
+    }
+    v = sdlapp_option_value ( "--cputrack-chunk-mb" );
+    if ( v ) g_cputrack_config.chunk_mb = (unsigned) g_ascii_strtoull ( v, NULL, 10 );
+    v = sdlapp_option_value ( "--cputrack-max-total-mb" );
+    if ( v ) g_cputrack_config.max_total_mb = (unsigned) g_ascii_strtoull ( v, NULL, 10 );
+    v = sdlapp_option_value ( "--cputrack-save-on-exit" );
+    if ( v ) {
+        if ( g_ascii_strcasecmp ( v, "on" ) == 0 ) g_cputrack_config.save_on_exit = 1;
+        else if ( g_ascii_strcasecmp ( v, "off" ) == 0 ) g_cputrack_config.save_on_exit = 0;
+        else fprintf ( stderr, "Invalid --cputrack-save-on-exit value: %s (expected on|off)\n", v );
+    }
+}
+
+#endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */

@@ -1,0 +1,88 @@
+{
+  "configurations": [
+    {
+      "name": "windows-gcc-x64",
+      "includePath": [
+        "${workspaceFolder}/src/**",
+        "${workspaceFolder}/src/emulator/",
+        // SDL2
+        // "C:/msys64/mingw64/include/SDL2",
+        // SDL3
+        // "C:/msys64/usr/local/x86_64-w64-mingw32/include",
+        // NFD - Native File Dialog
+        // "C:/msys64/usr/local/nfd/include/",
+        // GStreamer
+        // "C:/msys64/mingw64/include/gstreamer-1.0",
+        // Libsoup
+        // "C:/msys64/mingw64/include/libsoup-2.4",
+        // "C:/msys64/mingw64/include/glib-2.0",
+        // "C:/msys64/mingw64/lib/glib-2.0/include",
+        // "C:/msys64/mingw64/include/libxml2",
+        // ImgUi
+        "${workspaceFolder}/imgui/",
+        "${workspaceFolder}/imgui/backends/"
+        // GTK3
+        // "C:/msys64/mingw64/include/gtk-3.0",
+        // "C:/msys64/mingw64/include/pango-1.0",
+        // "C:/msys64/mingw64/include/harfbuzz",
+        // "C:/msys64/mingw64/include/cairo",
+        // "C:/msys64/mingw64/include/freetype2",
+        // "C:/msys64/mingw64/include/pixman-1",
+        // "C:/msys64/mingw64/include/gdk-pixbuf-2.0",
+        // "C:/msys64/mingw64/include/libpng16",
+        // "C:/msys64/mingw64/include/webp",
+        // "C:/msys64/mingw64/include/atk-1.0",
+        // "C:/msys64/mingw64/include/fribidi",
+        // "C:/msys64/mingw64/include/glib-2.0",
+        // "C:/msys64/mingw64/lib/glib-2.0/include"
+        // GTK4
+        // "C:/msys64/mingw64/include/gtk-4.0",
+        // "C:/msys64/mingw64/include/pango-1.0",
+        // "C:/msys64/mingw64/include/fribidi",
+        // "C:/msys64/mingw64/include/harfbuzz",
+        // "C:/msys64/mingw64/include/gdk-pixbuf-2.0",
+        // "C:/msys64/mingw64/include/webp",
+        // "C:/msys64/mingw64/include/cairo",
+        // "C:/msys64/mingw64/include/freetype2",
+        // "C:/msys64/mingw64/include/libpng16",
+        // "C:/msys64/mingw64/include/pixman-1",
+        // "C:/msys64/mingw64/include/graphene-1.0",
+        // "C:/msys64/mingw64/lib/graphene-1.0/include",
+        // "C:/msys64/mingw64/include/glib-2.0",
+        // "C:/msys64/mingw64/lib/glib-2.0/include"
+      ],
+      "defines": [
+        //"USE_GSTREAMER",
+        //"USE_GSTREAMER_AUDIO",
+        "USE_SDL_AUDIO",
+        // "USE_SDL2",
+        // "USE_SDL_MUTEXES",
+        // "USE_SDL2_KEYBOARD",
+        // "USE_SDL2_VIDEO",
+        // "USE_SDL2_AUDIO",
+        // "USE_NUKLEAR",
+        "USE_SDL3",
+        "USE_SDL3_VIDEO",
+        "USE_SDL3_AUDIO",
+        "USE_IMGUI",
+        // "USE_NFDIALOG",
+        "USE_GTK3",
+        "USE_GTK3_UI",
+        // "USE_GTK4",
+        //"USE_GTK4_VIDEO",
+        // "WINDOWS",
+        // "WINDOWS_X64",
+        "LINUX",
+        "MZ800EMU"
+      ],
+      "compilerPath": "C:/msys64/mingw64/bin/gcc.exe",
+      "cStandard": "${default}",
+      "cppStandard": "${default}",
+      "intelliSenseMode": "windows-gcc-x64",
+      "compilerArgs": [
+        ""
+      ]
+    }
+  ],
+  "version": 4
+}

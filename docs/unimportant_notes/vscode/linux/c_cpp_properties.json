@@ -1,0 +1,29 @@
+{
+  "configurations": [
+    {
+      "name": "linux-gcc-x64",
+      "includePath": [
+        "${workspaceFolder}/**"
+      ],
+      "defines": [
+        "USE_SDL_AUDIO",
+        "USE_SDL3",
+        "USE_SDL3_VIDEO",
+        "USE_SDL3_AUDIO",
+        "USE_IMGUI",
+        "USE_GTK3",
+        "USE_GTK3_UI",
+        "LINUX",
+        "MZ800EMU"
+      ],
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "${default}",
+      "cppStandard": "${default}",
+      "intelliSenseMode": "linux-gcc-x64",
+      "compilerArgs": [
+        ""
+      ]
+    }
+  ],
+  "version": 4
+}
