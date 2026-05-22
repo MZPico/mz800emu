@@ -1,0 +1,152 @@
+# Konfigurace konců řádků pro multi-platformní vývoj (MSYS2 + Linux)
+#
+# Výchozí pravidlo: všechny textové soubory mají LF v repu i v pracovním
+# stromu na všech platformách. Toto pravidlo přebije lokální nastavení
+# core.autocrlf u jednotlivých vývojářů, takže není potřeba globální
+# git config.
+#
+# Detekce text vs. binary: "text=auto" nechá Gita rozhodnout podle obsahu,
+# ale explicitní pravidla níže mají přednost a jsou spolehlivější.
+
+* text=auto eol=lf
+
+# ----------------------------------------------------------------------
+# Zdrojový kód a textové soubory - LF
+# ----------------------------------------------------------------------
+*.c           text eol=lf
+*.h           text eol=lf
+*.cpp         text eol=lf
+*.hpp         text eol=lf
+*.cc          text eol=lf
+*.cxx         text eol=lf
+*.inc         text eol=lf
+*.s           text eol=lf
+*.S           text eol=lf
+*.asm         text eol=lf
+
+# Skripty
+*.sh          text eol=lf
+*.py          text eol=lf
+*.pl          text eol=lf
+
+# Build system
+Makefile      text eol=lf
+*.mk          text eol=lf
+*.cmake       text eol=lf
+CMakeLists.txt text eol=lf
+Doxyfile      text eol=lf
+
+# Konfigurace, data, dokumentace
+*.md          text eol=lf
+*.txt         text eol=lf
+*.cfg         text eol=lf
+*.json        text eol=lf
+*.xml         text eol=lf
+*.yaml        text eol=lf
+*.yml         text eol=lf
+*.html        text eol=lf
+*.css         text eol=lf
+*.js          text eol=lf
+*.glade       text eol=lf
+
+# Lokalizace (gettext)
+*.po          text eol=lf
+*.pot         text eol=lf
+
+# Windows resource scripty - LF funguje s windres v MSYS2 i s mingw cross-buildem
+*.rc          text eol=lf
+
+# Git meta
+.gitignore       text eol=lf
+.gitattributes   text eol=lf
+.gitkeep         text eol=lf
+
+# ----------------------------------------------------------------------
+# Binární soubory - žádná konverze
+# ----------------------------------------------------------------------
+
+# Obrázky
+*.png         binary
+*.jpg         binary
+*.jpeg        binary
+*.gif         binary
+*.bmp         binary
+*.ico         binary
+*.tga         binary
+*.webp        binary
+
+# SVG je technicky XML/text - držet jako text pro čitelné diffy
+*.svg         text eol=lf
+
+# Fonty
+*.ttf         binary
+*.otf         binary
+*.woff        binary
+*.woff2       binary
+
+# Audio
+*.wav         binary
+*.ogg         binary
+*.mp3         binary
+*.flac        binary
+
+# Archivy
+*.zip         binary
+*.gz         binary
+*.tgz         binary
+*.bz2         binary
+*.xz         binary
+*.tar         binary
+*.7z         binary
+*.rar         binary
+
+# Zkompilované artefakty
+*.o           binary
+*.obj         binary
+*.a           binary
+*.lib         binary
+*.so          binary
+*.so.*        binary
+*.dll         binary
+*.dylib       binary
+*.exe         binary
+*.mo          binary
+
+# ROM a data emulátoru
+*.rom         binary
+*.bin         binary
+*.dat         binary
+*.img         binary
+
+# Formáty pásek/disket Sharp MZ (case-insensitive nelze v .gitattributes -
+# uvádíme variantně, jak se v projektu vyskytují)
+*.mzf         binary
+*.MZF         binary
+*.Mzf         binary
+*.mzt         binary
+*.MZT         binary
+*.m12         binary
+*.M12         binary
+*.mzs         binary
+*.MZS         binary
+*.mzq         binary
+*.MZQ         binary
+*.tap         binary
+*.TAP         binary
+*.dsk         binary
+*.DSK         binary
+
+# Debug/symboly (binární výstupy nástrojů)
+*.map         binary
+*.idx         binary
+*.md5         binary
+
+# Sourcetrail (i kdyby unikly do repa)
+*.srctrlprj   binary
+*.srctrldb    binary
+*.srctrlbm    binary
+
+# Dokumenty
+*.pdf         binary
+*.doc         binary
+*.docx        binary
