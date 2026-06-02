@@ -50,21 +50,10 @@
 #include <stdlib.h>
 #include <glib.h>
 
-// Lokalizace
-#include "i18n.h"
-
-#include "mzarch/mzarch_config.h"
 #include "fs_layer.h"
 #include "cfgmain.h"
 #include "ide8.h"
 #include "baseui/baseui.h"
-#include "baseui/baseui_filechooser.h"
-
-#ifdef MZ800EMU_CFG_UI_ENABLED
-#include "ui-gtk3/ui_ide8.h"
-#else
-#define ui_ide8_update_menu()
-#endif // MZ800EMU_CFG_UI_ENABLED
 
 st_IDE8 g_ide8;
 
@@ -266,8 +255,6 @@ void ide8_init(void)
     };
 
     ide8_reset();
-
-    ui_ide8_update_menu();
 }
 
 void ide8_drive_set_connected(en_IDE8_DRIVE drive_id, en_IDE8_STATE connected)

@@ -15,3 +15,9 @@ mz_add_test(snapshot-mgr
     SOURCES  test_snapshot_mgr.c
     LABELS   "emu;snapshot"
 )
+
+mz_add_test(snapshot-buffer
+    TYPE     EMU
+    SOURCES  test_snapshot_buffer.c
+    LABELS   "emu;snapshot"
+)

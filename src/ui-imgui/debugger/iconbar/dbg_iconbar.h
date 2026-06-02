@@ -6,7 +6,7 @@
  *
  * 1. Řízení emulace: Continue (F5), Pause (Ctrl+F5)
  * 2. Krokování: Step Over (F8), Step Into (F7), Run to Cursor (F4)
- * 3. Další okna: Breakpoints (Alt+B), Memory Browser (Alt+E), Disassembler (Alt+I)
+ * 3. Další okna: Breakpoints (Alt+B), Memory Browser (Alt+E), Disassembler (Alt+Shift+D)
  *
  * ----------------------------- License -------------------------------------
  *

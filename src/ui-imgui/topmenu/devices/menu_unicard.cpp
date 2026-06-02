@@ -267,9 +267,20 @@ void imgui_menu_unicard(void)
 
         ImGui::Separator();
 
-        if (ImGui::MenuItem(_L("Set SD Root Directory..."), NULL, false, !UNICARD_TEST_IS_CONNECTED))
+        /* Změnu SD root adresáře lze provést za běhu i při připojené
+         * Unicard - callback (unicard_ui_select_sd_root_directory_cb)
+         * provede on-the-fly force disconnect + reconnect na nový root.
+         * Dříve byla položka enabled jen v disconnected stavu. */
+        if (ImGui::MenuItem(_L("Set SD Root Directory..."), NULL, false, true))
         {
             unicard_ui_select_sd_root_directory();
+        };
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("%s",
+                _("Change the host directory used as the Unicard SD root.\n"
+                  "If connected, the Unicard is automatically reconnected "
+                  "to the new root."));
         };
 
         /* Manuální reinicializace runtime souborů v {SD}/unicard/.
@@ -313,7 +324,7 @@ void imgui_menu_unicard(void)
             ImGui::SetTooltip("%s",
                 _("Overwrites manager files in '{SD}/unicard/' (mgr.mzf, "
                   "mgr800.mzf, mgr700.mzf, mgr1500.mzf) with the selected "
-                  "version. On MZ-800 prompts for mgr V2.4 vs V2.11b."));
+                  "version.\nOn MZ-800 prompts for mgr V2.4 vs V2.11b."));
         };
 
         ImGui::EndMenu();

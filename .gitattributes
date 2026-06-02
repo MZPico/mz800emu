@@ -47,7 +47,6 @@ Doxyfile      text eol=lf
 *.html        text eol=lf
 *.css         text eol=lf
 *.js          text eol=lf
-*.glade       text eol=lf
 
 # Lokalizace (gettext)
 *.po          text eol=lf

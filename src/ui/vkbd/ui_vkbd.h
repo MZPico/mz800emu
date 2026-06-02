@@ -7,7 +7,16 @@
 #include "emulator/hw-generic/pio8255/pio8255.h"
 
 
+/* Bázová cesta k obrázkům kláves virtuální klávesnice - per MZARCH.
+ * MZ-700 a MZ-1500 mají odlišnou klávesnici (bez TAB, delší ALPHA), proto
+ * vlastní sadu obrázků. Viz vk_row2_def / vk_row4_def níže. */
+#if MZARCH == 700
+#define VKBD_IMAGE_BASE_PATH "ui_resources/mz700-vkbd/"
+#elif MZARCH == 1500
+#define VKBD_IMAGE_BASE_PATH "ui_resources/mz1500-vkbd/"
+#else
 #define VKBD_IMAGE_BASE_PATH "ui_resources/mz800-vkbd/"
+#endif
 
 typedef struct st_VKBD_KEYDEF
 {
@@ -67,6 +76,16 @@ typedef enum en_VKBD_ACT_CALLER
 extern "C"
 {
 #endif
+
+/**
+ * @brief Vrátí hint s PC ekvivalentem pro "neintuitivně" mapované Sharp
+ *        klávesy (viz docs/{cz,en}/README.md, sekce mapování klávesnice).
+ *
+ * @param scancode  SDL scancode klávesy (st_VKBD_KEYDEF.scancode).
+ * @return  Anglický řetězec značený N_() (caller přeloží přes _()), nebo
+ *          NULL pokud klávesa hint nemá (je na PC na intuitivním místě).
+ */
+const char *ui_vkbd_pc_hint(SDL_Scancode scancode);
 
 #ifdef __cplusplus
 }

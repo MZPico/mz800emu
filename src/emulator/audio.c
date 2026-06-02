@@ -34,19 +34,12 @@
 // Lokalizace
 #include "i18n.h"
 
-#include "mzarch/mzarch_config.h"
 #include "audio.h"
 #include "hw-generic/psg/psg.h"
 
 #include "cfgmain.h"
 #include "emulator.h"
 #include "iface/iface_audio.h"
-
-#ifdef MZ800EMU_CFG_UI_ENABLED
-#include "ui-gtk3/ui_audio.h"
-#else
-#define ui_audio_init()
-#endif
 
 st_AUDIO g_audio;
 
@@ -226,8 +219,6 @@ void audio_init(void)
     g_audio.ctc0_output = 0;
 
     audio_print_volume_info();
-
-    ui_audio_init();
 }
 
 void audio_reset_log(uint64_t new_timestamp)

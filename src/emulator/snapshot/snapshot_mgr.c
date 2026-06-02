@@ -327,6 +327,62 @@ void snapshot_exit(void)
 /*                        Save / Load                                        */
 /* ========================================================================= */
 
+/**
+ * Společná save logika - zápis všech komponent + screenshot + manifest
+ *
+ * Pracuje výhradně přes opaque @ref snapshot_io_t handle, takže nezávisí
+ * na tom, zda je backed file nebo paměťovým bufferem. Volající (file
+ * varianta nebo buffer varianta) si handle otevře a po návratu zavře sám.
+ *
+ * @param io Otevřený writer handle
+ * @param description Popis snapshotu (může být NULL)
+ * @return SNAPSHOT_OK při úspěchu
+ *
+ * @pre Emulátor musí být v pauze (kontroluje volající).
+ * @pre @p io musí být platný writer handle.
+ */
+static en_SNAPSHOT_RESULT snapshot_save_through_io(snapshot_io_t *io,
+                                                   const char *description)
+{
+    st_SNAPSHOT_CONTEXT ctx = {
+        .io = io,
+        .format_version = SNAPSHOT_FORMAT_VERSION,
+        .architecture = MZARCH,
+        .saving = true
+    };
+
+    en_SNAPSHOT_RESULT result;
+
+    /* 1. Zavolat save handlery všech registrovaných komponent (priorita) */
+    for (int i = 0; i < g_snapshot_registry_count; i++) {
+        result = g_snapshot_registry[i].save_cb(&ctx);
+        if (result != SNAPSHOT_OK) {
+            SNAP_ERR("save", "error in component '%s': %s",
+                     g_snapshot_registry[i].name,
+                     snapshot_result_to_string(result));
+            return result;
+        }
+    }
+
+    /* 2. Uložit screenshot framebufferu (nepovinné) */
+    result = snapshot_screenshot_save(io);
+    if (result != SNAPSHOT_OK) {
+        SNAP_WARN("save", "failed to save screenshot: %s",
+                  snapshot_result_to_string(result));
+        /* pokračujeme i při chybě */
+    }
+
+    /* 3. Vypočítat SHA-256 checksum ze zapsaných dat */
+    char *checksum = snapshot_io_compute_checksum(io);
+
+    /* 4. Uložit manifest (poslední, obsahuje checksum) */
+    result = snapshot_save_manifest(&ctx, description, checksum);
+    g_free(checksum);
+
+    return result;
+}
+
+
 en_SNAPSHOT_RESULT snapshot_save(const char *filepath, const char *description)
 {
     /* 1. Ověřit, že je emulátor v pauze */
@@ -339,45 +395,10 @@ en_SNAPSHOT_RESULT snapshot_save(const char *filepath, const char *description)
                                               g_snapshot_settings.compression_level);
     if (!io) return SNAPSHOT_ERR_IO;
 
-    /* 3. Vytvořit kontext */
-    st_SNAPSHOT_CONTEXT ctx = {
-        .io = io,
-        .format_version = SNAPSHOT_FORMAT_VERSION,
-        .architecture = MZARCH,
-        .saving = true
-    };
+    /* 3. Společná save logika */
+    en_SNAPSHOT_RESULT result = snapshot_save_through_io(io, description);
 
-    en_SNAPSHOT_RESULT result;
-
-    /* 4. Zavolat save handlery všech registrovaných komponent (seřazeno dle priority) */
-    for (int i = 0; i < g_snapshot_registry_count; i++) {
-        result = g_snapshot_registry[i].save_cb(&ctx);
-        if (result != SNAPSHOT_OK) {
-            SNAP_ERR("save", "error in component '%s': %s",
-                     g_snapshot_registry[i].name,
-                     snapshot_result_to_string(result));
-            snapshot_io_close(io);
-            g_remove(tmp_path);
-            return result;
-        }
-    }
-
-    /* 5. Uložit screenshot framebufferu */
-    result = snapshot_screenshot_save(io);
-    if (result != SNAPSHOT_OK) {
-        SNAP_WARN("save", "failed to save screenshot: %s",
-                  snapshot_result_to_string(result));
-        /* Screenshot je nepovinný — pokračujeme i při chybě */
-    }
-
-    /* 6. Vypočítat SHA-256 checksum ze zapsaných dat */
-    char *checksum = snapshot_io_compute_checksum(io);
-
-    /* 7. Uložit manifest (poslední — obsahuje checksum) */
-    result = snapshot_save_manifest(&ctx, description, checksum);
-    g_free(checksum);
-
-    /* 8. Zavřít archiv */
+    /* 4. Zavřít archiv */
     snapshot_io_close(io);
 
     if (result != SNAPSHOT_OK) {
@@ -385,7 +406,7 @@ en_SNAPSHOT_RESULT snapshot_save(const char *filepath, const char *description)
         return result;
     }
 
-    /* 9. Atomicky přejmenovat tmp → cílový soubor */
+    /* 5. Atomicky přejmenovat tmp → cílový soubor */
     g_remove(filepath);  /* Windows vyžaduje smazat cíl před rename */
     if (g_rename(tmp_path, filepath) != 0) {
         g_remove(tmp_path);
@@ -401,45 +422,83 @@ en_SNAPSHOT_RESULT snapshot_save(const char *filepath, const char *description)
 }
 
 
-en_SNAPSHOT_RESULT snapshot_load(const char *filepath)
+en_SNAPSHOT_RESULT snapshot_save_to_buffer(const char *description,
+                                           uint8_t **out_data,
+                                           size_t *out_size)
 {
+    if (out_data) *out_data = NULL;
+    if (out_size) *out_size = 0;
+
+    if (!out_data || !out_size) return SNAPSHOT_ERR_IO;
+
     /* 1. Ověřit, že je emulátor v pauze */
     if (!EMULATOR_TEST_PAUSED) return SNAPSHOT_ERR_NOT_PAUSED;
 
-    /* 2. Otevřít ZIP archiv pro čtení */
-    snapshot_io_t *io = snapshot_io_open_read(filepath);
+    /* 2. Otevřít ZIP archiv pro zápis do paměti */
+    snapshot_io_t *io = snapshot_io_open_write_buffer(
+            g_snapshot_settings.compression_level);
     if (!io) return SNAPSHOT_ERR_IO;
 
-    /* 3. Načíst a ověřit manifest */
-    st_SNAPSHOT_METADATA metadata;
-    memset(&metadata, 0, sizeof(metadata));
-    en_SNAPSHOT_RESULT result = snapshot_load_manifest_from_io(io, &metadata);
+    /* 3. Společná save logika */
+    en_SNAPSHOT_RESULT result = snapshot_save_through_io(io, description);
     if (result != SNAPSHOT_OK) {
         snapshot_io_close(io);
         return result;
     }
 
-    /* 4. Ověřit kompatibilitu architektury */
+    /* 4. Extrakce hotových dat (close + alokace + memcpy) */
+    result = snapshot_io_close_to_buffer(io, out_data, out_size);
+    if (result != SNAPSHOT_OK) return result;
+
+    fprintf(stderr, "Snapshot: saved to buffer (%zu B)\n", *out_size);
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    /* SYS lifecycle event - bez filepath, použijeme nulový hash */
+    eventlog_sys_event(EVENTLOG_SYS_SNAPSHOT_SAVE, 0);
+#endif
+    return SNAPSHOT_OK;
+}
+
+
+/**
+ * Společná load logika - manifest + checksum + komponenty
+ *
+ * Pracuje výhradně přes opaque @ref snapshot_io_t handle. Volající
+ * (file varianta nebo buffer varianta) si handle otevře a po návratu
+ * zavře sám.
+ *
+ * @param io Otevřený reader handle
+ * @return SNAPSHOT_OK při úspěchu
+ *
+ * @pre Emulátor musí být v pauze (kontroluje volající).
+ * @pre @p io musí být platný reader handle.
+ */
+static en_SNAPSHOT_RESULT snapshot_load_through_io(snapshot_io_t *io)
+{
+    /* 1. Načíst a ověřit manifest */
+    st_SNAPSHOT_METADATA metadata;
+    memset(&metadata, 0, sizeof(metadata));
+    en_SNAPSHOT_RESULT result = snapshot_load_manifest_from_io(io, &metadata);
+    if (result != SNAPSHOT_OK) return result;
+
+    /* 2. Ověřit kompatibilitu architektury */
     if (metadata.architecture != MZARCH) {
         SNAP_ERR("load", "incompatible architecture: snapshot=%d, emulator=%d",
                  metadata.architecture, MZARCH);
-        snapshot_io_close(io);
         return SNAPSHOT_ERR_ARCHITECTURE;
     }
 
-    /* 5. Ověřit SHA-256 checksum */
+    /* 3. Ověřit SHA-256 checksum */
     if (metadata.checksum[0] != '\0') {
         char *computed = snapshot_io_compute_checksum(io);
         if (computed && g_strcmp0(computed, metadata.checksum) != 0) {
             SNAP_ERR("load", "checksum mismatch - snapshot was modified or corrupted");
             g_free(computed);
-            snapshot_io_close(io);
             return SNAPSHOT_ERR_CORRUPTED;
         }
         g_free(computed);
     }
 
-    /* 6. Vytvořit kontext */
+    /* 4. Vytvořit kontext */
     st_SNAPSHOT_CONTEXT ctx = {
         .io = io,
         .format_version = metadata.format_version,
@@ -447,7 +506,7 @@ en_SNAPSHOT_RESULT snapshot_load(const char *filepath)
         .saving = false
     };
 
-    /* 7. Zavolat load handlery všech registrovaných komponent (dle priority) */
+    /* 5. Zavolat load handlery všech registrovaných komponent (priorita) */
     for (int i = 0; i < g_snapshot_registry_count; i++) {
         result = g_snapshot_registry[i].load_cb(&ctx);
         if (result != SNAPSHOT_OK) {
@@ -460,20 +519,64 @@ en_SNAPSHOT_RESULT snapshot_load(const char *filepath)
             SNAP_ERR("load", "error in component '%s': %s",
                      g_snapshot_registry[i].name,
                      snapshot_result_to_string(result));
-            snapshot_io_close(io);
             return result;
         }
     }
 
-    /* 8. Zavřít archiv */
+    return SNAPSHOT_OK;
+}
+
+
+en_SNAPSHOT_RESULT snapshot_load(const char *filepath)
+{
+    /* 1. Ověřit, že je emulátor v pauze */
+    if (!EMULATOR_TEST_PAUSED) return SNAPSHOT_ERR_NOT_PAUSED;
+
+    /* 2. Otevřít ZIP archiv pro čtení */
+    snapshot_io_t *io = snapshot_io_open_read(filepath);
+    if (!io) return SNAPSHOT_ERR_IO;
+
+    /* 3. Společná load logika */
+    en_SNAPSHOT_RESULT result = snapshot_load_through_io(io);
+
+    /* 4. Zavřít archiv */
     snapshot_io_close(io);
 
-    fprintf(stderr, "Snapshot: loaded from '%s'\n", filepath);
+    if (result == SNAPSHOT_OK) {
+        fprintf(stderr, "Snapshot: loaded from '%s'\n", filepath);
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-    /* Vlna 5 Commit 31 - SYS lifecycle event do Event Viewer. */
-    eventlog_sys_event ( EVENTLOG_SYS_SNAPSHOT_LOAD, eventlog_filename_hash ( filepath ) );
+        /* Vlna 5 Commit 31 - SYS lifecycle event do Event Viewer. */
+        eventlog_sys_event ( EVENTLOG_SYS_SNAPSHOT_LOAD, eventlog_filename_hash ( filepath ) );
 #endif
-    return SNAPSHOT_OK;
+    }
+    return result;
+}
+
+
+en_SNAPSHOT_RESULT snapshot_load_from_buffer(const uint8_t *data, size_t size)
+{
+    if (!data || size == 0) return SNAPSHOT_ERR_IO;
+
+    /* 1. Ověřit, že je emulátor v pauze */
+    if (!EMULATOR_TEST_PAUSED) return SNAPSHOT_ERR_NOT_PAUSED;
+
+    /* 2. Otevřít ZIP archiv pro čtení z paměti */
+    snapshot_io_t *io = snapshot_io_open_read_buffer(data, size);
+    if (!io) return SNAPSHOT_ERR_ZIP;
+
+    /* 3. Společná load logika */
+    en_SNAPSHOT_RESULT result = snapshot_load_through_io(io);
+
+    /* 4. Zavřít archiv */
+    snapshot_io_close(io);
+
+    if (result == SNAPSHOT_OK) {
+        fprintf(stderr, "Snapshot: loaded from buffer (%zu B)\n", size);
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+        eventlog_sys_event(EVENTLOG_SYS_SNAPSHOT_LOAD, 0);
+#endif
+    }
+    return result;
 }
 
 

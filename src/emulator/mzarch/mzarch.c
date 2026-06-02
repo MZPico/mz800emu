@@ -23,6 +23,7 @@
 #include "hw-generic/cmt/cmt.h"
 #include "hw-generic/cmt/cmthack.h"
 #include "hw-generic/pioz80/pioz80.h"
+#include "hw-generic/centronics/centronics.h"
 #include "hw-generic/joy/joymz-1x03.h"
 #include "audio.h"
 
@@ -47,16 +48,13 @@
 #include "debugger/trace/intlog.h"
 #include "debugger/trace/eventlog.h"
 #include "debugger/callstack.h"
+#include "debugger/freeze/freeze.h"
 #include "mzarch/interrupt.h"
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+#include <json-glib/json-glib.h>
+#include "mcp/event_bus.h"
 #endif
-
-#ifdef MZ800EMU_CFG_UI_ENABLED
-#include "ui-gtk3/ui_main.h"
-#else
-#define ui_main_iteration()
-#define ui_main_update_emulation_state(a)
-#define ui_main_update_rear_dip_switch_mz800_mode(a)
-#endif /* MZ800EMU_CFG_UI_ENABLED */
+#endif
 
 // TODO: tohle volame v mz800_main_do_emulator_paused()
 #define iface_sdl_update_window_in_beam_interval(a, b)
@@ -128,8 +126,6 @@ static inline void mzarch_main_event_callback_20ms(unsigned event_ticks)
      */
     debugger_animation();
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */
-
-    ui_main_iteration();
 }
 
 /**
@@ -167,6 +163,12 @@ static inline void mz800_main_event_callback_screen_done(void)
             dbgapi_emu_complete(rq);
         };
     };
+
+    /* V1 Freeze Bytes - per-frame apply všech zafrozených bajtů (cheat
+     * engine semantika). Hot path discipline: pokud žádný entry, vrátí
+     * okamžitě (1 atomic byte load + branch). Default OFF stav = ~zero
+     * impact. Viz src/emulator/debugger/freeze/freeze.h. */
+    freeze_apply_all ( );
 #endif
 }
 
@@ -779,6 +781,24 @@ static inline void mzzarch_main_do_emulator_paused(void)
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 
     debugger_update_all();
+
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+    /* Mutant mcp-server V1.A.5: step_done event emit. Pokud entry do
+     * paused stavu pochází z dokončeného STEP_INTO / STEP_OVER /
+     * STEP_N kroku (= TEST_DEBUGGER_STEP_CALL je 1 dokud ho dolejší
+     * debugger_step_call(0) nesmaže), emit "step_done" do MCP
+     * subscriberů PŘED resetem flagu. Guarded subscriberem - bez
+     * subscriberů žádný payload se nealokuje. */
+    if ( g_debugger.step_call && event_bus_has_subscriber ( "step_done" ) ) {
+        JsonObject *payload = json_object_new ( );
+        json_object_set_int_member ( payload, "pc",
+            (gint64) ( g_mzarch_main.cpu ? g_mzarch_main.cpu->pc : 0 ) );
+        json_object_set_int_member ( payload, "cycles",
+            (gint64) ( g_mzarch_main.cpu ? g_mzarch_main.cpu->total_cycles : 0 ) );
+        event_bus_emit ( "step_done", payload );
+    }
+#endif
+
     debugger_step_call(0);
 
     framebuffer_border_changed();
@@ -803,7 +823,6 @@ static inline void mzzarch_main_do_emulator_paused(void)
         {
             emulator_quit(EXIT_SUCCESS);
         };
-        ui_main_iteration();
 
         /* dbgapi CMDRQ drain v paused stavu. Bez tohoto by UI Step/Run/
          * Reset přes dbgapi_ui_submit_cmd_sync zatuhly (= EMU vlákno by
@@ -871,8 +890,6 @@ static inline void mzzarch_main_do_emulator_paused(void)
         {
             emulator_quit(EXIT_SUCCESS);
         };
-
-        ui_main_iteration();
 
         if (iface_video_get_redraw_full_screen_request())
         {
@@ -948,6 +965,7 @@ static void mzarch_main_reset(void)
 #endif
 #if HAVE_PIOZ80
     pioz80_reset();
+    centronics_reset(); // resync STROBE baseline; capture soubor zůstává
 #endif
     cmthack_reset();
 
@@ -1197,7 +1215,6 @@ void mzarch_rear_dip_switch_mz700_compat(unsigned value)
         return;
 
     g_mzarch_main.switch700 = value;
-    ui_main_update_rear_dip_switch_mz800_mode(g_mzarch_main.switch700);
 #else
     /* MZ-700 nativní: žádný DIP přepínač MZ-700-mode, no-op */
     (void)value;
@@ -1213,7 +1230,6 @@ void mzarch_run_to_temporary_breakpoint(void)
 {
     g_emulator.paused = false;
     iface_audio_pause_emulation(0);
-    ui_main_update_emulation_state(EMULATOR_TEST_PAUSED);
 
     // zkusime to bez spinner window
     g_debugger.run_to_temporary_breakpoint = 1;

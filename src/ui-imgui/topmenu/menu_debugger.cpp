@@ -118,6 +118,35 @@ void imgui_menu_debugger(en_DBG_MENU_CALLER caller)
             {
                 g_debugger.wp_watch = wp_w ? 0 : 1;
             };
+            /* membrowser mutant V0: Memory Browser workplace slot. */
+            bool wp_mb = (g_debugger.wp_membrowser != 0);
+            if (ImGui::MenuItem(_L("Memory Browser"), NULL, wp_mb))
+            {
+                g_debugger.wp_membrowser = wp_mb ? 0 : 1;
+            };
+            /* V3 multi-view: workplace sloty pro sekundarni Memory Browser
+             * okna #2..#5. Kazde tlacitko per-instance unikatni label
+             * (ImGui ID derived from label). */
+            bool wp_mb2 = (g_debugger.wp_membrowser_extra[0] != 0);
+            if (ImGui::MenuItem(_L("Memory Browser #2"), NULL, wp_mb2))
+            {
+                g_debugger.wp_membrowser_extra[0] = wp_mb2 ? 0 : 1;
+            };
+            bool wp_mb3 = (g_debugger.wp_membrowser_extra[1] != 0);
+            if (ImGui::MenuItem(_L("Memory Browser #3"), NULL, wp_mb3))
+            {
+                g_debugger.wp_membrowser_extra[1] = wp_mb3 ? 0 : 1;
+            };
+            bool wp_mb4 = (g_debugger.wp_membrowser_extra[2] != 0);
+            if (ImGui::MenuItem(_L("Memory Browser #4"), NULL, wp_mb4))
+            {
+                g_debugger.wp_membrowser_extra[2] = wp_mb4 ? 0 : 1;
+            };
+            bool wp_mb5 = (g_debugger.wp_membrowser_extra[3] != 0);
+            if (ImGui::MenuItem(_L("Memory Browser #5"), NULL, wp_mb5))
+            {
+                g_debugger.wp_membrowser_extra[3] = wp_mb5 ? 0 : 1;
+            };
             bool wp_p = (g_debugger.wp_profiler != 0);
             if (ImGui::MenuItem(_L("CPU Profiler"), NULL, wp_p))
             {
@@ -164,10 +193,59 @@ void imgui_menu_debugger(en_DBG_MENU_CALLER caller)
             {
                 g_debugger.wp_disasm_extra[3] = wp_d5 ? 0 : 1;
             };
+
+            ImGui::Separator();
+
+            /* Per-chip-panels F1 scaffold: workplace toggles pro per-chip
+             * detail okna. Opt-in, default 0. */
+            bool wp_ctc = (g_debugger.wp_show_ctc != 0);
+            if (ImGui::MenuItem(_L("CTC State"), NULL, wp_ctc))
+            {
+                g_debugger.wp_show_ctc = wp_ctc ? 0 : 1;
+            };
+            bool wp_ppi = (g_debugger.wp_show_ppi != 0);
+            if (ImGui::MenuItem(_L("PPI State"), NULL, wp_ppi))
+            {
+                g_debugger.wp_show_ppi = wp_ppi ? 0 : 1;
+            };
+#if HAVE_PIOZ80
+            /* Z80 PIO je jen na MZ-800 / MZ-1500. MZ-700 (HAVE_PIOZ80=0)
+             * čip nemá → workplace slot vypnut. */
+            bool wp_pioz = (g_debugger.wp_show_pioz80 != 0);
+            if (ImGui::MenuItem(_L("Z80 PIO State"), NULL, wp_pioz))
+            {
+                g_debugger.wp_show_pioz80 = wp_pioz ? 0 : 1;
+            };
+#endif
+#if HAVE_PSG >= 1
+            /* PSG SN76489 je jen na MZ-800 (mono) / MZ-1500 (stereo).
+             * MZ-700 (HAVE_PSG=0) čip nemá → workplace slot vypnut. */
+            bool wp_psg = (g_debugger.wp_show_psg != 0);
+            if (ImGui::MenuItem(_L("PSG State"), NULL, wp_psg))
+            {
+                g_debugger.wp_show_psg = wp_psg ? 0 : 1;
+            };
+            /* psg-audio-scope mutant F1: workplace slot pro PSG Audio
+             * Scope (samostatný panel od PSG State, opt-in default 0). */
+            bool wp_psg_audio_scope = (g_debugger.wp_show_psg_audio_scope != 0);
+            if (ImGui::MenuItem(_L("PSG Audio Scope"), NULL, wp_psg_audio_scope))
+            {
+                g_debugger.wp_show_psg_audio_scope = wp_psg_audio_scope ? 0 : 1;
+            };
+#endif
+            /* gdg-panel F1 scaffold: GDG je ve všech 3 archech, žádný guard. */
+            bool wp_gdg = (g_debugger.wp_show_gdg != 0);
+            if (ImGui::MenuItem(_L("GDG State"), NULL, wp_gdg))
+            {
+                g_debugger.wp_show_gdg = wp_gdg ? 0 : 1;
+            };
+
             ImGui::EndMenu();
         };
 
         ImGui::Separator();
+
+        /* ===== CPU & execution ===== */
 
         /*
          * CPU Registers (Variant B) - samostatné plovoucí okno s registr fileom,
@@ -234,14 +312,11 @@ void imgui_menu_debugger(en_DBG_MENU_CALLER caller)
         {
             g_gui->showProfilerWindow = !g_gui->showProfilerWindow;
         };
-        /*
-         * Bookmarks panel - pojmenované adresové záložky (uživatelské).
-         * Klik / RMB v Bookmarks okně otevírá Disassembly na danou adresu.
-         */
-        if (ImGui::MenuItem(_L("Bookmarks"), NULL, g_gui->showBookmarksWindow))
-        {
-            g_gui->showBookmarksWindow = !g_gui->showBookmarksWindow;
-        };
+
+        ImGui::Separator();
+
+        /* ===== Control flow ===== */
+
         /*
          * Okno breakpointů — toggle přes g_gui->showBreakpointsWindow.
          * Zkratka Alt+B je obsloužena v global_shortcuts.cpp.
@@ -268,42 +343,109 @@ void imgui_menu_debugger(en_DBG_MENU_CALLER caller)
         {
             g_gui->showWatchWindow = !g_gui->showWatchWindow;
         };
-        /*
-         * I/O Ports viewer (V1.5.D rework) - bit-by-bit struct view + History
-         * + activity tracking. Zkratka Alt+I obsloužena v global_shortcuts.cpp.
-         */
-        if (ImGui::MenuItem(_L("I/O Ports"), "Alt+I", g_gui->showIoWindow))
-        {
-            g_gui->showIoWindow = !g_gui->showIoWindow;
-        };
+
+        ImGui::Separator();
+
+        /* ===== Memory ===== */
+
         /*
          * Memory Map - banking + memext debug okno (per 4 kB stránku).
-         * Toggle přes g_gui->showMemoryMapWindow. Bez globální zkratky V0.
+         * Toggle přes g_gui->showMemoryMapWindow. Bez globální zkratky
+         * (Alt+Shift+M je obsazený pro switch CUSTOM speed).
          */
         if (ImGui::MenuItem(_L("Memory Map"), NULL, g_gui->showMemoryMapWindow))
         {
             g_gui->showMemoryMapWindow = !g_gui->showMemoryMapWindow;
         };
         /*
-         * Events - real-time pohled na eventlog ring (Vlna 1 = Log tab,
-         * Vlna 2 = Strip tab). V módu WHEN_WINDOW_OPEN otevírá ring
-         * recording, zavírá ho zase při zavření okna.
-         * Toggle přes g_gui->showEventViewerWindow. Bez globální zkratky.
+         * Memory Browser (V0 hex MVP - membrowser mutant) - hex view paměti
+         * přes dbgapi_regions plnou paletu regionů + 8 encodings.
+         * Toggle přes g_gui->showMemoryBrowserWindow + globální zkratka Alt+E.
          */
-        if (ImGui::MenuItem(_L("Events"), NULL, g_gui->showEventViewerWindow))
+        if (ImGui::MenuItem(_L("Memory Browser"), "Alt+E",
+                            g_gui->showMemoryBrowserWindow))
         {
-            g_gui->showEventViewerWindow = !g_gui->showEventViewerWindow;
+            g_gui->showMemoryBrowserWindow = !g_gui->showMemoryBrowserWindow;
         };
         /*
-         * Symbol Browser (D.8) - load NoICE / sdldz80 .map / sjasmplus .sym
-         * + user write-back .lbl. Disassembler ukazuje jmena misto hex.
+         * V3 multi-view: submenu "Other memory browsers" - 4 sekundarni
+         * Memory Browser okna (#2 - #5). Kazde je nezavisla instance s
+         * vlastnim regionem/encodingem/cursorem; sdileji pouze freeze
+         * subsystem. Toggle pres g_gui->showMemoryBrowserWindowExtra[N-2].
          */
-        if (ImGui::MenuItem(_L("Symbols"), NULL, g_gui->showSymbolsWindow))
+        if (ImGui::BeginMenu(_L("Other memory browsers")))
         {
-            g_gui->showSymbolsWindow = !g_gui->showSymbolsWindow;
+            if (ImGui::MenuItem(_L("Memory Browser #2"), NULL,
+                                g_gui->showMemoryBrowserWindowExtra[0]))
+            {
+                g_gui->showMemoryBrowserWindowExtra[0] = !g_gui->showMemoryBrowserWindowExtra[0];
+            };
+            if (ImGui::MenuItem(_L("Memory Browser #3"), NULL,
+                                g_gui->showMemoryBrowserWindowExtra[1]))
+            {
+                g_gui->showMemoryBrowserWindowExtra[1] = !g_gui->showMemoryBrowserWindowExtra[1];
+            };
+            if (ImGui::MenuItem(_L("Memory Browser #4"), NULL,
+                                g_gui->showMemoryBrowserWindowExtra[2]))
+            {
+                g_gui->showMemoryBrowserWindowExtra[2] = !g_gui->showMemoryBrowserWindowExtra[2];
+            };
+            if (ImGui::MenuItem(_L("Memory Browser #5"), NULL,
+                                g_gui->showMemoryBrowserWindowExtra[3]))
+            {
+                g_gui->showMemoryBrowserWindowExtra[3] = !g_gui->showMemoryBrowserWindowExtra[3];
+            };
+            ImGui::EndMenu();
         };
-        ImGui::MenuItem(_L("Memory Browser"), "Alt+E", false, false);
-        ImGui::MenuItem(_L("Disassembler"), NULL, false, false);
+        /*
+         * V5: Memory Diff - side-by-side hex porovnani dvou snapshotu
+         * (live / manual / auto @ pause). Singleton, dostupne z menu
+         * vedle Memory Browser; nezavisle na hlavnim okne membrowser.
+         */
+        if (ImGui::MenuItem(_L("Memory Diff"), NULL,
+                            g_gui->showMemoryDiffWindow))
+        {
+            g_gui->showMemoryDiffWindow = !g_gui->showMemoryDiffWindow;
+        };
+#if (MZARCH == 800) || (MZARCH == 1500) || (MZARCH == 700)
+        /*
+         * Memory Heatmap (CDL) - samostatné okno pro vizualizaci access counterů.
+         * Toggle přes g_gui->showMemoryHeatmapWindow.
+         */
+        if (ImGui::MenuItem(_L("Memory Heatmap"), NULL, g_gui->showMemoryHeatmapWindow))
+        {
+            mhmap_window_show_hide();
+        };
+#endif
+        /*
+         * V1.5+ ASCII edit follow-up: Char Inserter - paleta znaků pro
+         * vkládání speciálních chars (SharpMZ EU/JP, KOI8-CS) do Memory
+         * Browseru. Otevírá se primárně z context menu hex view; tato
+         * menu položka je sekundární přístup.
+         */
+        if (ImGui::MenuItem(_L("Char Inserter"), NULL,
+                            g_gui->showMembrowserCharInserter))
+        {
+            g_gui->showMembrowserCharInserter = !g_gui->showMembrowserCharInserter;
+        };
+
+        ImGui::Separator();
+
+        /* ===== Code & symbols ===== */
+
+        /*
+         * Disassembler (V1): samostatné range-based disassembler okno
+         * s auto-labely (S/L/D/W konvence) + sym_db/CDL gating + export
+         * do .asm/.s (pasmo / sjasmplus / sdcc-asz80 dialect).
+         * Zkratka Alt+Shift+D obsloužena v global_shortcuts.cpp
+         * (kombinace s Alt+D = hlavní debugger okno, vzor Alt+B /
+         * Alt+Shift+B, Alt+R / Alt+Shift+R apod.).
+         */
+        if (ImGui::MenuItem(_L("Disassembler"), "Alt+Shift+D",
+                            g_gui->showDisassemblerWindow))
+        {
+            g_gui->showDisassemblerWindow = !g_gui->showDisassemblerWindow;
+        };
 
         /*
          * Submenu "Other disassembly" - 4 sekundární Disassembly okna
@@ -335,17 +477,112 @@ void imgui_menu_debugger(en_DBG_MENU_CALLER caller)
             };
             ImGui::EndMenu();
         };
+        /*
+         * Symbol Browser (D.8) - load NoICE / sdldz80 .map / sjasmplus .sym
+         * + user write-back .lbl. Disassembler ukazuje jmena misto hex.
+         * Zkratka Alt+Y obsloužena v global_shortcuts.cpp.
+         */
+        if (ImGui::MenuItem(_L("Symbols"), "Alt+Y", g_gui->showSymbolsWindow))
+        {
+            g_gui->showSymbolsWindow = !g_gui->showSymbolsWindow;
+        };
+        /*
+         * Bookmarks panel - pojmenované adresové záložky (uživatelské).
+         * Klik / RMB v Bookmarks okně otevírá Disassembly na danou adresu.
+         * Zkratka Alt+Shift+B obsloužena v global_shortcuts.cpp (Alt+B
+         * bez Shift = Breakpoints).
+         */
+        if (ImGui::MenuItem(_L("Bookmarks"), "Alt+Shift+B", g_gui->showBookmarksWindow))
+        {
+            g_gui->showBookmarksWindow = !g_gui->showBookmarksWindow;
+        };
 
-#if (MZARCH == 800) || (MZARCH == 1500) || (MZARCH == 700)
+        ImGui::Separator();
+
+        /* ===== I/O & events ===== */
+
+        /*
+         * I/O Ports viewer (V1.5.D rework) - bit-by-bit struct view + History
+         * + activity tracking. Zkratka Alt+I obsloužena v global_shortcuts.cpp.
+         */
+        if (ImGui::MenuItem(_L("I/O Ports"), "Alt+I", g_gui->showIoWindow))
+        {
+            g_gui->showIoWindow = !g_gui->showIoWindow;
+        };
+        /*
+         * Events - real-time pohled na eventlog ring (Vlna 1 = Log tab,
+         * Vlna 2 = Strip tab). V módu WHEN_WINDOW_OPEN otevírá ring
+         * recording, zavírá ho zase při zavření okna.
+         * Toggle přes g_gui->showEventViewerWindow. Bez globální zkratky.
+         */
+        if (ImGui::MenuItem(_L("Events"), NULL, g_gui->showEventViewerWindow))
+        {
+            g_gui->showEventViewerWindow = !g_gui->showEventViewerWindow;
+        };
+        /*
+         * MCP Activity okno bylo přesunuto z tohoto menu do Tools ->
+         * pod "MCP TCP Server" (viz menu_tools.cpp). Gating je
+         * MZ800EMU_CFG_MCP_SERVER_ENABLED (okno funguje i bez TCP).
+         */
+
         ImGui::Separator();
 
         /*
-         * Memory Heatmap (CDL) - samostatné okno pro vizualizaci access counterů.
-         * Toggle přes g_gui->showMemoryHeatmapWindow.
+         * Per-chip-panels mutant: per-chip detail okna pro CTC 8253, PPI
+         * 8255, Z80 PIO, PSG SN76489. CTC a PPI jsou ve všech 3 archech,
+         * Z80 PIO a PSG jen v MZ-800 / MZ-1500. Shortcuts Alt+Shift+C /
+         * +I / +Z / +G obsluhuje global_shortcuts.cpp.
          */
-        if (ImGui::MenuItem(_L("Memory Heatmap"), NULL, g_gui->showMemoryHeatmapWindow))
+        if (ImGui::MenuItem(_L("CTC State"), "Alt+Shift+C", g_gui->showCtcStateWindow))
         {
-            mhmap_window_show_hide();
+            g_gui->showCtcStateWindow = !g_gui->showCtcStateWindow;
+        };
+        if (ImGui::MenuItem(_L("PPI State"), "Alt+Shift+I", g_gui->showPpiStateWindow))
+        {
+            g_gui->showPpiStateWindow = !g_gui->showPpiStateWindow;
+        };
+#if HAVE_PIOZ80
+        if (ImGui::MenuItem(_L("Z80 PIO State"), "Alt+Shift+Z", g_gui->showPiozStateWindow))
+        {
+            g_gui->showPiozStateWindow = !g_gui->showPiozStateWindow;
+        };
+#endif
+#if HAVE_PSG >= 1
+        if (ImGui::MenuItem(_L("PSG State"), "Alt+Shift+G", g_gui->showPsgStateWindow))
+        {
+            g_gui->showPsgStateWindow = !g_gui->showPsgStateWindow;
+        };
+        /* psg-audio-scope mutant F1: PSG Audio Scope - samostatné okno
+         * pro dynamickou audio analýzu (oscilloscope + plánované
+         * envelope / piano roll). Shortcut Alt+Shift+A = Audio. */
+        if (ImGui::MenuItem(_L("PSG Audio Scope"), "Alt+Shift+A", g_gui->showPsgAudioScopeWindow))
+        {
+            g_gui->showPsgAudioScopeWindow = !g_gui->showPsgAudioScopeWindow;
+        };
+#endif
+        /* gdg-panel F1 scaffold: GDG inspector toggle. V = Video / GDG.
+         * GDG je ve všech 3 archech (MZ-700/MZ-800/MZ-1500), žádný guard. */
+        if (ImGui::MenuItem(_L("GDG State"), "Alt+Shift+V", g_gui->showGdgStateWindow))
+        {
+            g_gui->showGdgStateWindow = !g_gui->showGdgStateWindow;
+        };
+
+        /*
+         * Storage chip state okna. Tyto MenuItems jsou duplicitní k položkám
+         * v sekci HW (menu_fdcontroller.cpp, menu_qdisk.cpp); záměr je mít
+         * je dostupné i z Debugger menu vedle ostatních chip state oken.
+         * Toggle stejných g_gui flagů, takže obě cesty udržují stejný stav.
+         */
+#if CFG_HWEXT_HAVE_FDC
+        if (ImGui::MenuItem(_L("FDC State"), NULL, g_gui->showFdcStateWindow))
+        {
+            g_gui->showFdcStateWindow = !g_gui->showFdcStateWindow;
+        };
+#endif
+#if CFG_HWEXT_HAVE_QDISK
+        if (ImGui::MenuItem(_L("QDisk State"), NULL, g_gui->showQdiskStateWindow))
+        {
+            g_gui->showQdiskStateWindow = !g_gui->showQdiskStateWindow;
         };
 #endif
 

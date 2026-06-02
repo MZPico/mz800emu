@@ -58,6 +58,12 @@ typedef struct MyImGui
     bool showFdcStateWindow;
     bool showQdiskStorageSwitchWindow;   /**< QD: switch storage mode popup (Faze 3) */
     bool showQdiskStateWindow;           /**< QD: debugger state inspector okno (Faze 6) */
+    bool showCtcStateWindow;             /**< Per-chip-panels: CTC 8253 state inspector (F1 scaffold) */
+    bool showPpiStateWindow;             /**< Per-chip-panels: PPI 8255 state inspector (F1 scaffold) */
+    bool showPiozStateWindow;            /**< Per-chip-panels: Z80 PIO state inspector (F1 scaffold) */
+    bool showPsgStateWindow;             /**< Per-chip-panels: PSG SN76489 state inspector (F1 scaffold) */
+    bool showGdgStateWindow;             /**< gdg-panel: GDG video LSI state inspector (F1 scaffold) */
+    bool showPsgAudioScopeWindow;        /**< PSG Audio Scope: dynamická audio analýza (psg-audio-scope F1) */
     bool showJoystickSetupWindow;
     bool showDebuggerWindow;
     bool showBreakpointsWindow;
@@ -65,6 +71,36 @@ typedef struct MyImGui
     bool showMemoryHeatmapWindow;
     bool showVarsWindow;            /**< $vars panel pro smart BP user vars (D.6.2) */
     bool showWatchWindow;           /**< Watch panel - user-defined paměťové hlídky (V1 Phase A) */
+    bool showMemoryBrowserWindow;   /**< Memory Browser - hex view paměti přes dbgapi_regions (V0 hex MVP) */
+    /**
+     * V3 multi-view: 4 sekundární Memory Browser okna (#2 - #5). Každé
+     * okno je nezávislá instance st_MEMBROWSER_STATE + per-instance
+     * persist sekce [MEMBROWSER_WINDOW_2..5]. Default false - uživatel
+     * je otevírá z menu Debugger - Memory Browser #N. Sdílí pouze
+     * globální freeze subsystém s hlavním oknem (= úmyslný cross-talk
+     * pro cheat-engine semantiku). Index: 0 = #2, 1 = #3, 2 = #4, 3 = #5.
+     */
+    bool showMemoryBrowserWindowExtra[4];
+    /**
+     * V5: Memory Diff okno - side-by-side hex porovnání dvou snapshotů
+     * (live / manual / auto @ pause). Singleton, žádné multi-instance.
+     * Default false. Otevírá se z menu Debugger - Memory Diff.
+     */
+    bool showMemoryDiffWindow;
+    /**
+     * V6: PCG glyph editor (MZ-1500). 8x8 bitmap editor pro 256 chars
+     * v každé z 3 PCG bank. Otevírá se z context menu nad PCG_1500 regionem
+     * v Memory Browseru NEBO z menu Debugger - PCG Editor. Žádný efekt na
+     * jiných archech (= zobrazí "region not available" warning).
+     */
+    bool showMembrowserPcgEditor;
+    /**
+     * V1.5+: Char Inserter okno - paleta znaků pro vkládání do Memory
+     * Browseru. Tabbed (SharpMZ EU / JP / KOI8-CS), 16x16 grid bytů.
+     * Otevírá se z context menu hex view ("Insert character...") nebo
+     * z menu Debugger. Default false.
+     */
+    bool showMembrowserCharInserter;
     bool showIoWindow;              /**< I/O Ports viewer panel (D.7) */
     bool showSymbolsWindow;         /**< Symbol Browser panel (D.8.6) */
     bool showBookmarksWindow;       /**< Bookmarks panel (pojmenované adresové záložky) */
@@ -84,6 +120,34 @@ typedef struct MyImGui
      * Index: 0 = #2, 1 = #3, 2 = #4, 3 = #5.
      */
     bool showDisasmExtraWindow[4];
+    /**
+     * Disassembler V1 - samostatné range-based disassembler okno
+     * (mutant disassembler-window-v1). Uživatel zadá rozsah adres
+     * From/To, vidí read-only listing s auto-labely (S/L/D/W) a
+     * volitelně doplněnými symboly. Default false, otevírá se z
+     * iconbar tlačítka DASM, top-menu Debugger nebo Alt+Shift+D
+     * shortcut. Window state per ImGui ini.
+     */
+    bool showDisassemblerWindow;
+    /**
+     * MCP Server Settings dialog (V0.B.4). Konfigurační okno pro
+     * INI sekci [MCP] - TCP port, bind adresa, security profile,
+     * auto-start flag. Default false, otevírá se z menu
+     * Tools -> MCP TCP Server -> Settings... Persistuje pouze
+     * po explicitním Save (volá cfgroot_save). Při buildu s
+     * NO_MCP_TCP=1 zůstává flag false a okno se nikdy nerenderuje.
+     */
+    bool showMcpSettingsWindow;
+    /**
+     * MCP Activity okno (V1.C.2 mutant mcp-server). Real-time log MCP
+     * akcí (= DBGAPI_MSG_MCP_ACTION broadcast z V-1.3). Per-session,
+     * NEpersistovaný v INI; default false, otevírá se z menu Debugger.
+     * Při buildu s MZ800EMU_NO_MCP zůstává flag false a renderer je
+     * no-op (= window inicializace přes #ifdef guard). Při buildu bez
+     * debuggeru (= MZ800EMU_NO_DEBUGGER) MSG broadcast neexistuje,
+     * okno se sice vykreslí, ale ring buffer zůstane prázdný.
+     */
+    bool showMcpActivityWindow;
 } MyImGui;
 
 extern MyImGui *g_gui;
@@ -111,6 +175,25 @@ extern "C"
 
 #ifdef __cplusplus
 }
+#endif
+
+#ifdef __cplusplus
+struct ImFont;
+/**
+ * @brief Vrátí ukazatel na monospace font načtený v myimgui_set_fonts().
+ *
+ * Monospace font (Cousine-Regular.ttf, 28 px) slouží pro hex dumpy
+ * (Memory Browser, případně Disassembler) - bajty pak mají fixed šířku
+ * a sloupce hezky lícují. Font má merge mzglyphs (E000/E100-E4FF) takže
+ * CG-ROM DISPLAY glyfy fungují i v monospace módu.
+ *
+ * @return Ukazatel na ImFont; NULL pokud TTF soubor chybí (caller pak
+ *         musí použít default font - PushFont(nullptr)). Pokud ImGui
+ *         init neproběhl, vrátí NULL.
+ *
+ * @note Volat pouze z UI vlákna (ImGui kontext aktivní).
+ */
+ImFont *myimgui_get_monospace_font(void);
 #endif
 
 #endif /* MYIMGUI_H */

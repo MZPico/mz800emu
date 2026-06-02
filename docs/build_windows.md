@@ -36,7 +36,7 @@ pacman -Syuu
 ### Base development packages
 
 ```sh
-pacman -S base-devel mingw-w64-x86_64-toolchain subversion doxygen
+pacman -S base-devel mingw-w64-x86_64-toolchain git doxygen
 pacman -S mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja mingw-w64-x86_64-pkgconf
 ```
 
@@ -68,9 +68,19 @@ Notes:
 
 ## 4) Download latest mz800emu code
 
+The project moved from SourceForge to GitHub - the SourceForge SVN
+repository is no longer updated. Clone the source code from GitHub:
+
 ```sh
-svn checkout https://svn.code.sf.net/p/mz800emu/code/branches/2.0.x-preview
-cd 2.0.x-preview
+git clone https://github.com/michalhucik/mz800emu.git
+cd mz800emu
+```
+
+If you want to build a specific tagged release instead of the latest
+development tip, check it out after cloning, for example:
+
+```sh
+git checkout v2.0.2-preview
 ```
 
 Compile the program:

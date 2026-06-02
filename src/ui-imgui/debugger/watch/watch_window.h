@@ -85,6 +85,25 @@ extern void watch_window_render ( bool *p_open );
 extern void watch_window_show_hide ( void );
 
 
+/**
+ * @brief V1.E.6.A - otevre okno a pozaduje focus na watch radek s danym ID.
+ *
+ * Pouziti: routing z Activity okna (= dvojklik na radek s
+ * entity_kind = DBGAPI_ENTITY_KIND_WATCH, entity_id = st_WATCH_ROW.id).
+ * Nastavi show flag, vycisti filter a oznaci selection (pres
+ * watch_find_index_by_id). Render-loop pri dalsim frame scrollne na
+ * cilovy radek.
+ *
+ * Pokud watch s danym ID neexistuje (= mezicasem smazan), spotreba
+ * je no-op krome otevreni okna a vycisteni filtru.
+ *
+ * Thread-safety: UI vlakno only.
+ *
+ * @param watch_id  Stabilni runtime st_WATCH_ROW.id (>= 1).
+ */
+extern void watch_window_focus_id ( int watch_id );
+
+
 #ifdef __cplusplus
 }
 #endif

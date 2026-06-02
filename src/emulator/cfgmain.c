@@ -37,8 +37,12 @@
 #include "libs/sdlapp/sdlapp.h"
 #include "libs/sdlapp/sdlapp_options.h"
 #include "emulator/mzarch/mzarch_platform.h"
+#include "emulator/mzarch/mzarch_config.h"
 #include "snapshot/snapshot_config.h"
 #include "i18n_lang.h"
+#ifdef MZ800EMU_CFG_MCP_TCP_ENABLED
+#include "mcp/mcp_config.h"
+#endif
 
 extern SdlApp *g_sdlapp;
 
@@ -180,6 +184,13 @@ void cfgmain_init(void)
 
     /* Registrace jazykové konfigurace */
     i18n_lang_config_init();
+
+#ifdef MZ800EMU_CFG_MCP_TCP_ENABLED
+    /* Registrace MCP konfigurace (V0.B.4 - sekce [MCP] s 4 klíči:
+     * tcp_port, bind_address, profile, auto_start_tcp). Vyžaduje
+     * MCP TCP backend (NO_MCP_TCP=0). */
+    mcp_config_init();
+#endif
 }
 
 void cfgmain_exit(void)

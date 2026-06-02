@@ -31,14 +31,6 @@
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 #include "bptmap.h"
 
-#ifdef MZ800EMU_CFG_UI_ENABLED
-#include "ui-gtk3/debugger/ui_breakpoints.h"
-#else /* !MZ800EMU_CFG_UI_ENABLED */
-#define ui_breakpoints_init()
-#define ui_breakpoints_show_window()
-#define ui_breakpoints_select_id(id)
-#endif /* !MZ800EMU_CFG_UI_ENABLED */
-
 #include "mzarch/mzarch.h"
 #include "debugger.h"
 #include "emulator.h"
@@ -71,7 +63,6 @@ void bptmap_init ( void ) {
     };
     g_bptmap.any_active = false;
     bptmap_clear_all ( );
-    ui_breakpoints_init ( );
 }
 
 
@@ -166,8 +157,6 @@ void bptmap_activate_event ( void ) {
         printf ( "DEBUGGER - activated breakpoint on addr: 0x%04x\n", g_mzarch_main.instruction_addr );
         emulator_pause ( true );
         debugger_show_main_window ( );
-        ui_breakpoints_show_window ( );
-        ui_breakpoints_select_id ( breakpoint_id );
     };
 
     if ( !EMULATOR_TEST_PAUSED ) {

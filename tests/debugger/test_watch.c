@@ -998,6 +998,117 @@ void test_persist_unknown_type_skip ( void ) {
 }
 
 
+/**
+ * V1.E.6.B - cmd_origin field round-trip přes save/load.
+ *
+ * Vytvoří watch řádky, nastaví různé cmd_origin, save, wipe, load -
+ * origin fields se musí obnovit z JSON `origin` klíče.
+ */
+void test_persist_origin_roundtrip ( void ) {
+    const char *tmpfile = "test_watch_origin_rt.watch";
+
+    int i0 = watch_add ( "u_user",     0xC080, -1 );
+    int i1 = watch_add ( "m_mcp",      0xC100, -1 );
+    int i2 = watch_add ( "n_internal", 0xC200, -1 );
+    TEST_ASSERT_TRUE ( i0 >= 0 );
+    TEST_ASSERT_TRUE ( i1 >= 0 );
+    TEST_ASSERT_TRUE ( i2 >= 0 );
+
+    watch_set_cmd_origin ( i0, DBGAPI_CMD_ORIGIN_USER );
+    watch_set_cmd_origin ( i1, DBGAPI_CMD_ORIGIN_MCP );
+    watch_set_cmd_origin ( i2, DBGAPI_CMD_ORIGIN_INTERNAL );
+
+    TEST_ASSERT_TRUE ( watch_save_to_filepath ( tmpfile ) );
+
+    watch_clear_storage ( );
+    TEST_ASSERT_EQUAL_INT ( 0, (int) watch_count ( ) );
+
+    TEST_ASSERT_TRUE ( watch_load_from_filepath ( tmpfile ) );
+    TEST_ASSERT_EQUAL_INT ( 3, (int) watch_count ( ) );
+
+    const st_WATCH_ROW *r0 = watch_get ( 0 );
+    const st_WATCH_ROW *r1 = watch_get ( 1 );
+    const st_WATCH_ROW *r2 = watch_get ( 2 );
+    TEST_ASSERT_NOT_NULL ( r0 );
+    TEST_ASSERT_NOT_NULL ( r1 );
+    TEST_ASSERT_NOT_NULL ( r2 );
+    TEST_ASSERT_EQUAL_INT ( DBGAPI_CMD_ORIGIN_USER,     r0->cmd_origin );
+    TEST_ASSERT_EQUAL_INT ( DBGAPI_CMD_ORIGIN_MCP,      r1->cmd_origin );
+    TEST_ASSERT_EQUAL_INT ( DBGAPI_CMD_ORIGIN_INTERNAL, r2->cmd_origin );
+
+    char *resolved = sdlapp_paths_resolve_cfg ( g_sdlapp->paths, tmpfile );
+    if ( resolved ) {
+        remove ( resolved );
+        g_free ( resolved );
+    };
+}
+
+
+/**
+ * V1.E.6.B - backward compat: starý .watch soubor bez "origin" klíče
+ * se načte tolerantně s defaultem USER.
+ */
+void test_persist_origin_bc_missing ( void ) {
+    const char *tmpfile = "test_watch_origin_bc.watch";
+
+    char *resolved = sdlapp_paths_resolve_cfg ( g_sdlapp->paths, tmpfile );
+    TEST_ASSERT_NOT_NULL ( resolved );
+
+    /* Soubor BEZ origin klíče = starý formát před V1.E.6.B. */
+    FILE *f = fopen ( resolved, "w" );
+    TEST_ASSERT_NOT_NULL ( f );
+    fprintf ( f,
+        "{\n"
+        "  \"watch\": [\n"
+        "    {\"name\": \"legacy\", \"addr\": 49280, \"bank\": -1, \"type\": \"u8\"}\n"
+        "  ]\n"
+        "}\n" );
+    fclose ( f );
+
+    TEST_ASSERT_TRUE ( watch_load_from_filepath ( tmpfile ) );
+    TEST_ASSERT_EQUAL_INT ( 1, (int) watch_count ( ) );
+    const st_WATCH_ROW *r0 = watch_get ( 0 );
+    TEST_ASSERT_NOT_NULL ( r0 );
+    /* Missing origin -> default USER. */
+    TEST_ASSERT_EQUAL_INT ( DBGAPI_CMD_ORIGIN_USER, r0->cmd_origin );
+
+    remove ( resolved );
+    g_free ( resolved );
+}
+
+
+/**
+ * V1.E.6.B - tolerantní load: neznámý origin token = USER fallback.
+ */
+void test_persist_origin_unknown_token ( void ) {
+    const char *tmpfile = "test_watch_origin_unk.watch";
+
+    char *resolved = sdlapp_paths_resolve_cfg ( g_sdlapp->paths, tmpfile );
+    TEST_ASSERT_NOT_NULL ( resolved );
+
+    FILE *f = fopen ( resolved, "w" );
+    TEST_ASSERT_NOT_NULL ( f );
+    fprintf ( f,
+        "{\n"
+        "  \"watch\": [\n"
+        "    {\"name\": \"fut\", \"addr\": 49280, \"bank\": -1, \"type\": \"u8\","
+        " \"origin\": \"future_role\"}\n"
+        "  ]\n"
+        "}\n" );
+    fclose ( f );
+
+    TEST_ASSERT_TRUE ( watch_load_from_filepath ( tmpfile ) );
+    TEST_ASSERT_EQUAL_INT ( 1, (int) watch_count ( ) );
+    const st_WATCH_ROW *r0 = watch_get ( 0 );
+    TEST_ASSERT_NOT_NULL ( r0 );
+    /* Unknown token -> USER fallback (= forward compat). */
+    TEST_ASSERT_EQUAL_INT ( DBGAPI_CMD_ORIGIN_USER, r0->cmd_origin );
+
+    remove ( resolved );
+    g_free ( resolved );
+}
+
+
 /* ========================================================================= */
 /*  Phase C - L2 Expression                                                  */
 /* ========================================================================= */
@@ -1541,6 +1652,10 @@ int main ( int argc, char *argv[] ) {
     RUN_TEST ( test_persist_load_phase_a_format );
     RUN_TEST ( test_persist_load_missing_file );
     RUN_TEST ( test_persist_unknown_type_skip );
+    /* V1.E.6.B - cmd_origin persist + tolerantní load */
+    RUN_TEST ( test_persist_origin_roundtrip );
+    RUN_TEST ( test_persist_origin_bc_missing );
+    RUN_TEST ( test_persist_origin_unknown_token );
 
     /* Phase C - L2 expression */
     RUN_TEST ( test_expr_parse_valid );

@@ -80,6 +80,7 @@ typedef gboolean (*SdlAppTimerCb)(guint timer_id, gpointer user_data);
 typedef struct SdlApp
 {
     gboolean running;                    /**< Příznak běhu hlavní smyčky */
+    gboolean quit_requested;             /**< Příznak vyžádaného ukončení (nezávislý na running) */
     SdlAppWindowManager *manager;        /**< Správce aplikačních oken */
     SdlAppLoopMode loop_mode;            /**< Režim hlavní smyčky */
     gint32 wait_timeout_ms;              /**< Timeout pro SDLAPP_LOOP_WAIT_TIMEOUT [ms] */
@@ -151,8 +152,10 @@ extern "C"
     /**
      * @brief Požádá o ukončení hlavní smyčky.
      *
-     * Nastaví running=FALSE — hlavní smyčka se ukončí po aktuální iteraci.
-     * Bezpečné volat s NULL.
+     * Nastaví quit_requested=TRUE a running=FALSE — hlavní smyčka se ukončí
+     * po aktuální iteraci. Příznak quit_requested je nezávislý na running,
+     * takže ukončení lze rozlišit i v okamžiku, kdy smyčka ještě nebyla
+     * spuštěna (running==FALSE před prvním sdlapp_run). Bezpečné volat s NULL.
      *
      * @param app Ukazatel na aplikaci (může být NULL).
      */
@@ -165,6 +168,19 @@ extern "C"
      * @return TRUE pokud aplikace běží, FALSE pokud ne nebo pokud app je NULL.
      */
     gboolean sdlapp_is_running(SdlApp *app);
+
+    /**
+     * @brief Zjistí, zda bylo vyžádáno ukončení aplikace.
+     *
+     * Na rozdíl od sdlapp_is_running rozlišuje stav "ukončení vyžádáno"
+     * od stavu "smyčka ještě nebyla spuštěna" — oba mají running==FALSE.
+     * Použij ve startup synchronizaci vláken, která čekají na rozběh
+     * aplikace, aby korektně vyskočila i při ukončení před spuštěním smyčky.
+     *
+     * @param app Ukazatel na aplikaci (může být NULL).
+     * @return TRUE pokud bylo vyžádáno ukončení, jinak FALSE (i pro NULL).
+     */
+    gboolean sdlapp_is_quit_requested(SdlApp *app);
 
     /**
      * @brief Nastaví režim hlavní smyčky.

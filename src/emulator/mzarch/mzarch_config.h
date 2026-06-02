@@ -92,18 +92,6 @@ extern "C"
 
 
     /*
-     * Konfiguracni vypnuti modulu Gtk UI
-     * =======================================
-     */
-
-#ifndef MZ800EMU_CFG_UI_ENABLED
-#if defined(USE_GTK3_UI) && defined(USE_GTK3)
-#define MZ800EMU_CFG_UI_ENABLED
-#endif
-#endif
-#undef MZ800EMU_CFG_UI_ENABLED
-
-    /*
      * Konfiguracni vypnuti modulu MZ-800 debugger
      * ===========================================
      *
@@ -124,6 +112,55 @@ extern "C"
 
 #ifndef MZ800EMU_NO_DEBUGGER
 #define MZ800EMU_CFG_DEBUGGER_ENABLED
+#endif
+
+    /*
+     * Konfigurační vypnutí MCP serveru
+     * ================================
+     *
+     * MCP (Model Context Protocol) server zpřístupňuje debugger emulátoru
+     * externím AI agentům (Claude Code, FastMCP klienti). Backend je
+     * rozdělen do dvou nezávislých togglů:
+     *
+     *  - MZ800EMU_CFG_MCP_SERVER_ENABLED řídí MCP backend jako celek
+     *    (pipe transport, JSONL parser, frontu příkazů). Sleduje
+     *    MZ800EMU_CFG_DEBUGGER_ENABLED - bez debuggeru nemá MCP smysl.
+     *
+     *  - MZ800EMU_CFG_MCP_TCP_ENABLED řídí volitelný TCP listener
+     *    (loopback 127.0.0.1). Vždy vyžaduje MCP_SERVER_ENABLED.
+     *    Lze ho vypnout zvlášť pro "pipe-only" build.
+     *
+     * Build-time přepínače z příkazové řádky:
+     *   make NO_MCP=1       -> vypne celý MCP (+ implicitně i TCP)
+     *   make NO_MCP_TCP=1   -> vypne jen TCP listener (pipe zůstane)
+     *
+     * Lokální edit této sekce: zakomentuj `#define` řádky níže.
+     *
+     * Pozn.: Pattern kopíruje MZ800EMU_NO_DEBUGGER (negativní toggle,
+     * pozitivní _ENABLED define bez hodnoty, `#ifdef` v hostujícím
+     * kódu). NIKDY nepoužívej `#if MZ800EMU_CFG_MCP_..._ENABLED` -
+     * bezhodnotový define se zde vyhodnotí jako 0.
+     */
+
+#ifndef MZ800EMU_NO_MCP
+#define MZ800EMU_CFG_MCP_SERVER_ENABLED
+#endif
+
+#ifndef MZ800EMU_NO_MCP_TCP
+#define MZ800EMU_CFG_MCP_TCP_ENABLED
+#endif
+
+    /*
+     * Validační guardy zachytí nesmyslné kombinace při compile-time.
+     * Bez DEBUGGER nemá MCP smysl; TCP listener vyžaduje funkční MCP
+     * backend (sdílí JSONL parser, frontu, transport vrstvu).
+     */
+#if defined(MZ800EMU_CFG_MCP_SERVER_ENABLED) && !defined(MZ800EMU_CFG_DEBUGGER_ENABLED)
+#error "MZ800EMU_CFG_MCP_SERVER_ENABLED requires MZ800EMU_CFG_DEBUGGER_ENABLED (use NO_MCP=1 when NO_DEBUGGER=1)"
+#endif
+
+#if defined(MZ800EMU_CFG_MCP_TCP_ENABLED) && !defined(MZ800EMU_CFG_MCP_SERVER_ENABLED)
+#error "MZ800EMU_CFG_MCP_TCP_ENABLED requires MZ800EMU_CFG_MCP_SERVER_ENABLED (use NO_MCP_TCP=1 when NO_MCP=1)"
 #endif
 
     /*

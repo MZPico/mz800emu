@@ -34,8 +34,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "c:/msys64/home/Michal/projects/mz800gtk4/src/emulator",
-      "program": "c:/msys64/home/Michal/projects/mz800gtk4/src/emulator/build/Debug/outDebug",
+      "cwd": "${workspaceFolder}",
+      "program": "${workspaceFolder}/mz800emu.exe",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [

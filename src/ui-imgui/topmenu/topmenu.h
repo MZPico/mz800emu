@@ -26,6 +26,7 @@ extern "C"
     void imgui_menu_ide8(void);
     void imgui_menu_memext(void);
     void imgui_menu_rom(void);
+    void imgui_menu_centronics(void);
 
     void imgui_menu_interface(void);
     void imgui_menu_display(void);

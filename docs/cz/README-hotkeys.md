@@ -1,7 +1,6 @@
 # Klávesové zkratky emulátoru MZ-800
 
 Globální klávesové zkratky dostupné napříč celým oknem emulátoru.
-Zdroj: `src/ui-imgui/topmenu/global_shortcuts.cpp`.
 
 ## Reset a obecné
 
@@ -60,9 +59,37 @@ Zdroj: `src/ui-imgui/topmenu/global_shortcuts.cpp`.
 
 Dostupné pouze v buildech s `MZ800EMU_CFG_DEBUGGER_ENABLED`.
 
+Některé klávesy jsou dvouúčelové: bez `Shift` vykonají svou nedebuggerovou
+akci (viz výše), se `Shift` přepnou okno debuggeru (např. `Alt + W` opraví
+poměr stran, `Alt + Shift + W` přepne okno Watch).
+
 | Klávesa                    | Akce                                                                        |
 |----------------------------|-----------------------------------------------------------------------------|
 | `Alt + D`                  | Zobrazit / Skrýt okno MZ-800 Debuggeru                                      |
+| `Alt + Shift + D`          | Zobrazit / Skrýt okno Disassembler (range-based + export)                   |
 | `Alt + B`                  | Zobrazit / Skrýt okno Breakpoints                                           |
+| `Alt + Shift + B`          | Zobrazit / Skrýt okno Bookmarks (pojmenované adresové záložky)              |
 | `Alt + V`                  | Zobrazit / Skrýt okno Variables                                             |
 | `Alt + I`                  | Zobrazit / Skrýt okno I/O Ports                                             |
+| `Alt + E`                  | Zobrazit / Skrýt okno Memory Browser                                        |
+| `Alt + Y`                  | Zobrazit / Skrýt okno Symbols (NoICE / sdldz80 `.map` / sjasmplus `.sym`)   |
+| `Alt + Shift + R`          | Zobrazit / Skrýt okno CPU Registers                                         |
+| `Alt + S`                  | Zobrazit / Skrýt okno Stack Monitor                                         |
+| `Alt + Shift + S`          | Zobrazit / Skrýt okno Stack Regions                                         |
+| `Alt + Shift + H`          | Zobrazit / Skrýt okno Stack History                                         |
+| `Alt + Shift + W`          | Zobrazit / Skrýt okno Watch (uživatelské paměťové hlídky)                   |
+| `Alt + Shift + P`          | Zobrazit / Skrýt okno CPU Profiler                                          |
+
+## Okna stavu čipů (hardware)
+
+Okna stavu jednotlivých čipů ("F1" panely). Dostupné pouze v buildech
+s `MZ800EMU_CFG_DEBUGGER_ENABLED`.
+
+| Klávesa                    | Akce                                                                        |
+|----------------------------|-----------------------------------------------------------------------------|
+| `Alt + Shift + I`          | Zobrazit / Skrýt okno PPI 8255 State                                        |
+| `Alt + Shift + C`          | Zobrazit / Skrýt okno CTC 8253 State                                        |
+| `Alt + Shift + V`          | Zobrazit / Skrýt okno GDG State                                             |
+| `Alt + Shift + Z`          | Zobrazit / Skrýt okno Z80 PIO State (jen MZ-800 / MZ-1500)                  |
+| `Alt + Shift + G`          | Zobrazit / Skrýt okno PSG State (jen MZ-800 / MZ-1500)                      |
+| `Alt + Shift + A`          | Zobrazit / Skrýt okno PSG Audio Scope (jen MZ-800 / MZ-1500)               |

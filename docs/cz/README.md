@@ -1,6 +1,10 @@
-# MZ-800 Emulator (experimentální verze)
+# MZ-800 Emulator
 
-Poslední starou stabilní verzi najdete zde: <https://sourceforge.net/projects/mz800emu/>
+Projekt byl přesunut ze SourceForge na GitHub. Nejnovější zdrojový kód
+a release verze jsou nyní dostupné na <https://github.com/michalhucik/mz800emu>.
+
+Starší verze 1.0.x zůstávají archivované na původní SourceForge
+stránce: <https://sourceforge.net/projects/mz800emu/>
 
 
 ## Windows
@@ -21,7 +25,7 @@ Většina kláves je na stejných pozicích jako na MZ-800 - podobně jako v emu
 | Klávesa Sharp | Klávesa PC              |
 |---------------|-------------------------|
 | `GRAPH`       | CapsLock                |
-| `ALPHA`       | `\`                     |
+| `ALPHA`       | `\` (obě klávesy, viz níže) |
 | `BLANK_KEY`   | `~`                     |
 | `ESC`         | Esc, nebo End           |
 | `INST`        | Insert                  |
@@ -30,6 +34,24 @@ Většina kláves je na stejných pozicích jako na MZ-800 - podobně jako v emu
 | `\`           | F7                      |
 | `?`           | F8                      |
 | `LIBRA`       | F9                      |
+
+**Pozn. k `ALPHA`:** Na klávesnicích s českým (a obecně ISO) rozložením
+existují dvě fyzické klávesy, které generují `\`: standardní Backslash a ISO
+klávesa u levého Shiftu (PC ji hlásí jako "Oem102" / Non-US Backslash). Jako
+`ALPHA` fungují obě - není potřeba řešit, kterou z nich zrovna máte.
+
+
+### Rozdíly mezi modely (MZ-800 vs MZ-700 / MZ-1500)
+
+Klávesnice MZ-700 a MZ-1500 se od MZ-800 liší: nemají klávesu TAB. Na jejím
+místě je delší klávesa ALPHA (stejné šířky jako TAB na MZ-800), díky čemuž
+má řada se SHIFTy o jednu klávesu méně a levý SHIFT je stejně velký jako
+pravý. Hostitelská klávesa Tab se proto na MZ-700 a MZ-1500 chová stejně
+jako ALPHA.
+
+| Klávesa Sharp | MZ-800        | MZ-700 / MZ-1500          |
+|---------------|---------------|---------------------------|
+| `ALPHA`       | PC `\`        | PC `\` nebo PC Tab        |
 
 
 ## Volby z příkazové řádky
@@ -75,6 +97,7 @@ jsou odmítnuty s chybou - pro vygenerovaný výpis použijte `--help`.
 | `--all-traces-dir` | `<dirpath>` | Shorthand: nastavit cílový adresář pro VŠECHNY čtyři trace-suite subsystémy. Per-subsystém `--<sys>-dir` má precedenci. |
 | `--no-save-ini` | - | Nezapisovat `.ini` soubor při ukončení. CLI override pak platí jen pro aktuální session. |
 | `--no-first-run-windows` | - | Potlačit automatické otevření oken About + Version Check Setup při prvním spuštění (kdy neexistuje `.ini` soubor). Užitečné pro headless / scriptované spouštění. |
+| `--headless` | - | Spustit emulátor bez GUI okna a bez audio výstupu. SDL3 video a audio subsystémy běží v no-op módu (žádné SDL okno, žádný audio device se neotevírá). Framebuffer se stále renderuje do paměti (= připraveno pro pozdější MCP frame Resources). Určeno pro CI / batch / subprocess scénáře bez displeje nebo audio zařízení. Proces běží do SIGINT (Ctrl+C) nebo SDL quit eventu. Doporučeno kombinovat s `--no-first-run-windows`. |
 
 ### Layout CDL exportu
 
@@ -178,6 +201,9 @@ Další debugger dokumenty:
   formáty .noi/.map/.sym/.lbl, UI panel Symbols)
 - [`debugger/io-ports.md`](debugger/io-ports.md) - I/O Ports panel V1.5
   (Overview tab, History tab, activity tracking, naming konvence)
+- [`debugger/disassembler-window.md`](debugger/disassembler-window.md) -
+  samostatné Disassembler okno V1 (range disasm, auto-labely S/L/D/W,
+  sym_db/CDL gating, export .asm/.s pro pasmo/sjasmplus/sdcc-asz80)
 
 ### Příklady
 

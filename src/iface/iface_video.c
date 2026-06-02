@@ -18,6 +18,10 @@
 #include "emulator/debugger/trace/hwlog.h"
 #endif
 
+#ifdef MZ800EMU_CFG_MCP_TCP_ENABLED
+#include "emulator/mcp/tcp_server.h"
+#endif
+
 struct iface_video_t *g_iface_video = NULL;
 
 #define IFACE_VIDEO_TITLE_SHOW_PERCENTAGE_SPEED 1
@@ -173,6 +177,19 @@ char *iface_video_create_window_title_text(void)
         if ( g_intlog_active )   g_string_append_printf ( status, " N%s", intlog_is_truncated ( ) ? "!" : "" );
         if ( g_hwlog_active )    g_string_append_printf ( status, " H%s", hwlog_is_truncated ( ) ? "!" : "" );
         g_string_append ( status, "]" );
+    }
+#endif
+
+#ifdef MZ800EMU_CFG_MCP_TCP_ENABLED
+    /* V0.A.5: indikátor TCP listeneru v titulku. Zobrazujeme jen pokud
+     * server skutečně běží - default čistý titulek se zachovává.
+     * Formát: " [MCP:PORT, N clients]"
+     */
+    if ( g_mcp_tcp_server && mcp_tcp_server_is_running ( g_mcp_tcp_server ) )
+    {
+        g_string_append_printf ( status, " [MCP:%d, %d clients]",
+            mcp_tcp_server_get_port ( g_mcp_tcp_server ),
+            mcp_tcp_server_get_client_count ( g_mcp_tcp_server ) );
     }
 #endif
 

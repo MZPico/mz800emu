@@ -16,7 +16,6 @@
 #include "emulator.h"
 #include "emulator_measuring.h"
 #include "cfgmain.h"
-#include "build_revision/build_revision.h"
 #include "display.h"
 #include "mzarch/mzarch_platform_functions.h"
 #include "mzarch/mzarch.h"
@@ -30,22 +29,6 @@
 
 #include "generic_driver/memory_driver.h"
 #include "generic_driver/file_driver.h"
-
-#ifdef MZ800EMU_CFG_UI_ENABLED
-#include "ui-gtk3/ui_main.h"
-#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-#include "ui-gtk3/debugger/ui_debugger.h"
-#endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */
-#else
-#define ui_main_init()
-#define ui_main_exit()
-#define ui_main_update_cpu_speed_menu(a)
-#define ui_main_update_emulation_state(a)
-#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-#define ui_debugger_hide_spinner_window()
-#define ui_debugger_show_spinner_window()
-#endif
-#endif
 
 #include "version_check/version_check.h"
 #include "snapshot/snapshot.h"
@@ -69,7 +52,6 @@ void emulator_quit(int exit_value)
 
         emulator_measuring_exit();
         mzarch_platform_fn_exit();
-        ui_main_exit();
     }
     else
     {
@@ -95,25 +77,18 @@ static void emulator_print_hint(void)
 
     printf("\nTips:\n");
     printf("   - use right-click on the emulator window for the Menu.\n");
-#ifdef MZ800EMU_CFG_UI_ENABLED
-    printf("   - use middle-click on the emulator window for the GTK3 Menu.\n");
-    // printf("   - edit the file mz800emu-gtk4.css, if you need change UI menu fonts, colors, etc...\n");
-#endif /* MZ800EMU_CFG_UI_ENABLED */
-printf("   - ImGui window sizes and positions are stored in mz800emu-imgui.ini\n");
+    printf("   - ImGui window sizes and positions are stored in mz800emu-imgui.ini\n");
 
     printf("\nSome useful shortcut keys:\n");
 
     printf("   Alt + C                - virtual CMT\n");
     printf("   Alt + K                - virtual keyboard\n");
-    
-#ifdef MZ800EMU_CFG_UI_ENABLED
+
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
     printf("   Alt + D                - debugger\n");
     printf("   Alt + B                - breakpoints\n");
     printf("   Alt + E                - memory browser\n");
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */
-
-#endif /* MZ800EMU_CFG_UI_ENABLED */
 
     printf("   Alt + M                - switch MAX / (NORMAL or CUSTOM) speed\n");
     printf("   Alt + Shift + M        - switch CUSTOM / (NORMAL or MAX) speed\n");
@@ -173,16 +148,30 @@ gpointer emulator_thread(gpointer ptr)
         if (!g_iface_video->is_initialized)
         {
             g_print("%s() - Waiting for video interface initialization...\n", __func__);
-            while ((!g_iface_video->is_initialized) && (!sdlapp_is_running(g_sdlapp)))
+            /* Smyčka musí vyskočit i při vyžádaném ukončení (sdlapp_quit
+             * před rozběhem sdlapp_run): bez kontroly quit_requested by se
+             * čekalo na running==TRUE, které už nikdy nepřijde (running a
+             * "quit požadován" jsou jinak nerozlišitelné - oba FALSE). */
+            while ((!g_iface_video->is_initialized) && (!sdlapp_is_running(g_sdlapp)) && (!sdlapp_is_quit_requested(g_sdlapp)))
             {
                 APP_COND_WAIT_TIMEOUT_MS(g_iface_video->is_initialized_cond, g_iface_video->is_initialized_mutex, 1000);
             };
 
             if (!sdlapp_is_running(g_sdlapp))
             {
-                g_print("%s() - Exit request detected!\n", __func__);
+                /* Ukončení vyžádáno ještě před inicializací emulátoru
+                 * (emulator_init / snapshot_init / version_check_init /
+                 * emulator_measuring_init / mzarch_platform_fn_init níže
+                 * v této funkci zatím NEproběhly). Nesmíme volat
+                 * emulator_quit() - ten deinicializuje právě tyto
+                 * subsystémy, což by na neinicializovaném stavu
+                 * spadlo. Stačí ukončit vlákno; subsystémy
+                 * inicializované mimo toto vlákno uklidí volající
+                 * (např. main_pipe.c cleanup). */
+                g_print("%s() - Exit request detected before init!\n", __func__);
                 APP_MUTEX_UNLOCK(g_iface_video->is_initialized_mutex);
-                emulator_quit(EXIT_SUCCESS);
+                g_emulator_exit_value = EXIT_SUCCESS;
+                return &g_emulator_exit_value;
             };
 
             g_print("%s() - Video interface initialized!\n", __func__);
@@ -191,10 +180,7 @@ gpointer emulator_thread(gpointer ptr)
 
         emulator_init();
         display_init();
-        
-        // inicializace GTK3 UI
-        ui_main_init();
-        
+
         version_check_init();
 
         // inicializace callbacku pro generic driver
@@ -266,8 +252,6 @@ void emulator_max_speed(bool value)
     };
 
     iface_audio_update_buffer_state();
-
-    ui_main_update_cpu_speed_menu(g_emulator.max_speed);
 }
 
 void emulator_pause(bool value)
@@ -286,7 +270,6 @@ void emulator_pause(bool value)
     g_emulator.paused = value;
 
     iface_audio_pause_emulation(g_emulator.paused);
-    ui_main_update_emulation_state(g_emulator.paused);
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
     if (TEST_DEBUGGER_ACTIVE)
@@ -294,12 +277,10 @@ void emulator_pause(bool value)
         if (g_emulator.paused)
         {
             // zastavili jsme
-            ui_debugger_hide_spinner_window();
             bptmap_reset_temporary_event();
         }
         else
         {
-            ui_debugger_show_spinner_window();
             if (g_iface_video_callbacks->set_window_focus)
             {
                 g_iface_video_callbacks->set_window_focus();

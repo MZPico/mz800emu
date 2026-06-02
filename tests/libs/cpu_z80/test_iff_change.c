@@ -305,9 +305,10 @@ void test_IM1_int_ack_fires_INT_ACK(void)
     TEST_ASSERT_EQUAL_UINT8(0, g_track.last_iff2);
     TEST_ASSERT_EQUAL_INT(prev_fire + 1, g_track.fire_count);
     TEST_ASSERT_EQUAL_INT(prev_intack + 1, g_track.intack_count);
-    /* PC = handler+1 (HALT inkrementuje PC pri fetch, hardware pak
-     * M1 opakuje stejne PC az do INT - test staci PC=0x39 = halt vykonan) */
-    TEST_ASSERT_EQUAL_UINT16(0x0039, g_cpu->pc);
+    /* PC = adresa instrukce HALT (0x0038). Realny Z80 drzi PC na HALT
+     * (instrukce se re-fetchuje cyklicky kvuli DRAM refreshi), inkrementuje
+     * az pred skokem do INT/NMI rutiny. Viz BUG1 fix v z80.c op_76. */
+    TEST_ASSERT_EQUAL_UINT16(0x0038, g_cpu->pc);
     TEST_ASSERT_TRUE(z80_is_halted(g_cpu));
 }
 
@@ -342,8 +343,9 @@ void test_IM2_int_ack_fires_INT_ACK(void)
     TEST_ASSERT_EQUAL_UINT8(0, g_cpu->iff2);
     TEST_ASSERT_EQUAL_UINT8(Z80_IFF_REASON_INT_ACK, g_track.last_reason);
     TEST_ASSERT_EQUAL_INT(prev_fire + 1, g_track.fire_count);
-    /* PC = handler+1 (HALT fetched + halted=true) */
-    TEST_ASSERT_EQUAL_UINT16(0x1235, g_cpu->pc);
+    /* PC = adresa instrukce HALT (0x1234) - PC stoji na HALT, viz BUG1
+     * fix v z80.c op_76 (realny Z80 inkrementuje az pred INT/NMI accept). */
+    TEST_ASSERT_EQUAL_UINT16(0x1234, g_cpu->pc);
     TEST_ASSERT_TRUE(z80_is_halted(g_cpu));
 }
 
@@ -414,8 +416,9 @@ void test_NMI_ack_fires_NMI_ACK(void)
     TEST_ASSERT_EQUAL_UINT8(0, g_track.last_iff1);
     TEST_ASSERT_EQUAL_UINT8(1, g_track.last_iff2);
     TEST_ASSERT_EQUAL_INT(prev_fire + 1, g_track.fire_count);
-    /* PC = handler+1 (HALT fetched) */
-    TEST_ASSERT_EQUAL_UINT16(0x0067, g_cpu->pc);
+    /* PC = adresa instrukce HALT (0x0066) - PC stoji na HALT, viz BUG1
+     * fix v z80.c op_76 (realny Z80 inkrementuje az pred INT/NMI accept). */
+    TEST_ASSERT_EQUAL_UINT16(0x0066, g_cpu->pc);
     TEST_ASSERT_TRUE(z80_is_halted(g_cpu));
 }
 

@@ -64,8 +64,6 @@
 // Lokalizace
 #include "i18n.h"
 
-#include "mzarch/mzarch.h"
-#include "mzarch/mzarch_platform.h"
 #include "cfgmain.h"
 #include "unicard/unicard.h"
 #include "baseui/baseui.h"
@@ -79,16 +77,8 @@
 #endif
 #include "baseui/baseui_filechooser.h"
 
-#ifdef MZ800EMU_CFG_UI_ENABLED
-#include "ui-gtk3/ui_file_chooser.h"
-#include "ui-gtk3/ui_qdisk.h"
-#else
 #define ui_qdisk_set_std_path( x ) {g_free( g_qdisk.ui_std_filepath ); g_qdisk.ui_std_filepath = (x) ? g_strdup( x ) : g_strdup( "" );}
 #define ui_qdisk_set_virt_path( x ) {g_free( g_qdisk.ui_virt_filepath ); g_qdisk.ui_virt_filepath = (x) ? g_strdup( x ) : g_strdup( "" );}
-#define ui_qdisk_menu_update()
-#define ui_file_chooser_open_mzq( x ) NULL
-#define ui_file_chooser_open_qddir( x ) NULL
-#endif /* MZ800EMU_CFG_UI_ENABLED */
 
 #endif
 
@@ -845,7 +835,6 @@ void qdisk_umount ( void ) {
         cfgelement_set_text_value ( g_elm_virt_fp, "" );
         ui_qdisk_set_virt_path ( "" );
     };
-    ui_qdisk_menu_update ( );
 }
 
 
@@ -960,8 +949,6 @@ void qdisk_init ( void ) {
 #endif
 
     qdisk_open ( );
-
-    ui_qdisk_menu_update ( );
 }
 
 
@@ -1659,7 +1646,6 @@ void qdisk_deactivate_unicard_boot_loader ( void ) {
         g_qdisk.type = QDISK_TYPE_IMAGE;
         qdisk_open_image ( "" );
         qdisk_open ( );
-        ui_qdisk_menu_update ( );
     };
 }
 
@@ -1675,7 +1661,6 @@ void qdisk_activate_unicard_boot_loader ( void ) {
      * mód. Force R/O řeší qdisk_open() UNICARD branch runtime přes
      * qdisk_open_image_internal(force_user_readonly=1). */
     qdisk_open ( );
-    ui_qdisk_menu_update ( );
 }
 
 int qdisc_get_write_protected(void)
@@ -1719,7 +1704,6 @@ void qdisk_apply_storage_mode_switch ( const char *target_mode ) {
      * pred volanim teto funkce. */
     qdisk_close ( );
     qdisk_open ( );
-    ui_qdisk_menu_update ( );
 }
 
 

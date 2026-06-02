@@ -8,3 +8,6 @@ mz_add_test(ui-smoke
     LIBS     mzlib_imgui mzlib_igfd mzlib_imwidgets
     LABELS   "ui"
 )
+
+# Memory Browser V0 hex MVP - membrowser mutant
+add_subdirectory(membrowser)

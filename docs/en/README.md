@@ -1,6 +1,10 @@
-# MZ-800 Emulator (experimental version)
+# MZ-800 Emulator
 
-The latest old stable version can be found here: <https://sourceforge.net/projects/mz800emu/>
+The project moved from SourceForge to GitHub. The latest source code and
+releases are now available at <https://github.com/michalhucik/mz800emu>.
+
+Older 1.0.x releases remain archived on the original SourceForge
+page: <https://sourceforge.net/projects/mz800emu/>
 
 
 ## Windows
@@ -21,7 +25,7 @@ Most keys are located in the same positions as the MZ-800 — like in the emulat
 | Sharp key    | PC key                  |
 |--------------|-------------------------|
 | `GRAPH`      | CapsLock                |
-| `ALPHA`      | `\`                     |
+| `ALPHA`      | `\` (both keys, see below) |
 | `BLANK_KEY`  | `~`                     |
 | `ESC`        | Esc, or End             |
 | `INST`       | Insert                  |
@@ -30,6 +34,24 @@ Most keys are located in the same positions as the MZ-800 — like in the emulat
 | `\`          | F7                      |
 | `?`          | F8                      |
 | `LIBRA`      | F9                      |
+
+**Note on `ALPHA`:** On keyboards with a Czech (and generally ISO) layout there
+are two physical keys that produce `\`: the standard Backslash and the ISO key
+next to the left Shift (reported by the PC as "Oem102" / Non-US Backslash). Both
+act as `ALPHA` - no need to worry about which one you have.
+
+
+### Differences between models (MZ-800 vs MZ-700 / MZ-1500)
+
+The MZ-700 and MZ-1500 keyboards differ from the MZ-800: they have no TAB
+key. In its place sits a longer ALPHA key (same width as TAB on the MZ-800),
+so the SHIFT row has one key fewer and the left SHIFT is the same size as the
+right one. The host Tab key therefore acts as ALPHA on the MZ-700 and
+MZ-1500.
+
+| Sharp key    | MZ-800        | MZ-700 / MZ-1500          |
+|--------------|---------------|---------------------------|
+| `ALPHA`      | PC `\`        | PC `\` or PC Tab          |
 
 
 ## Command-line options
@@ -75,6 +97,7 @@ are rejected with an error - use `--help` for a generated listing.
 | `--all-traces-dir` | `<dirpath>` | Shorthand: set the target directory for ALL four trace-suite subsystems. Per-subsystem `--<sys>-dir` takes precedence. |
 | `--no-save-ini` | - | Do not write the `.ini` file at exit. CLI overrides become session-only. |
 | `--no-first-run-windows` | - | Suppress automatic opening of About + Version Check Setup windows on first run (when no `.ini` file exists). Useful for headless / scripted launches. |
+| `--headless` | - | Run the emulator without a GUI window and without audio output. The SDL3 video and audio subsystems run in no-op mode (no SDL window, no audio device opened). The framebuffer is still rendered into memory (ready for later MCP frame Resources). Intended for CI / batch / subprocess scenarios with no display or audio device available. The process keeps running until SIGINT (Ctrl+C) or an SDL quit event. Recommended to combine with `--no-first-run-windows`. |
 
 ### CDL export layout
 
@@ -168,6 +191,12 @@ Per-subsystem format details:
 - [`../cz/debugger/formats/INT-log_format.md`](../cz/debugger/formats/INT-log_format.md) - Interrupt Log (Czech)
 - [`../cz/debugger/formats/HW-log_format.md`](../cz/debugger/formats/HW-log_format.md) - HW Log (Czech)
 - [`../cz/debugger/Trace_Suite.md`](../cz/debugger/Trace_Suite.md) - User overview, GUI menu, INI persistence (Czech)
+
+Other debugger documents:
+
+- [`debugger/disassembler-window.md`](debugger/disassembler-window.md) -
+  standalone Disassembler window V1 (range disasm, S/L/D/W auto-labels,
+  sym_db/CDL gating, export .asm/.s for pasmo/sjasmplus/sdcc-asz80)
 
 ### Examples
 

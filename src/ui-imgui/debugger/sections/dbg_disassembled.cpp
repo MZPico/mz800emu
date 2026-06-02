@@ -168,6 +168,7 @@
 #include "debugger/debugger.h"
 #include "debugger/breakpoints.h"
 #include "debugger/symbols/sym_db.h"
+#include "ui-imgui/debugger/symbols/symdb_bridge.h"
 #include "debugger/bookmarks/bookmarks.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "mzarch/mzarch.h"
@@ -543,95 +544,42 @@ static const float SLIDER_WIDTH = 20.0f;
  * MOST sym_db ↔ z80_symtab
  * =========================================================================
  *
- * Disassembler dasm-z80 nezná mz800new sym_db, místo toho má vlastní
- * z80_symtab_t s lookup-by-addr API. Při formátování instrukce přes
- * z80_dasm_to_str_sym() pak nahrazuje hex adresy v operandech (CALL,
- * JP, JR, LD A,(nn) atd.) symbolickými jmény.
+ * Bridge cache (s_dasm_symtab + version + sync) byla extrahována ve fázi
+ * F3 (disassembler-window-v1) do samostatného modulu
+ * @c ui-imgui/debugger/symbols/symdb_bridge.{c,h}. Důvodem byl druhý
+ * konzument - samostatné Disassembler V1 okno - které potřebovalo
+ * stejnou cestu, ale bez závislosti na této sekci.
  *
- * Strategie cache:
- *   - jeden file-static z80_symtab_t pro všechny render volání
- *   - rebuild jen když sym_db_get_version() narostlo (= byl import nebo
- *     ruční edit), jinak no-op
- *   - bank handling: filtrujeme jen bank_id == 0 (= "CPU view"), což
- *     odpovídá fallback chování sym_db_lookup_by_addr() pro CPU pohled
+ * Lokální symboly @c sync_dasm_symtab() a @c get_dasm_symtab() jsou
+ * zachovány jako tenký proxy nad bridge API, aby všechna existující
+ * call sites v této sekci zůstaly beze změny (= refactor bez
+ * sémantické změny).
  *
  * Threading: jen UI vlákno (disasm render). Žádný přístup z EMU vlákna.
  */
-static z80_symtab_t *s_dasm_symtab = NULL;
-static unsigned s_dasm_symtab_version = 0;
-static bool s_dasm_symtab_initialized = false;
-
 
 /**
- * @brief Synchronizuje z80_symtab cache s aktuálním stavem sym_db.
+ * @brief Proxy: deleguje na @ref symdb_bridge_get_symtab.
  *
- * Pokud verze sym_db neodpovídá cachované, vyčistí symtab a znovu
- * naplní ze všech záznamů s bank_id == 0 (= CPU view symboly).
- *
- * Voláno před každým z80_dasm_to_str_sym() při refreshi disasm tabulek.
- *
- * Side effects: alokuje/přepisuje s_dasm_symtab, aktualizuje
- * s_dasm_symtab_version.
- *
- * @post s_dasm_symtab je platný handle nebo NULL pokud alokace selhala.
- *       z80_dasm_to_str_sym() s NULL symtab degraduje na bez-symbol fmt.
+ * Zachovaný název pro kompatibilitu s call sites v této sekci.
+ * Bridge sám interně synchronizuje s sym_db verzí, takže explicit
+ * "sync" už není potřeba - funkce zde slouží jen jako čitelnostní
+ * lokátor v existujícím kódu.
  */
 static void sync_dasm_symtab(void)
 {
-    unsigned cur_ver = sym_db_get_version();
-
-    /* První volání nebo po destroy - lazy create */
-    if (!s_dasm_symtab_initialized)
-    {
-        s_dasm_symtab = z80_symtab_create();
-        s_dasm_symtab_initialized = true;
-        s_dasm_symtab_version = (unsigned)~0u; /* force rebuild níže */
-    };
-
-    if (cur_ver == s_dasm_symtab_version && s_dasm_symtab)
-        return; /* up-to-date */
-
-    if (s_dasm_symtab)
-    {
-        z80_symtab_clear(s_dasm_symtab);
-    }
-    else
-    {
-        s_dasm_symtab = z80_symtab_create();
-        if (!s_dasm_symtab)
-        {
-            s_dasm_symtab_version = cur_ver; /* zabraň busy-loop rebuild */
-            return;
-        };
-    };
-
-    size_t n = sym_db_count();
-    for (size_t i = 0; i < n; i++)
-    {
-        const st_SYMBOL *s = sym_db_get_by_index(i);
-        if (!s || !s->name) continue;
-        /* V1 limit: jen globální (CPU view) symboly. Bank-aware lookup
-         * pro 0xE000-0xFFFF region je TODO (viz plán #4 mimo scope). */
-        if (s->bank_id != 0) continue;
-        z80_symtab_add(s_dasm_symtab, (uint16_t)(s->addr & 0xFFFF), s->name);
-    };
-
-    s_dasm_symtab_version = cur_ver;
+    (void)symdb_bridge_get_symtab();
 }
 
 
 /**
- * @brief Vrátí aktuálně synchronizovaný symtab (může být NULL).
+ * @brief Proxy: vrací cached symtab z bridge modulu (může být NULL).
  *
- * Volající má před tím zavolat sync_dasm_symtab(). Pointer žije do
- * příštího sync_dasm_symtab() (= rebuild) - pro single-frame použití
- * v render funkcích je to bezpečné.
- *
- * @return symtab handle nebo NULL pokud nebyl alokován / alokace selhala
+ * @return symtab handle nebo NULL pokud bridge alokace selhala.
  */
 static const z80_symtab_t *get_dasm_symtab(void)
 {
-    return s_dasm_symtab;
+    return symdb_bridge_get_symtab();
 }
 
 

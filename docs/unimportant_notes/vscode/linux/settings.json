@@ -80,7 +80,6 @@
     "vga_layer.h": "c",
     "vga_color.h": "c",
     "sdl.h": "c",
-    "gtk.h": "c",
     "mz800.h": "c",
     "stdbool.h": "c",
     "memory.h": "c",
@@ -119,10 +118,8 @@
     "ui_vkbd_windows.h": "c",
     "ui_memory_driver.h": "c",
     "app_thread.h": "c",
-    "gtkvkbd.h": "c",
     "vkbd_scancode.h": "c",
     "iface_keyboard.h": "c",
-    "iface_gtk4_video.h": "c",
     "memext.h": "c",
     "nstimer.h": "c",
     "ui_tools_menu.h": "c",
@@ -141,7 +138,6 @@
     "app_main.h": "c",
     "video.h": "c",
     "iface_joy.h": "c",
-    "joy.h": "c",
-    "gtkvkbd_linux_x11.h": "c"
+    "joy.h": "c"
   }
 }

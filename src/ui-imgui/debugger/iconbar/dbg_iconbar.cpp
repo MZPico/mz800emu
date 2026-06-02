@@ -28,7 +28,7 @@
  * =====================================
  * - Breakpoints (Alt+B): Otevře okno breakpointů
  * - Memory Browser (Alt+E): Otevře memory browser (zatím neimplementováno)
- * - Disassembler (Alt+I): Otevře disassembler (zatím neimplementováno)
+ * - Disassembler (Alt+Shift+D): Otevře samostatné Disassembler okno V1.
  *
  * ----------------------------- License -------------------------------------
  *
@@ -291,25 +291,23 @@ void dbg_iconbar_render(void)
      * otevírá z hlavního topmenu emulátoru (Debugger -> Memory Map).
      */
 
-    ImGui::BeginDisabled(true);
-
+    /* Memory Browser - V0 hex MVP (membrowser mutant). */
     if (dbg_icon_button("##dbg_memory", "dbg-memory", "MEM"))
     {
-        /* TODO: g_gui->showMemoryBrowserWindow = !g_gui->showMemoryBrowserWindow; */
+        g_gui->showMemoryBrowserWindow = !g_gui->showMemoryBrowserWindow;
     };
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("%s (Alt+E)", _("Memory Browser window"));
 
     ImGui::SameLine();
 
+    /* Disassembler V1 - samostatné range-based disasm okno. */
     if (dbg_icon_button("##dbg_disasm", "dbg-disasm", "DASM"))
     {
-        /* TODO: g_gui->showDisassemblerWindow = !g_gui->showDisassemblerWindow; */
+        g_gui->showDisassemblerWindow = !g_gui->showDisassemblerWindow;
     };
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        ImGui::SetTooltip("%s (Alt+I)", _("Disassembler window"));
-
-    ImGui::EndDisabled();
+        ImGui::SetTooltip("%s (Alt+Shift+D)", _("Disassembler window"));
 }
 
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */

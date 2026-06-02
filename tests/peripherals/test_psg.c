@@ -9,6 +9,8 @@
 
 #include "mztest.h"
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #include "hw-generic/psg/psg.h"
 
@@ -268,6 +270,133 @@ void test_psg_stereo_individual(void)
     psg_init(false);
 }
 
+/* ================================================================
+ * PSG WRITE LOG (hook v psg_write_byte)
+ * ================================================================ */
+
+/**
+ * @brief Pomocná funkce - spočítá řádky v souboru (mimo komentáře #).
+ *
+ * Slouží pro assertion že write-log zapsal očekávaný počet dat řádků.
+ */
+static unsigned count_data_lines(const char *path)
+{
+    FILE *fp = fopen(path, "r");
+    if (!fp) return 0u;
+    unsigned count = 0u;
+    char buf[512];
+    while (fgets(buf, sizeof(buf), fp))
+    {
+        if (buf[0] == '#' || buf[0] == '\n' || buf[0] == '\0')
+            continue;
+        count++;
+    }
+    fclose(fp);
+    return count;
+}
+
+/* PSG write log - default disabled */
+void test_psg_write_log_default_disabled(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+    TEST_ASSERT_FALSE(psg_write_log_is_enabled());
+}
+
+/* PSG write log - enable s NULL path selže */
+void test_psg_write_log_enable_null(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+    TEST_ASSERT_FALSE(psg_write_log_enable(NULL));
+    TEST_ASSERT_FALSE(psg_write_log_is_enabled());
+}
+
+/* PSG write log - mono: enable, několik zápisů, disable, ověř obsah */
+void test_psg_write_log_mono_roundtrip(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    const char *path = "test_psg_writelog_mono.tsv";
+    psg_init(false); /* mono */
+
+    TEST_ASSERT_TRUE(psg_write_log_enable(path));
+    TEST_ASSERT_TRUE(psg_write_log_is_enabled());
+
+    /* 3 zápisy: latch ch0 attn, data attn=7, latch ch1 attn */
+    psg_write_byte(PSG_CH_LEFT, 0x90);
+    psg_write_byte(PSG_CH_LEFT, 0x97);
+    psg_write_byte(PSG_CH_LEFT, 0xB0);
+
+    TEST_ASSERT_EQUAL_UINT(3u, psg_write_log_row_count());
+
+    psg_write_log_disable();
+    TEST_ASSERT_FALSE(psg_write_log_is_enabled());
+
+    /* Po disable: soubor má header + 3 datové řádky */
+    TEST_ASSERT_EQUAL_UINT(3u, count_data_lines(path));
+
+    remove(path);
+}
+
+/* PSG write log - když je disabled, nezapisuje (počet řádků se nemění) */
+void test_psg_write_log_disabled_skips(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    /* Předpokládáme disabled (= po předchozím testu nebo init).
+     * row_count je perzistentní (resetuje se až při enable). Test si
+     * tedy uloží baseline a ověří že se nezvýší při zápisech-bez-logu. */
+    psg_write_log_disable();
+    TEST_ASSERT_FALSE(psg_write_log_is_enabled());
+
+    unsigned baseline = psg_write_log_row_count();
+
+    psg_init(false);
+    psg_write_byte(PSG_CH_LEFT, 0x80);
+    psg_write_byte(PSG_CH_LEFT, 0x9F);
+
+    /* row_count se nesmí inkrementovat když je disabled. */
+    TEST_ASSERT_EQUAL_UINT(baseline, psg_write_log_row_count());
+}
+
+/* PSG write log - stereo broadcast: jeden zápis s LEFT|RIGHT mask */
+void test_psg_write_log_stereo_broadcast(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    const char *path = "test_psg_writelog_stereo.tsv";
+    psg_init(true); /* stereo */
+
+    TEST_ASSERT_TRUE(psg_write_log_enable(path));
+
+    /* Broadcast = jeden řádek se channel_mask = 3. */
+    psg_write_byte(PSG_CH_LEFT | PSG_CH_RIGHT, 0x9F);
+    TEST_ASSERT_EQUAL_UINT(1u, psg_write_log_row_count());
+
+    psg_write_log_disable();
+    TEST_ASSERT_EQUAL_UINT(1u, count_data_lines(path));
+
+    /* Ověř že řádek obsahuje channel_mask 3 a hex 9F. */
+    FILE *fp = fopen(path, "r");
+    TEST_ASSERT_NOT_NULL(fp);
+    char buf[512];
+    bool found = false;
+    while (fgets(buf, sizeof(buf), fp))
+    {
+        if (buf[0] == '#') continue;
+        /* Tab-separated: <ticks>\t<mask>\t<hex> */
+        if (strstr(buf, "\t3\t9F") != NULL)
+        {
+            found = true;
+            break;
+        }
+    }
+    fclose(fp);
+    TEST_ASSERT_TRUE(found);
+
+    remove(path);
+    psg_init(false); /* vrátit do mono pro následující testy */
+}
+
 /* === MAIN === */
 
 int main(int argc, char *argv[])
@@ -294,6 +423,13 @@ int main(int argc, char *argv[])
     RUN_TEST(test_psg_latch_mechanism);
     RUN_TEST(test_psg_stereo_broadcast);
     RUN_TEST(test_psg_stereo_individual);
+
+    /* write log */
+    RUN_TEST(test_psg_write_log_default_disabled);
+    RUN_TEST(test_psg_write_log_enable_null);
+    RUN_TEST(test_psg_write_log_mono_roundtrip);
+    RUN_TEST(test_psg_write_log_disabled_skips);
+    RUN_TEST(test_psg_write_log_stereo_broadcast);
 
     int result = UNITY_END();
     mztest_teardown();

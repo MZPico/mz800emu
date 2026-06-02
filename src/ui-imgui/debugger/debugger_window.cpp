@@ -129,10 +129,30 @@ static void dbg_workplace_apply(bool open)
     if (g_debugger.wp_callstack)       g_gui->showCallstackWindow   = open;
     if (g_debugger.wp_breakpoints)     g_gui->showBreakpointsWindow = open;
     if (g_debugger.wp_watch)           g_gui->showWatchWindow       = open;
+    if (g_debugger.wp_membrowser)      g_gui->showMemoryBrowserWindow = open;
+    /* V3 multi-view: workplace flagy pro sekundarni Memory Browser okna. */
+    for (int i = 0; i < 4; i++)
+    {
+        if (g_debugger.wp_membrowser_extra[i])
+            g_gui->showMemoryBrowserWindowExtra[i] = open;
+    };
     if (g_debugger.wp_profiler)        g_gui->showProfilerWindow    = open;
     if (g_debugger.wp_bookmarks)       g_gui->showBookmarksWindow   = open;
     if (g_debugger.wp_symbols)         g_gui->showSymbolsWindow     = open;
     if (g_debugger.wp_variables)       g_gui->showVarsWindow        = open;
+    /* Per-chip-panels: per-chip detail okna do workplace. CTC + PPI ve
+     * všech archech, Z80 PIO + PSG jen MZ-800 / MZ-1500. */
+    if (g_debugger.wp_show_ctc)        g_gui->showCtcStateWindow    = open;
+    if (g_debugger.wp_show_ppi)        g_gui->showPpiStateWindow    = open;
+#if HAVE_PIOZ80
+    if (g_debugger.wp_show_pioz80)     g_gui->showPiozStateWindow   = open;
+#endif
+#if HAVE_PSG >= 1
+    if (g_debugger.wp_show_psg)            g_gui->showPsgStateWindow         = open;
+    if (g_debugger.wp_show_psg_audio_scope) g_gui->showPsgAudioScopeWindow   = open;
+#endif
+    /* gdg-panel F1 scaffold: GDG je ve všech 3 archech, žádný guard. */
+    if (g_debugger.wp_show_gdg)        g_gui->showGdgStateWindow    = open;
     for (int i = 0; i < 4; i++)
     {
         if (g_debugger.wp_disasm_extra[i])

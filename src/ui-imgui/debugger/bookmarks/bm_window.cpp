@@ -69,6 +69,7 @@
 
 #include "bm_window.h"
 #include "ui-imgui/debugger/sections/dbg_disassembled.h"
+#include "ui-imgui/mcp_activity/owner_badge.h"  /* V1.C.3 owner badge */
 
 #include <set>
 #include <string>
@@ -114,6 +115,11 @@ struct BmState {
     uint32_t rmb_popup_id = 0;
     uint16_t rmb_popup_addr = 0;
     bool     rmb_popup_open = false;
+
+    /* V1.E.6.A: pending focus request z Activity okna (= dvojklik routing).
+     * Hodnota != 0 = budoucí frame má scrollnout na řádek s bookmark.id == X
+     * a označit ho jako selected. Po spotřebě je reset na 0. */
+    uint32_t pending_focus_id = 0;
 };
 
 static BmState g_bm;
@@ -222,6 +228,22 @@ extern "C" void bm_window_open_with_focus_to_input ( void ) {
     g_gui->showBookmarksWindow = true;
     g_bm.add_form_open = true;
     g_bm.focus_add_input_next_frame = true;
+}
+
+
+extern "C" void bm_window_focus_id ( uint32_t bm_id ) {
+    /* V1.E.6.A: Activity dvojklik routing - otevři okno a označ pending
+     * focus ID. Spotřebitelem je render loop (bm_window_render), který
+     * při dalším frame najde řádek s odpovídajícím bookmark.id, scrollne
+     * na něj a označí jako selected. Pokud bookmark s daným ID v storage
+     * neexistuje (= mezičasem smazán), spotřeba je no-op a flag se resetne.
+     *
+     * Hodnota 0 je legální bookmark ID (= storage začíná od 1), takže
+     * 0 jako sentinel pro "no pending" je bezpečné per bookmarks_get_by_id
+     * kontraktu (= 0 vrací NULL). */
+    if ( bm_id == 0 ) return;
+    g_gui->showBookmarksWindow = true;
+    g_bm.pending_focus_id = bm_id;
 }
 
 
@@ -527,6 +549,10 @@ static void bm_render_row ( const bookmark_t *bm,
         else       g_bm.selected_ids.erase  ( bm->id );
     };
 
+    /* V1.C.3 - Owner badge sloupec. */
+    ImGui::TableSetColumnIndex ( 1 );
+    owner_badge_render ( bm->cmd_origin );
+
     bool in_edit = ( g_bm.edit_id == bm->id );
 
     /* Apply / Cancel akce řízené Enter / Escape v edit režimu - shromáždíme
@@ -535,7 +561,7 @@ static void bm_render_row ( const bookmark_t *bm,
     bool edit_cancel = false;
 
     /* Label sloupec - tlačítka [šipka] [...] + plain text label. */
-    ImGui::TableSetColumnIndex ( 1 );
+    ImGui::TableSetColumnIndex ( 2 );
     if ( in_edit ) {
         ImGui::SetNextItemWidth ( -FLT_MIN );
         if ( ImGui::InputText ( "###bm_edit_input",
@@ -604,7 +630,7 @@ static void bm_render_row ( const bookmark_t *bm,
     };
 
     /* Address sloupec - jen plain text, žádné kliky. */
-    ImGui::TableSetColumnIndex ( 2 );
+    ImGui::TableSetColumnIndex ( 3 );
     if ( addr_valid ) {
         ImGui::Text ( "$%04X", addr );
     } else {
@@ -612,7 +638,7 @@ static void bm_render_row ( const bookmark_t *bm,
     };
 
     /* Comment sloupec */
-    ImGui::TableSetColumnIndex ( 3 );
+    ImGui::TableSetColumnIndex ( 4 );
     if ( in_edit ) {
         ImGui::SetNextItemWidth ( -FLT_MIN );
         if ( ImGui::InputText ( "###bm_edit_cmnt",
@@ -651,7 +677,7 @@ static void bm_render_row ( const bookmark_t *bm,
     };
 
     /* Actions sloupec */
-    ImGui::TableSetColumnIndex ( 4 );
+    ImGui::TableSetColumnIndex ( 5 );
     if ( in_edit ) {
         if ( ImGui::SmallButton ( _L ( "OK##bm_apply" ) ) ) {
             edit_apply = true;
@@ -885,8 +911,8 @@ static void bm_render_table_header ( size_t total_count ) {
     };
     ImGui::PopID ( );
 
-    /* Sloupce 1-4: standardní hlavičky. */
-    for ( int col = 1; col <= 4; col++ ) {
+    /* Sloupce 1-5: standardní hlavičky (V1.C.3 - +1 = Owner sloupec). */
+    for ( int col = 1; col <= 5; col++ ) {
         ImGui::TableSetColumnIndex ( col );
         const char *name = ImGui::TableGetColumnName ( col );
         ImGui::TableHeader ( name ? name : "" );
@@ -938,10 +964,14 @@ extern "C" void bm_window_render ( bool *p_open ) {
         ImGuiTableFlags_SizingStretchProp |
         ImGuiTableFlags_Resizable;
 
-    if ( ImGui::BeginTable ( "##bm_table", 5, table_flags ) ) {
+    if ( ImGui::BeginTable ( "##bm_table", 6, table_flags ) ) {
         ImGui::TableSetupScrollFreeze ( 0, 1 );
         ImGui::TableSetupColumn ( "##bm_sel",     ImGuiTableColumnFlags_WidthFixed,
                                   ImGui::GetFontSize ( ) * 1.5f );
+        /* V1.C.3 - Owner badge sloupec. */
+        ImGui::TableSetupColumn ( _L( "Own##bm_col_owner" ),
+                                  ImGuiTableColumnFlags_WidthFixed,
+                                  ImGui::GetFontSize ( ) * 2.5f );
         ImGui::TableSetupColumn ( _( "Label" ),   ImGuiTableColumnFlags_WidthStretch,
                                   3.0f );
         ImGui::TableSetupColumn ( _( "Address" ), ImGuiTableColumnFlags_WidthFixed,
@@ -959,12 +989,25 @@ extern "C" void bm_window_render ( bool *p_open ) {
         uint32_t pending_remove = 0;
         bool     pending_break  = false;
 
+        /* V1.E.6.A: pending focus z bm_window_focus_id() - najdi řádek a
+         * scrollni. Spotřebovat se musí jednorázově a poté reset. */
+        uint32_t focus_id_local = g_bm.pending_focus_id;
+        g_bm.pending_focus_id = 0;
+
         for ( size_t i = 0; i < total_count; i++ ) {
             const bookmark_t *bm = bookmarks_get_by_index ( i );
             if ( !bm_filter_match ( bm ) ) continue;
 
             ImGui::TableNextRow ( );
             bm_render_row ( bm, &pending_remove, &pending_break );
+
+            /* V1.E.6.A: pokud řádek odpovídá focus targetu, scroll + select. */
+            if ( focus_id_local != 0 && bm && bm->id == focus_id_local ) {
+                ImGui::SetScrollHereY ( 0.5f );
+                g_bm.selected_ids.clear ( );
+                g_bm.selected_ids.insert ( focus_id_local );
+                focus_id_local = 0;
+            };
 
             if ( pending_break ) break;
         };

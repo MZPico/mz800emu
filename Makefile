@@ -158,6 +158,23 @@ ifneq ($(NO_DEBUGGER),)
     CMAKE_CONFIGURE_FLAGS += -DMZ_NO_DEBUGGER=$(NO_DEBUGGER)
 endif
 
+# NO_MCP / NO_MCP_TCP propagace: vypíná MCP server backend, respektive
+# jen jeho TCP listener. MCP je ve standardním buildu VŽDY zapnutý;
+# vypíná se explicitně přes NO_MCP=1 / NO_MCP_TCP=1. Negativní toggle ->
+# CMake -DMZ_NO_MCP=ON -> add_compile_definitions MZ800EMU_NO_MCP ->
+# #ifndef guard v mzarch_config.h.
+#
+# Sémantika (cascade):
+#   NO_DEBUGGER=1   implicitně vyžaduje NO_MCP=1 (MCP vyžaduje debugger)
+#   NO_MCP=1        implicitně vyžaduje NO_MCP_TCP=1 (TCP vyžaduje MCP)
+# CMakeLists.txt cascade vynutí automaticky a vypíše message(STATUS).
+ifneq ($(NO_MCP),)
+    CMAKE_CONFIGURE_FLAGS += -DMZ_NO_MCP=$(NO_MCP)
+endif
+ifneq ($(NO_MCP_TCP),)
+    CMAKE_CONFIGURE_FLAGS += -DMZ_NO_MCP_TCP=$(NO_MCP_TCP)
+endif
+
 # CMAKE_MAKE_PROGRAM se přidává jen pokud máme explicitní cestu k ninja
 # (Windows toolchain). Na Linuxu se ninja najde z PATH automaticky.
 ifneq ($(MZ_NINJA),)
@@ -197,19 +214,19 @@ configure:
 # Build targets
 # ----------------------------------------------------------------------------
 .PHONY: mz800emu mz1500emu mz700emu-pal mz700emu-ntsc
-mz800emu: $(CMAKE_CACHE)
+mz800emu: $(CMAKE_CACHE) i18n-mo-auto
 	$(QUIET)$(MZ_CMAKE) --build $(BUILD_DIR) --target mz800emu -j$(JOBS)
 	@cp -f $(BUILD_DIR)/build-mz800emu/mz800emu* . 2>/dev/null || true
 
-mz1500emu: $(CMAKE_CACHE)
+mz1500emu: $(CMAKE_CACHE) i18n-mo-auto
 	$(QUIET)$(MZ_CMAKE) --build $(BUILD_DIR) --target mz1500emu -j$(JOBS)
 	@cp -f $(BUILD_DIR)/build-mz1500emu/mz1500emu* . 2>/dev/null || true
 
-mz700emu-pal: $(CMAKE_CACHE)
+mz700emu-pal: $(CMAKE_CACHE) i18n-mo-auto
 	$(QUIET)$(MZ_CMAKE) --build $(BUILD_DIR) --target mz700emu-pal -j$(JOBS)
 	@cp -f $(BUILD_DIR)/build-mz700emu-pal/mz700emu-pal* . 2>/dev/null || true
 
-mz700emu-ntsc: $(CMAKE_CACHE)
+mz700emu-ntsc: $(CMAKE_CACHE) i18n-mo-auto
 	$(QUIET)$(MZ_CMAKE) --build $(BUILD_DIR) --target mz700emu-ntsc -j$(JOBS)
 	@cp -f $(BUILD_DIR)/build-mz700emu-ntsc/mz700emu-ntsc* . 2>/dev/null || true
 
@@ -357,13 +374,18 @@ i18n-update-pot-all:
 	done
 
 # i18n-update-po: msgmerge nových řetězců do existujících .po (per arch)
+#
+# POZN: --no-fuzzy-matching je povinné, aby msgmerge nepřiřadil existující
+# msgstr novým podobným msgid. Bez něj fuzzy match propagoval "FDC State"
+# jako překlad pro "CTC State"/"PPI State"/"PSG State" napříč všemi jazyky
+# (regrese z per-chip-panels mutantu, viz Task 3 gdg-panel).
 .PHONY: i18n-update-po
 i18n-update-po:
 	@for lang in $(I18N_LANGS); do \
 	    po="$(I18N_LOCALE_DIR)/$$lang/LC_MESSAGES/$(I18N_DOMAIN).po"; \
 	    if [ -f "$$po" ]; then \
 	        echo "  msgmerge: $$lang"; \
-	        msgmerge --update --quiet "$$po" $(I18N_LOCALE_DIR)/$(I18N_DOMAIN).pot; \
+	        msgmerge --update --quiet --no-fuzzy-matching "$$po" $(I18N_LOCALE_DIR)/$(I18N_DOMAIN).pot; \
 	    fi; \
 	done
 
@@ -428,6 +450,15 @@ DIST_DIR := dist
 .PHONY: dist
 dist:
 	@echo "=== Building release version ==="
+	@# Vynuť fresh CMake configure: configure běží jen když chybí
+	@# CMakeCache.txt ($(CMAKE_CACHE) file target). Bez tohohle by dist
+	@# na již nakonfigurovaném dev build dir (typicky Debug) NEpřekonfiguroval
+	@# a vyrobil by Debug binárku (-O0 -g) navzdory DEBUG=0. Smazání cache
+	@# zaručí, že se aplikuje release (-O2 -DNDEBUG).
+	@# Pozn.: po dist zůstane build/ v release konfiguraci; pro návrat
+	@# k debug vývoji spusť `make configure` (přepíše BUILD_TYPE zpět).
+	@echo "Forcing fresh CMake configure (release build)"
+	$(QUIET)rm -f $(CMAKE_CACHE)
 	$(QUIET)$(MAKE) --no-print-directory DEBUG=0 mz800emu mz1500emu mz700emu-pal mz700emu-ntsc i18n-mo-auto
 	@echo ""
 	@echo "=== Preparing $(DIST_DIR)/ ==="
@@ -452,6 +483,17 @@ dist:
 	        fi; \
 	    done; \
 	done
+	@echo "Copying mcp-server/ (Python MCP wrapper)"
+	$(QUIET)mkdir -p $(DIST_DIR)/mcp-server
+	$(QUIET)cp -f mcp-server/mcp_server.py $(DIST_DIR)/mcp-server/
+	$(QUIET)cp -f mcp-server/mcpinit.sh $(DIST_DIR)/mcp-server/
+	$(QUIET)chmod +x $(DIST_DIR)/mcp-server/mcpinit.sh
+	$(QUIET)cp -f mcp-server/requirements.txt $(DIST_DIR)/mcp-server/
+	$(QUIET)cp -f mcp-server/README.md $(DIST_DIR)/mcp-server/
+	$(QUIET)cp -f mcp-server/README.cs.md $(DIST_DIR)/mcp-server/
+	@# .mcp.json se v dist nepřikládá - obsahuje absolutní cesty
+	@# specifické pro install location. Uživatel ho vyrobí jedním
+	@# ./mcp-server/mcpinit.sh po rozbalení dist.
 ifeq ($(MZ_PLATFORM),Windows)
 	@echo "Copying Windows extras (cacert.pem, libpng DLLs)"
 	$(QUIET)mkdir -p $(DIST_DIR)/certs
@@ -514,6 +556,8 @@ help:
 	@echo "  GENERATOR=Ninja|...          CMake generator (auto-detected)"
 	@echo "  FDC_DIAG=1                   Enable FDC verbose trace (wd279x, fdc)"
 	@echo "  NO_DEBUGGER=1                Build without debugger subsystem (~15 % smaller binary)"
+	@echo "  NO_MCP=1                     Build without MCP server backend (cascade: implies NO_MCP_TCP=1)"
+	@echo "  NO_MCP_TCP=1                 Build without MCP TCP listener (pipe transport only)"
 	@echo "  QUIET=                       Show full build commands"
 	@echo ""
 	@echo "TESTING (CTest)"

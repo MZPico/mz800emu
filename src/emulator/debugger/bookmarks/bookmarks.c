@@ -54,6 +54,41 @@
 static GArray  *s_bookmarks    = NULL;
 
 /**
+ * @brief Mutex chránící storage proti race read vs. write.
+ *
+ * V1.D.2.B - storage byl historicky single-thread UI guarantee (= UI
+ * jediný čtenář i zapisovatel), ale MCP Resource `emulator://bookmarks`
+ * čte přes `bookmarks_snapshot()` z MCP I/O threadu. Mutex chrání
+ * read snapshot proti souběžné mutaci z UI vlákna.
+ *
+ * Politika lockování: VŠECHNY mutace storage (add, remove, clear,
+ * set_user_input, set_comment, set_cmd_origin, load, merge, cleanup)
+ * berou tento mutex. Lookup helpery
+ * (bookmarks_get_by_index, bookmarks_get_by_id, bookmarks_count,
+ * bookmarks_resolve_addr) mutex NEbere - jejich kontrakt zůstává
+ * single-thread UI per existující bookmarks.h:16-17. MCP read jde
+ * výhradně přes thread-safe `bookmarks_snapshot()` který mutex bere.
+ *
+ * Init je lazy (přes g_once / atomic flag) - bookmarks_init() ho volá
+ * idempotentně. Cleanup mutex neuvolňuje (statický, lazy-init).
+ */
+static GMutex s_bookmarks_mutex;
+static gsize  s_bookmarks_mutex_init_once = 0;
+
+/**
+ * @brief Lazy init mutexu. Idempotentní, thread-safe přes
+ *        g_once_init_enter/leave (po skončení mají všechna vlákna
+ *        viditelný plně inicializovaný mutex).
+ */
+static void bookmarks_mutex_ensure ( void ) {
+    if ( g_once_init_enter ( &s_bookmarks_mutex_init_once ) )
+    {
+        g_mutex_init ( &s_bookmarks_mutex );
+        g_once_init_leave ( &s_bookmarks_mutex_init_once, 1 );
+    };
+}
+
+/**
  * @brief Monotonic ID counter. Inkrementuje se pro každé add /
  *        merge insert, nikdy se nedekrementuje (= ID jsou unique).
  *
@@ -198,56 +233,92 @@ unsigned bookmarks_get_version ( void ) {
 uint32_t bookmarks_add ( const char *user_input, const char *comment ) {
     if ( !user_input || !user_input[0] ) return 0;
     if ( !s_bookmarks ) bookmarks_init ( );
+    bookmarks_mutex_ensure ( );
 
+    g_mutex_lock ( &s_bookmarks_mutex );
     bookmark_t entry;
     entry.id          = s_next_id++;
     entry.user_input  = g_strdup ( user_input );
     entry.comment     = bookmarks_dup_or_null ( comment );
+    entry.cmd_origin  = DBGAPI_CMD_ORIGIN_USER;  /* V1.C.3 default - GUI tvorba */
     g_array_append_val ( s_bookmarks, entry );
     bookmarks_bump_version ( );
-    return entry.id;
+    uint32_t new_id = entry.id;
+    g_mutex_unlock ( &s_bookmarks_mutex );
+    return new_id;
 }
 
 
 bool bookmarks_remove ( uint32_t id ) {
+    bookmarks_mutex_ensure ( );
+    g_mutex_lock ( &s_bookmarks_mutex );
     int idx = bookmarks_find_index_by_id ( id );
-    if ( idx < 0 ) return false;
+    if ( idx < 0 ) { g_mutex_unlock ( &s_bookmarks_mutex ); return false; };
 
     bookmark_t *bm = &g_array_index ( s_bookmarks, bookmark_t, (guint) idx );
     if ( bm->user_input ) { g_free ( bm->user_input ); bm->user_input = NULL; };
     if ( bm->comment    ) { g_free ( bm->comment );    bm->comment    = NULL; };
     g_array_remove_index ( s_bookmarks, (guint) idx );
     bookmarks_bump_version ( );
+    g_mutex_unlock ( &s_bookmarks_mutex );
     return true;
 }
 
 
 bool bookmarks_set_user_input ( uint32_t id, const char *new_input ) {
     if ( !new_input || !new_input[0] ) return false;
+    bookmarks_mutex_ensure ( );
+    g_mutex_lock ( &s_bookmarks_mutex );
     int idx = bookmarks_find_index_by_id ( id );
-    if ( idx < 0 ) return false;
+    if ( idx < 0 ) { g_mutex_unlock ( &s_bookmarks_mutex ); return false; };
 
     bookmark_t *bm = &g_array_index ( s_bookmarks, bookmark_t, (guint) idx );
     if ( bm->user_input ) g_free ( bm->user_input );
     bm->user_input = g_strdup ( new_input );
     bookmarks_bump_version ( );
+    g_mutex_unlock ( &s_bookmarks_mutex );
     return true;
 }
 
 
 bool bookmarks_set_comment ( uint32_t id, const char *new_comment ) {
+    bookmarks_mutex_ensure ( );
+    g_mutex_lock ( &s_bookmarks_mutex );
     int idx = bookmarks_find_index_by_id ( id );
-    if ( idx < 0 ) return false;
+    if ( idx < 0 ) { g_mutex_unlock ( &s_bookmarks_mutex ); return false; };
 
     bookmark_t *bm = &g_array_index ( s_bookmarks, bookmark_t, (guint) idx );
     if ( bm->comment ) { g_free ( bm->comment ); bm->comment = NULL; };
     bm->comment = bookmarks_dup_or_null ( new_comment );
     bookmarks_bump_version ( );
+    g_mutex_unlock ( &s_bookmarks_mutex );
     return true;
 }
 
 
-void bookmarks_clear ( void ) {
+bool bookmarks_set_cmd_origin ( uint32_t id, en_DBGAPI_CMD_ORIGIN origin ) {
+    bookmarks_mutex_ensure ( );
+    g_mutex_lock ( &s_bookmarks_mutex );
+    int idx = bookmarks_find_index_by_id ( id );
+    if ( idx < 0 ) { g_mutex_unlock ( &s_bookmarks_mutex ); return false; };
+
+    bookmark_t *bm = &g_array_index ( s_bookmarks, bookmark_t, (guint) idx );
+    bm->cmd_origin = origin;
+    /* bookmarks_bump_version() záměrně NEvoláme - origin je metadata
+     * bez efektu na resolve ani UI cache, žádná invalidace není nutná. */
+    g_mutex_unlock ( &s_bookmarks_mutex );
+    return true;
+}
+
+
+/**
+ * @brief Interní varianta bookmarks_clear bez zamykání mutexu.
+ *
+ * Použít POUZE z kontextu kde caller už drží s_bookmarks_mutex
+ * (typicky bookmarks_load_internal). Public bookmarks_clear() je
+ * tenký lock-around wrapper.
+ */
+static void bookmarks_clear_locked ( void ) {
     if ( !s_bookmarks ) return;
     guint i;
     for ( i = 0; i < s_bookmarks->len; i++ ) {
@@ -257,6 +328,54 @@ void bookmarks_clear ( void ) {
     };
     g_array_set_size ( s_bookmarks, 0 );
     bookmarks_bump_version ( );
+}
+
+
+void bookmarks_clear ( void ) {
+    if ( !s_bookmarks ) return;
+    bookmarks_mutex_ensure ( );
+    g_mutex_lock ( &s_bookmarks_mutex );
+    bookmarks_clear_locked ( );
+    g_mutex_unlock ( &s_bookmarks_mutex );
+}
+
+
+/**
+ * @brief V1.D.2.B - Thread-safe snapshot bookmark storage.
+ *
+ * Caller alokuje pole `out` o velikosti `capacity`. Funkce pod zámkem
+ * překopíruje aktuální stav do `out` (shallow copy - char pointery
+ * z g_strdup ve storage zůstávají vlastněny storage; caller je NEsmí
+ * uvolnit). `out_count` = počet zapsaných záznamů, `truncated` = true
+ * pokud storage > capacity. Mutex se drží jen po dobu kopírování.
+ *
+ * Použití z dispatch.c (DBGAPI_CMD_BOOKMARKS_LIST) - caller dál nepoužívá
+ * `out[].user_input` / `comment` jako stabilní pointery (= jsou
+ * platné jen dokud žádné jiné vlákno neudělá mutaci storage); typicky
+ * je hned překopíruje do fixed-size st_DBGAPI_BOOKMARK_ENTRY bufferu
+ * a `out` zahodí.
+ *
+ * @param out         Caller-allocated pole (může být NULL pokud capacity=0).
+ * @param capacity    Velikost `out` (max počet zapsaných záznamů).
+ * @param out_count   (OUT) Počet zapsaných záznamů. NULL = nezapsáno.
+ * @param truncated   (OUT) true pokud storage > capacity. NULL = nezapsáno.
+ */
+void bookmarks_snapshot ( bookmark_t *out, size_t capacity,
+                          size_t *out_count, bool *truncated ) {
+    if ( out_count ) *out_count = 0;
+    if ( truncated ) *truncated = false;
+    bookmarks_mutex_ensure ( );
+    g_mutex_lock ( &s_bookmarks_mutex );
+    size_t total = s_bookmarks ? (size_t) s_bookmarks->len : 0;
+    size_t n     = ( total > capacity ) ? capacity : total;
+    if ( out && capacity > 0 ) {
+        for ( size_t i = 0; i < n; i++ ) {
+            out[ i ] = g_array_index ( s_bookmarks, bookmark_t, (guint) i );
+        };
+    };
+    if ( out_count ) *out_count = n;
+    if ( truncated ) *truncated = ( total > capacity );
+    g_mutex_unlock ( &s_bookmarks_mutex );
 }
 
 
@@ -470,6 +589,38 @@ static gint64 bm_json_int_or ( JsonObject *obj, const char *key, gint64 def ) {
 }
 
 
+/**
+ * @brief V1.D.2.C - en_DBGAPI_CMD_ORIGIN -> stable persist token.
+ *
+ * Tokeny "user" / "mcp" / "test" / "internal" jsou stabilní napříč
+ * verzemi schématu - loader je tolerantní k unknown tokenům
+ * (default = USER).
+ */
+static const char *_bookmarks_origin_to_str ( en_DBGAPI_CMD_ORIGIN o ) {
+    switch ( o ) {
+        case DBGAPI_CMD_ORIGIN_USER:     return "user";
+        case DBGAPI_CMD_ORIGIN_MCP:      return "mcp";
+        case DBGAPI_CMD_ORIGIN_TEST:     return "test";
+        case DBGAPI_CMD_ORIGIN_INTERNAL: return "internal";
+    }
+    return "user";
+}
+
+
+/**
+ * @brief V1.D.2.C - parse stable persist token -> en_DBGAPI_CMD_ORIGIN.
+ *
+ * Tolerantní k neznámým tokenům: fallback na USER (= GUI default).
+ */
+static en_DBGAPI_CMD_ORIGIN _bookmarks_origin_from_str ( const char *s ) {
+    if ( !s || !s[0] ) return DBGAPI_CMD_ORIGIN_USER;
+    if ( strcmp ( s, "mcp" )      == 0 ) return DBGAPI_CMD_ORIGIN_MCP;
+    if ( strcmp ( s, "test" )     == 0 ) return DBGAPI_CMD_ORIGIN_TEST;
+    if ( strcmp ( s, "internal" ) == 0 ) return DBGAPI_CMD_ORIGIN_INTERNAL;
+    return DBGAPI_CMD_ORIGIN_USER;
+}
+
+
 bool bookmarks_save ( const char *filepath ) {
     char *resolved = bookmarks_resolve_path ( filepath );
     if ( !resolved ) {
@@ -497,6 +648,13 @@ bool bookmarks_save ( const char *filepath ) {
             json_builder_add_string_value ( b, bm->user_input );
             json_builder_set_member_name ( b, "comment" );
             json_builder_add_string_value ( b, bm->comment ? bm->comment : "" );
+            /* V1.D.2.C - persist cmd_origin pro audit trail. Tolerantní
+             * load: chybějící klíč defaultuje na "user" (= viz parse_entry
+             * a load_internal). Origin slouží pro forensic analýzu kde
+             * záložka vznikla (= GUI klik vs MCP klient vs test). */
+            json_builder_set_member_name ( b, "origin" );
+            json_builder_add_string_value ( b,
+                _bookmarks_origin_to_str ( bm->cmd_origin ) );
             json_builder_end_object ( b );
         };
     }
@@ -546,13 +704,19 @@ bool bookmarks_save ( const char *filepath ) {
 static bool bookmarks_parse_entry ( JsonObject *obj,
                                     uint32_t *out_id,
                                     char **out_input,
-                                    char **out_comment ) {
+                                    char **out_comment,
+                                    en_DBGAPI_CMD_ORIGIN *out_origin ) {
     *out_id      = (uint32_t) bm_json_int_or ( obj, "id", 0 );
     const char *input   = bm_json_str_or ( obj, "input", NULL );
     const char *comment = bm_json_str_or ( obj, "comment", NULL );
     if ( !input || !input[0] ) return false;
     *out_input = g_strdup ( input );
     *out_comment = ( comment && comment[0] ) ? g_strdup ( comment ) : NULL;
+    /* V1.D.2.C - tolerantní origin load: chybějící klíč -> USER. */
+    if ( out_origin ) {
+        const char *origin_str = bm_json_str_or ( obj, "origin", NULL );
+        *out_origin = _bookmarks_origin_from_str ( origin_str );
+    };
     return true;
 }
 
@@ -568,6 +732,7 @@ static bool bookmarks_parse_entry ( JsonObject *obj,
  */
 static bool bookmarks_load_internal ( const char *filepath, bool mode_replace ) {
     if ( !s_bookmarks ) bookmarks_init ( );
+    bookmarks_mutex_ensure ( );
 
     char *resolved = bookmarks_resolve_path ( filepath );
     if ( !resolved ) {
@@ -604,12 +769,18 @@ static bool bookmarks_load_internal ( const char *filepath, bool mode_replace ) 
 
     JsonObject *root_obj = json_node_get_object ( root );
 
+    /* Storage mutation sekce - držíme s_bookmarks_mutex od clear až
+     * po bump_version + s_next_id update, aby snapshot z jiného threadu
+     * neviděl částečný stav. */
+    g_mutex_lock ( &s_bookmarks_mutex );
+
     if ( mode_replace ) {
-        bookmarks_clear ( );
+        bookmarks_clear_locked ( );
         s_next_id = 1;
     };
 
     if ( !json_object_has_member ( root_obj, "bookmarks" ) ) {
+        g_mutex_unlock ( &s_bookmarks_mutex );
         g_object_unref ( parser );
         g_free ( resolved );
         return true;  /* tolerantně OK - prázdný stav */
@@ -617,6 +788,7 @@ static bool bookmarks_load_internal ( const char *filepath, bool mode_replace ) 
 
     JsonNode *vn = json_object_get_member ( root_obj, "bookmarks" );
     if ( !vn || json_node_get_node_type ( vn ) != JSON_NODE_ARRAY ) {
+        g_mutex_unlock ( &s_bookmarks_mutex );
         bookmarks_warn ( "'bookmarks' is not an array in '%s'", resolved );
         g_object_unref ( parser );
         g_free ( resolved );
@@ -635,7 +807,8 @@ static bool bookmarks_load_internal ( const char *filepath, bool mode_replace ) 
         uint32_t  file_id   = 0;
         char     *file_in   = NULL;
         char     *file_cmnt = NULL;
-        if ( !bookmarks_parse_entry ( eo, &file_id, &file_in, &file_cmnt ) ) {
+        en_DBGAPI_CMD_ORIGIN file_origin = DBGAPI_CMD_ORIGIN_USER;
+        if ( !bookmarks_parse_entry ( eo, &file_id, &file_in, &file_cmnt, &file_origin ) ) {
             continue;
         };
 
@@ -645,6 +818,8 @@ static bool bookmarks_load_internal ( const char *filepath, bool mode_replace ) 
             entry.id         = file_id ? file_id : s_next_id++;
             entry.user_input = file_in;
             entry.comment    = file_cmnt;
+            /* V1.D.2.C - origin persistujeme, default USER při missing klíči. */
+            entry.cmd_origin = file_origin;
             g_array_append_val ( s_bookmarks, entry );
             if ( entry.id > max_id_seen ) max_id_seen = entry.id;
         } else {
@@ -674,6 +849,8 @@ static bool bookmarks_load_internal ( const char *filepath, bool mode_replace ) 
             };
             entry.user_input = file_in;
             entry.comment    = file_cmnt;
+            /* V1.D.2.C - origin persistujeme i v merge módu. */
+            entry.cmd_origin = file_origin;
             g_array_append_val ( s_bookmarks, entry );
             if ( entry.id > max_id_seen ) max_id_seen = entry.id;
         };
@@ -685,6 +862,7 @@ static bool bookmarks_load_internal ( const char *filepath, bool mode_replace ) 
     };
 
     bookmarks_bump_version ( );
+    g_mutex_unlock ( &s_bookmarks_mutex );
     g_object_unref ( parser );
     g_free ( resolved );
     return true;

@@ -25,12 +25,10 @@
 
 #include "mzarch/mzarch_config.h"
 
-#include <stdio.h>
 #include <string.h>
 
 #include "libs/cpu-z80/z80.h"
 
-#include "emulator.h"
 #include "mzarch/mzarch.h"
 #include "memory/memext.h"
 #include "memory/memory.h"
@@ -52,9 +50,6 @@
 #include "debugger/io_history.h"
 #include "debugger/io_activity.h"
 #include "debugger/trace/eventlog.h"
-#include "baseui/baseui.h"
-
-#define ui_main_debugger_windows_refresh()
 
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */
 
@@ -219,11 +214,6 @@ void memory_reconnect_ram(void) {
         };
     };
 
-#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-    if (EMULATOR_TEST_PAUSED) {
-        ui_main_debugger_windows_refresh();
-    };
-#endif
 }
 
 

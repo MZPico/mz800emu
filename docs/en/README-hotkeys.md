@@ -1,7 +1,6 @@
 # MZ-800 emulator Hot-Keys
 
 Global keyboard shortcuts available across the entire emulator window.
-Source: `src/ui-imgui/topmenu/global_shortcuts.cpp`.
 
 ## Reset and general
 
@@ -60,9 +59,37 @@ Source: `src/ui-imgui/topmenu/global_shortcuts.cpp`.
 
 Available only in builds with `MZ800EMU_CFG_DEBUGGER_ENABLED`.
 
+Several keys are dual purpose: pressed without `Shift` they perform their
+non-debugger action (see above), pressed with `Shift` they toggle a debugger
+window (e.g. `Alt + W` fixes aspect ratio, `Alt + Shift + W` toggles Watch).
+
 | Key                        | Action                                                                      |
 |----------------------------|-----------------------------------------------------------------------------|
 | `Alt + D`                  | Show / Hide MZ-800 Debugger window                                          |
+| `Alt + Shift + D`          | Show / Hide Disassembler window (range-based + export)                      |
 | `Alt + B`                  | Show / Hide Breakpoints window                                              |
+| `Alt + Shift + B`          | Show / Hide Bookmarks window (named address bookmarks)                      |
 | `Alt + V`                  | Show / Hide Variables window                                                |
 | `Alt + I`                  | Show / Hide I/O Ports window                                                |
+| `Alt + E`                  | Show / Hide Memory Browser window                                           |
+| `Alt + Y`                  | Show / Hide Symbols window (NoICE / sdldz80 `.map` / sjasmplus `.sym`)      |
+| `Alt + Shift + R`          | Show / Hide CPU Registers window                                           |
+| `Alt + S`                  | Show / Hide Stack Monitor window                                            |
+| `Alt + Shift + S`          | Show / Hide Stack Regions window                                            |
+| `Alt + Shift + H`          | Show / Hide Stack History window                                            |
+| `Alt + Shift + W`          | Show / Hide Watch window (user-defined memory watches)                      |
+| `Alt + Shift + P`          | Show / Hide CPU Profiler window                                             |
+
+## Chip / hardware state windows
+
+Per-chip "F1" state windows. Available only in builds with
+`MZ800EMU_CFG_DEBUGGER_ENABLED`.
+
+| Key                        | Action                                                                      |
+|----------------------------|-----------------------------------------------------------------------------|
+| `Alt + Shift + I`          | Show / Hide PPI 8255 State window                                           |
+| `Alt + Shift + C`          | Show / Hide CTC 8253 State window                                           |
+| `Alt + Shift + V`          | Show / Hide GDG State window                                                |
+| `Alt + Shift + Z`          | Show / Hide Z80 PIO State window (MZ-800 / MZ-1500 only)                    |
+| `Alt + Shift + G`          | Show / Hide PSG State window (MZ-800 / MZ-1500 only)                        |
+| `Alt + Shift + A`          | Show / Hide PSG Audio Scope window (MZ-800 / MZ-1500 only)                  |

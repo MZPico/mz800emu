@@ -35,6 +35,10 @@
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 #include "debugger/trace/iorqlog.h"
 #include "debugger/io_catalog.h"
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+#include <json-glib/json-glib.h>
+#include "mcp/event_bus.h"
+#endif
 #else
 /* No-op definice pro release/non-debug build. */
 #define TRACELOG_IORQ_MARK_UNCONNECTED()  do { } while (0)
@@ -495,6 +499,19 @@ void port_write_with_logging_cb(z80_t *cpu, uint16_t addr, uint8_t value, void *
     if ( g_bptmap.per_type_active[ BPTMAP_IDX_IORQ_W ] ) {
         breakpoints_enforce_iorq_w ( addr, value );
     }
+
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+    /* Mutant mcp-server V1.A.5: io_write event emit guarded subscriberem
+     * (viz mz800_iorq.c port_write_with_logging_cb). */
+    if ( event_bus_has_subscriber ( "io_write" ) ) {
+        JsonObject *payload = json_object_new ( );
+        json_object_set_int_member ( payload, "port",   (gint64) addr );
+        json_object_set_int_member ( payload, "value",  (gint64) value );
+        json_object_set_int_member ( payload, "cycles",
+            (gint64) g_mzarch_main.cpu->total_cycles );
+        event_bus_emit ( "io_write", payload );
+    }
+#endif
 }
 
 

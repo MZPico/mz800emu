@@ -1,8 +1,3 @@
-# Chybějící funkce po přechodu ze staré na novou verzi
-
-- Úplně chybí Memory Browser + Disassembler
-- observace a modifikace čipů GDG, CTC, PIO, PIO-Z80 a PSG
-
 
 # Plán dalších vlastností
 
@@ -22,6 +17,8 @@
 - vytvoření kompletního overscreen menu
 - podpora TapeMZ a online převod z wav na mzf
 - podpora gdb
+- plná podpora CENTRONICS plotter (simulace tiskárny D100)
+- plná simulace plotter/printer Sharp MZ-1P16
 
 
 ## Emulace

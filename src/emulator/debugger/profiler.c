@@ -39,7 +39,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdio.h>
+#include <inttypes.h>
 #include <glib.h>
+#include <glib/gstdio.h>
 
 #include "libs/sdlapp/sdlapp_options.h"
 #include "libs/cfgfile/cfgmodule.h"
@@ -512,6 +515,186 @@ void profiler_snapshot_free ( st_PROF_SNAPSHOT *snap )
         snap->entries = NULL;
     }
     snap->entry_count = 0;
+}
+
+
+/**
+ * @brief Převod kind enum na konstantní krátký řetězec (lowercase).
+ *
+ * Sjednocené pojmenování s MCP dispatch.c `_cs_kind_to_str` - aby byl
+ * CSV/JSON export přímo srozumitelný pro klienta bez další konverze.
+ * Pro neznámou hodnotu vrací "unknown".
+ */
+static const char * prof_kind_to_str ( uint8_t kind )
+{
+    switch ( kind ) {
+        case CS_KIND_CALL:      return "call";
+        case CS_KIND_RST:       return "rst";
+        case CS_KIND_IRQ_IM0:   return "irq_im0";
+        case CS_KIND_IRQ_IM1:   return "irq_im1";
+        case CS_KIND_IRQ_IM2:   return "irq_im2";
+        case CS_KIND_NMI:       return "nmi";
+        case CS_KIND_SYNTHETIC: return "synthetic";
+    }
+    return "unknown";
+}
+
+
+/**
+ * @brief Zapíše CSV reprezentaci snapshotu do otevřeného souboru.
+ *
+ * Locale-safe formátování - používá výhradně %d/%u/%lu/%llu/%PRIu64 bez
+ * %f (= žádné LC_NUMERIC závislosti). Line ending '\n' (= UTF-8/ASCII
+ * subset, žádné CR aby výstup byl konzistentní napříč platformami).
+ *
+ * Header: addr,kind,calls,excl_cycles,incl_cycles,min_cycles,max_cycles,avg_cycles
+ *
+ * @param fp     Otevřený FILE* (mode "w").
+ * @param snap   Snapshot.
+ * @return 0 OK, -1 write chyba (= fprintf < 0).
+ */
+static int prof_write_csv ( FILE *fp, const st_PROF_SNAPSHOT *snap )
+{
+    if ( fprintf ( fp,
+                   "addr,kind,calls,excl_cycles,incl_cycles,"
+                   "min_cycles,max_cycles,avg_cycles\n" ) < 0 ) {
+        return -1;
+    }
+    for ( int i = 0; i < snap->entry_count; i++ ) {
+        const st_PROF_ENTRY *e = &snap->entries[ i ];
+        uint64_t avg = e->calls ? ( e->cycles_incl_sum / e->calls ) : 0;
+        uint64_t mn  = ( e->cycles_incl_min == UINT64_MAX ) ? 0 : e->cycles_incl_min;
+        if ( fprintf ( fp,
+                       "0x%04X,%s,%" G_GUINT64_FORMAT ","
+                       "%" G_GUINT64_FORMAT ",%" G_GUINT64_FORMAT ","
+                       "%" G_GUINT64_FORMAT ",%" G_GUINT64_FORMAT ","
+                       "%" G_GUINT64_FORMAT "\n",
+                       (unsigned) e->target_addr,
+                       prof_kind_to_str ( e->kind ),
+                       (guint64) e->calls,
+                       (guint64) e->cycles_excl_sum,
+                       (guint64) e->cycles_incl_sum,
+                       (guint64) mn,
+                       (guint64) e->cycles_incl_max,
+                       (guint64) avg ) < 0 ) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+
+/**
+ * @brief Zapíše JSON reprezentaci snapshotu do otevřeného souboru.
+ *
+ * Format:
+ * ```
+ * {
+ *   "stats": { "active": 0/1, "total_cycles_64": N, "total_calls": N,
+ *              "irq_entries": N, "unmatched_returns": N, "entry_count": N,
+ *              "max_depth_reached": N, "overflow_count": N },
+ *   "entries": [ { "addr": 0xNNNN, "kind": "call", "calls": N,
+ *                  "excl_cycles": N, "incl_cycles": N,
+ *                  "min_cycles": N, "max_cycles": N, "avg_cycles": N },
+ *                ... ]
+ * }
+ * ```
+ *
+ * Použito i v MCP `emu_profiler_export` JSON formátu. Lehký vlastní writer
+ * bez závislosti na json-glib (= soubor write je tady, GObject pro toto
+ * nepotřebujeme).
+ *
+ * @param fp     Otevřený FILE* (mode "w").
+ * @param snap   Snapshot.
+ * @return 0 OK, -1 write chyba.
+ */
+static int prof_write_json ( FILE *fp, const st_PROF_SNAPSHOT *snap )
+{
+    if ( fprintf ( fp,
+                   "{\n  \"stats\": {\n"
+                   "    \"active\": %u,\n"
+                   "    \"total_cycles_64\": %" G_GUINT64_FORMAT ",\n"
+                   "    \"total_calls\": %" G_GUINT64_FORMAT ",\n"
+                   "    \"irq_entries\": %u,\n"
+                   "    \"unmatched_returns\": %u,\n"
+                   "    \"entry_count\": %u,\n"
+                   "    \"max_depth_reached\": %u,\n"
+                   "    \"overflow_count\": %u\n"
+                   "  },\n  \"entries\": [",
+                   (unsigned) snap->stats.active,
+                   (guint64) snap->stats.total_cycles_64,
+                   (guint64) snap->stats.total_calls,
+                   (unsigned) snap->stats.irq_entries,
+                   (unsigned) snap->stats.unmatched_returns,
+                   (unsigned) snap->stats.entry_count,
+                   (unsigned) snap->stats.max_depth_reached,
+                   (unsigned) snap->stats.overflow_count ) < 0 ) {
+        return -1;
+    }
+    for ( int i = 0; i < snap->entry_count; i++ ) {
+        const st_PROF_ENTRY *e = &snap->entries[ i ];
+        uint64_t avg = e->calls ? ( e->cycles_incl_sum / e->calls ) : 0;
+        uint64_t mn  = ( e->cycles_incl_min == UINT64_MAX ) ? 0 : e->cycles_incl_min;
+        if ( fprintf ( fp,
+                       "%s\n    { \"addr\": %u, \"kind\": \"%s\", "
+                       "\"calls\": %" G_GUINT64_FORMAT ", "
+                       "\"excl_cycles\": %" G_GUINT64_FORMAT ", "
+                       "\"incl_cycles\": %" G_GUINT64_FORMAT ", "
+                       "\"min_cycles\": %" G_GUINT64_FORMAT ", "
+                       "\"max_cycles\": %" G_GUINT64_FORMAT ", "
+                       "\"avg_cycles\": %" G_GUINT64_FORMAT " }",
+                       ( i == 0 ) ? "" : ",",
+                       (unsigned) e->target_addr,
+                       prof_kind_to_str ( e->kind ),
+                       (guint64) e->calls,
+                       (guint64) e->cycles_excl_sum,
+                       (guint64) e->cycles_incl_sum,
+                       (guint64) mn,
+                       (guint64) e->cycles_incl_max,
+                       (guint64) avg ) < 0 ) {
+            return -1;
+        }
+    }
+    if ( fprintf ( fp, "\n  ]\n}\n" ) < 0 ) {
+        return -1;
+    }
+    return 0;
+}
+
+
+int profiler_export_to_file ( const char *filepath, int format,
+                              int *out_entry_count )
+{
+    if ( out_entry_count ) *out_entry_count = 0;
+    if ( !filepath || filepath[ 0 ] == '\0' ) return -2;
+    if ( format != PROF_EXPORT_CSV && format != PROF_EXPORT_JSON ) return -2;
+
+    st_PROF_SNAPSHOT snap;
+    memset ( &snap, 0, sizeof ( snap ) );
+    if ( profiler_snapshot_get ( &snap ) != 0 ) {
+        return -3;
+    }
+
+    FILE *fp = g_fopen ( filepath, "w" );
+    if ( !fp ) {
+        profiler_snapshot_free ( &snap );
+        return -1;
+    }
+
+    int rc = 0;
+    if ( format == PROF_EXPORT_CSV ) {
+        rc = prof_write_csv ( fp, &snap );
+    } else {
+        rc = prof_write_json ( fp, &snap );
+    }
+
+    if ( fclose ( fp ) != 0 && rc == 0 ) {
+        rc = -1;
+    }
+
+    if ( out_entry_count ) *out_entry_count = snap.entry_count;
+    profiler_snapshot_free ( &snap );
+    return rc;
 }
 
 

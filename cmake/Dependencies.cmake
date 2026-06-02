@@ -11,7 +11,7 @@
 #   - mz::opengl      (OpenGL, GDI, IMM32 na Windows)
 #
 # Také propaguje compile defines USE_SDL3, USE_SDL3_VIDEO, USE_SDL_AUDIO,
-# USE_SDL3_AUDIO, USE_GTK3_UI a platformní WINDOWS/LINUX.
+# USE_SDL3_AUDIO a platformní WINDOWS/LINUX.
 
 # Wrapper Makefile nastavuje PKG_CONFIG_PATH podle MSYSTEM (MINGW64/UCRT64).
 # Pokud se cmake volá přímo bez wrapperu a PKG_CONFIG_PATH ukazuje na jiný
@@ -62,6 +62,49 @@ if(WIN32 AND MZ_FORCE_CONSOLE)
     separate_arguments(_sdl3_libs_no_console UNIX_COMMAND "${_sdl3_libs_no_console}")
     # Přemažeme INTERFACE_LINK_LIBRARIES z PkgConfig::SDL3 explicitním seznamem
     set_property(TARGET mz_sdl3 PROPERTY INTERFACE_LINK_LIBRARIES ${_sdl3_libs_no_console})
+endif()
+
+# ----------------------------------------------------------------------------
+# Alternativní SDL3 INTERFACE knihovna BEZ -mwindows (= console subsystem).
+#
+# Pro mz800emu_pipe (V0.A.4 JSONL transport) - pipe binárka potřebuje
+# klasický console subsystem (stdin/stdout). Bez tohoto override by
+# pkg-config protlačil -mwindows do link line a linker by selhal s
+# tichou chybou (collect2 "ld returned 1 exit status" bez detailu).
+#
+# Vytváříme jen na Windows; na Linuxu je INTERFACE alias na mz_sdl3.
+# ----------------------------------------------------------------------------
+add_library(mz_sdl3_console INTERFACE)
+add_library(mz::sdl3_console ALIAS mz_sdl3_console)
+target_compile_definitions(mz_sdl3_console INTERFACE
+    USE_SDL3
+    USE_SDL3_VIDEO
+    USE_SDL_AUDIO
+    USE_SDL3_AUDIO
+)
+if(WIN32)
+    execute_process(
+        COMMAND ${PKG_CONFIG_EXECUTABLE} --libs sdl3 sdl3-image
+        OUTPUT_VARIABLE _sdl3_libs_pipe_raw
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    string(REPLACE "-mwindows" "" _sdl3_libs_pipe "${_sdl3_libs_pipe_raw}")
+    separate_arguments(_sdl3_libs_pipe UNIX_COMMAND "${_sdl3_libs_pipe}")
+    set_property(TARGET mz_sdl3_console PROPERTY
+        INTERFACE_LINK_LIBRARIES ${_sdl3_libs_pipe})
+    # Include directories přebíráme z PkgConfig::SDL3 (stejné jako mz_sdl3).
+    execute_process(
+        COMMAND ${PKG_CONFIG_EXECUTABLE} --cflags-only-I sdl3 sdl3-image
+        OUTPUT_VARIABLE _sdl3_cflags_pipe
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    separate_arguments(_sdl3_cflags_pipe UNIX_COMMAND "${_sdl3_cflags_pipe}")
+    foreach(_inc IN LISTS _sdl3_cflags_pipe)
+        string(REGEX REPLACE "^-I" "" _inc_path "${_inc}")
+        target_include_directories(mz_sdl3_console INTERFACE ${_inc_path})
+    endforeach()
+else()
+    target_link_libraries(mz_sdl3_console INTERFACE PkgConfig::SDL3)
 endif()
 
 # ----------------------------------------------------------------------------
@@ -207,9 +250,13 @@ if(WIN32)
     )
     # mingw32 musí být v link line (specifické pro MinGW main wrapper)
     target_link_libraries(mz_platform INTERFACE mingw32)
+
+    # WinSock 2 - vyžaduje src/emulator/mcp/tcp_server.c (V0.A.5).
+    # Symbol set: WSAStartup, socket, bind, listen, accept, send, recv,
+    # shutdown, closesocket, inet_ntop, WSAGetLastError, ...
+    # Linkujeme bezpodmínečně - i builds s NO_MCP_TCP=1 si lib přilinkují
+    # jako no-op (žádné call sites), což je acceptable trade-off proti
+    # podmíněnému linkování přes per-target option.
+    target_link_libraries(mz_platform INTERFACE ws2_32)
 endif()
 
-# ----------------------------------------------------------------------------
-# Globální compile define: použité GUI toolkit (GTK3 historicky, ImGui dnes)
-# ----------------------------------------------------------------------------
-target_compile_definitions(mz_platform INTERFACE USE_GTK3_UI)

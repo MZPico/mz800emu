@@ -215,6 +215,7 @@ int watch_add ( const char *name, uint16_t addr, int bank ) {
     row.expr_text  = NULL;
     row.expr_ast   = NULL;
     row.expr_error = NULL;
+    row.cmd_origin = DBGAPI_CMD_ORIGIN_USER;  /* V1.C.3 default - GUI tvorba */
 
     g_array_append_val ( s_rows, row );
     return (int) ( s_rows->len - 1 );
@@ -278,6 +279,7 @@ int watch_add_expr ( const char *name, const char *expr_text,
     row.expr_text  = g_strdup ( expr_text );
     row.expr_ast   = NULL;
     row.expr_error = NULL;
+    row.cmd_origin = DBGAPI_CMD_ORIGIN_USER;  /* V1.C.3 default - GUI tvorba */
     watch_reparse_expr ( &row );
 
     g_array_append_val ( s_rows, row );
@@ -441,6 +443,14 @@ void watch_set_bit_index ( int row_index, uint8_t bit_index ) {
     if ( r->type != WATCH_TYPE_BIT ) return;
     if ( bit_index > 7 ) bit_index = 7;
     r->bit_index = bit_index;
+}
+
+
+void watch_set_cmd_origin ( int row_index, en_DBGAPI_CMD_ORIGIN origin ) {
+    if ( !s_rows ) return;
+    if ( row_index < 0 || (guint) row_index >= s_rows->len ) return;
+    st_WATCH_ROW *r = &g_array_index ( s_rows, st_WATCH_ROW, (guint) row_index );
+    r->cmd_origin = origin;
 }
 
 
@@ -1104,10 +1114,45 @@ char *watch_default_filepath ( void ) {
 
 
 /**
+ * @brief V1.E.6.B - en_DBGAPI_CMD_ORIGIN -> stable persist token.
+ *
+ * Stable tokeny "user" / "mcp" / "test" / "internal" napříč verzemi
+ * schématu - loader je tolerantní k unknown tokenům (default = USER).
+ * Identický pattern jako v breakpoints.c a bookmarks.c.
+ */
+static const char *_watch_origin_to_str ( en_DBGAPI_CMD_ORIGIN o ) {
+    switch ( o ) {
+        case DBGAPI_CMD_ORIGIN_USER:     return "user";
+        case DBGAPI_CMD_ORIGIN_MCP:      return "mcp";
+        case DBGAPI_CMD_ORIGIN_TEST:     return "test";
+        case DBGAPI_CMD_ORIGIN_INTERNAL: return "internal";
+    }
+    return "user";
+}
+
+
+/**
+ * @brief V1.E.6.B - parse stable persist token -> en_DBGAPI_CMD_ORIGIN.
+ *
+ * Tolerantní k missing / unknown tokenům: fallback na USER (= GUI default).
+ * Stejné chování jako v breakpoints.c a bookmarks.c.
+ */
+static en_DBGAPI_CMD_ORIGIN _watch_origin_from_str ( const char *s ) {
+    if ( !s || !s[0] ) return DBGAPI_CMD_ORIGIN_USER;
+    if ( strcmp ( s, "mcp" )      == 0 ) return DBGAPI_CMD_ORIGIN_MCP;
+    if ( strcmp ( s, "test" )     == 0 ) return DBGAPI_CMD_ORIGIN_TEST;
+    if ( strcmp ( s, "internal" ) == 0 ) return DBGAPI_CMD_ORIGIN_INTERNAL;
+    return DBGAPI_CMD_ORIGIN_USER;
+}
+
+
+/**
  * @brief Emit jeden řádek jako JSON object.
  *
  * Volitelné fieldy (fmt/length/bit_index) se emitují jen pro typy, kde
  * mají smysl - to udržuje JSON minimální a BC s Phase A formátem.
+ * V1.E.6.B - emituje navíc "origin" pole (stable token "user"/"mcp"/
+ * "test"/"internal").
  */
 static void watch_emit_one ( JsonBuilder *b, const st_WATCH_ROW *r ) {
     json_builder_begin_object ( b );
@@ -1146,6 +1191,12 @@ static void watch_emit_one ( JsonBuilder *b, const st_WATCH_ROW *r ) {
         json_builder_set_member_name ( b, "bit_index" );
         json_builder_add_int_value ( b, (gint64) r->bit_index );
     };
+
+    /* V1.E.6.B - persist cmd_origin pro audit trail. Stable token
+     * "user"/"mcp"/"test"/"internal"; load tolerantní k missing klíči
+     * (default USER) a unknown tokenům (= forward compat). */
+    json_builder_set_member_name ( b, "origin" );
+    json_builder_add_string_value ( b, _watch_origin_to_str ( r->cmd_origin ) );
 
     json_builder_end_object ( b );
 }
@@ -1367,6 +1418,12 @@ bool watch_load_from_filepath ( const char *path ) {
                           mstr, resolved, i );
             };
         };
+
+        /* V1.E.6.B - load cmd_origin tolerantně (= chybějící klíč defaultuje
+         * na USER, neznámé tokeny taky na USER). Vlastník je tedy zachován
+         * přes save/load cyklus pro audit trail. */
+        const char *origin_str = watch_json_str_or ( o, "origin", NULL );
+        watch_set_cmd_origin ( idx, _watch_origin_from_str ( origin_str ) );
     };
 
     g_object_unref ( parser );

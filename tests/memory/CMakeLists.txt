@@ -9,3 +9,9 @@ mz_add_test(memext
     SOURCES  test_memext.c
     LABELS   "emu;memory"
 )
+
+mz_add_test(regions
+    TYPE     EMU
+    SOURCES  test_regions.c
+    LABELS   "emu;memory;debugger"
+)

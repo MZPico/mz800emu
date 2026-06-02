@@ -11,8 +11,6 @@
         "USE_SDL3_VIDEO",
         "USE_SDL3_AUDIO",
         "USE_IMGUI",
-        "USE_GTK3",
-        "USE_GTK3_UI",
         "LINUX",
         "MZ800EMU"
       ],

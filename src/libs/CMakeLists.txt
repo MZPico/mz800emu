@@ -44,6 +44,12 @@ mz_add_lib(mzlib_generic_driver   SOURCES generic_driver/generic_driver.c
                                   DEPS    mz::glib)
 mz_add_lib(mzlib_sharpmz_ascii    SOURCES sharpmz_ascii/sharpmz_ascii.c
                                           sharpmz_ascii/sharpmz_utf8.c)
+mz_add_lib(mzlib_sharpmz_koi8cs   SOURCES sharpmz_koi8cs/sharpmz_koi8cs.c)
+mz_add_lib(mzlib_vram_sim         SOURCES vram_sim/vram_sim.c
+                                          vram_sim/vram_sim_modes.c
+                                          vram_sim/vram_sim_render.c)
+mz_add_lib(mzlib_mz_vcode         SOURCES mz_vcode/mz_vcode.c)
+mz_add_lib(mzlib_mzglyphs         SOURCES mzglyphs/mzglyphs.c)
 mz_add_lib(mzlib_wav              SOURCES wav/wav.c
                                   DEPS    mz::glib)
 
@@ -167,6 +173,10 @@ target_link_libraries(mz_libs INTERFACE
     mzlib_endianity
     mzlib_generic_driver
     mzlib_sharpmz_ascii
+    mzlib_sharpmz_koi8cs
+    mzlib_vram_sim
+    mzlib_mz_vcode
+    mzlib_mzglyphs
     mzlib_wav
     mzlib_cfgfile
     mzlib_cmt_stream

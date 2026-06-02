@@ -40,10 +40,6 @@
 #include <curl/curl.h>
 #endif /* VERCHECK_USE_LIBCURL */
 
-#ifdef MZ800EMU_CFG_UI_ENABLED
-#include "ui-gtk3/ui_main.h"
-#include "ui-gtk3/ui_version_check.h"
-#else
 #include "ui-imgui/version_check/imgui_version_check.h"
 #include "libs/sdlapp/sdlapp_options.h"
 #include "ui-imgui/bootstrap/myimgui.h"
@@ -52,7 +48,6 @@
 #include "baseui/baseui.h"
 #define ui_show_error(a,...) baseui_show_message ( TRUE, a, ##__VA_ARGS__ )
 #define ui_show_warning(a,...) baseui_show_message ( FALSE, a, ##__VA_ARGS__ )
-#endif /* MZ800EMU_CFG_UI_ENABLED */
 
 #include "baseui/baseui_tools.h"
 #include "cfgmain.h"
@@ -727,10 +722,12 @@ void version_check_parse_thread_response ( void ) {
     };
 
     if ( err ) {
+        /* Fallback URL po migraci ze SourceForge na GitHub - směrujeme
+         * uživatele na release stránku v novém repozitáři. */
         printf ( "\nVERSION_CHECK:\n\tNo valid reply from %s\n", VERSION_CHECK_URL );
-        printf ( "\tPlease check latest version manually on project homepage https://sourceforge.net/projects/mz800emu/\n\n" );
+        printf ( "\tPlease check latest version manually on project homepage https://github.com/michalhucik/mz800emu/releases\n\n" );
         if ( !g_version_check.quiet ) {
-            ui_show_warning ( "Module VERSION_CHECK:\n\nNo valid reply from %s\n\nPlease check latest version manually on project homepage:\n\nhttps://sourceforge.net/projects/mz800emu/\n", VERSION_CHECK_URL );
+            ui_show_warning ( "Module VERSION_CHECK:\n\nNo valid reply from %s\n\nPlease check latest version manually on project homepage:\n\nhttps://github.com/michalhucik/mz800emu/releases\n", VERSION_CHECK_URL );
         };
     };
 

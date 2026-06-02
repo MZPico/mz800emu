@@ -41,6 +41,14 @@
 #include "breakpoints/bpt_state.h"
 #include "ui-imgui/bootstrap/myimgui.h"   /* V1.7: g_gui pro auto-open BP window na HIT */
 
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+/* V1.C.2 mutant mcp-server: feed MCP Activity ring buffer při každém
+ * DBGAPI_MSG_MCP_ACTION broadcastu. log_action() je thread-safe a
+ * idempotentní pokud okno není inicializované. */
+#include "ui-imgui/mcp_activity/mcp_activity_window.h"
+#include "ui-imgui/mcp_activity/action_toast.h"  /* V1.C.3 destruktivní toast */
+#endif
+
 
 /**
  * @brief SDL handler volaný v UI vlákně po doručení custom eventu.
@@ -180,6 +188,36 @@ static void dispatcher_default_listener_cb(en_DBGAPI_MSG msg,
             dbg_refresh_request();
             break;
 
+        case DBGAPI_MSG_MCP_ACTION:
+            /* V1.C.2 mutant mcp-server: feed Activity ring buffer. MCP_ACTION
+             * je per definici emitován pouze pro cmd_origin = MCP (viz
+             * dbgapi_emit_mcp_action() v dbgapi.c), takže origin badge je
+             * vždy DBGAPI_CMD_ORIGIN_MCP. Pokud budou v budoucnu broadcastované
+             * i USER/TEST/INTERNAL akce, MSG datová struktura dostane samostatný
+             * origin field a hodnotu si přečteme odtud. log_action() je
+             * idempotentní pokud okno init neproběhl (= no-op). */
+            if (data && data->description)
+            {
+                g_debug("dbgapi: MCP action: %s (cmd=%d, ts=%" G_GUINT64_FORMAT " us)",
+                        data->description, (int)data->cmd,
+                        (guint64)data->timestamp_us);
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+                mcp_activity_window_log_action(DBGAPI_CMD_ORIGIN_MCP,
+                                                data->cmd,
+                                                data->description,
+                                                data->timestamp_us,
+                                                data->entity_kind,
+                                                data->entity_id);
+                /* V1.C.3 - selektivní toast pro destruktivní MCP akce.
+                 * Funkce sama filtruje (= USER/TEST/INTERNAL no-op a
+                 * read-only cmds no-op), takže bezpodmínečné volání je OK. */
+                action_toast_show(DBGAPI_CMD_ORIGIN_MCP,
+                                  data->cmd,
+                                  data->description);
+#endif
+            };
+            break;
+
         case DBGAPI_MSG_EXITING:
         case DBGAPI_MSG_NONE:
         default:
@@ -187,8 +225,8 @@ static void dispatcher_default_listener_cb(en_DBGAPI_MSG msg,
             break;
     };
 
-    if (data)
-        g_free(data);
+    /* Uvolnit payload včetně případného MCP_ACTION description (g_strdup). */
+    dbgapi_msg_data_free(data);
 }
 
 

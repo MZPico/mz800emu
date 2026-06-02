@@ -35,12 +35,8 @@ extern "C" {
 #include "libs/cfgfile/cfgroot.h"
 
     // Povolena konvence a.b.c, nebo a.b.c.d
-#define CFGMAIN_EMULATOR_VERSION_NUM_STRING "2.0.2"
+#define CFGMAIN_EMULATOR_VERSION_NUM_STRING "2.0.3"
 
-
-    /*
-     * Hodnota je nacitana take ze scriptu tools/create_package-Release-Win32.sh !
-     */
     #define CFGMAIN_EMULATOR_VERSION_TAG "preview"
     //#define CFGMAIN_EMULATOR_VERSION_TAG "devel"
     //#define CFGMAIN_EMULATOR_VERSION_TAG "snapshot"

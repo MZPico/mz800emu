@@ -373,6 +373,69 @@ void test_merge_skip_duplicate ( void ) {
 
 
 /**
+ * V1.D.2.C - origin field round-trip přes save/load.
+ *
+ * Po save by JSON měl obsahovat `"origin": "<token>"` per záznam.
+ * Po load se cmd_origin obnoví ze stable tokenu (= default USER při
+ * chybějícím nebo unknown tokenu - forward compatibility).
+ */
+void test_save_load_origin_roundtrip ( void ) {
+    const char *tmpfile = "test_bookmarks_origin.bookmarks";
+
+    int id_a = bookmarks_add ( "0x1234", "user_made" );
+    int id_b = bookmarks_add ( "0xABCD", "mcp_made" );
+    int id_c = bookmarks_add ( "0x4242", "test_made" );
+
+    TEST_ASSERT_TRUE ( id_a > 0 );
+    TEST_ASSERT_TRUE ( id_b > 0 );
+    TEST_ASSERT_TRUE ( id_c > 0 );
+
+    /* Nastav různé origin hodnoty pro round-trip ověření. */
+    TEST_ASSERT_TRUE ( bookmarks_set_cmd_origin ( (uint32_t) id_a,
+                                                   DBGAPI_CMD_ORIGIN_USER ) );
+    TEST_ASSERT_TRUE ( bookmarks_set_cmd_origin ( (uint32_t) id_b,
+                                                   DBGAPI_CMD_ORIGIN_MCP ) );
+    TEST_ASSERT_TRUE ( bookmarks_set_cmd_origin ( (uint32_t) id_c,
+                                                   DBGAPI_CMD_ORIGIN_TEST ) );
+
+    TEST_ASSERT_TRUE ( bookmarks_save ( tmpfile ) );
+
+    bookmarks_clear ( );
+    TEST_ASSERT_EQUAL_size_t ( 0, bookmarks_count ( ) );
+
+    TEST_ASSERT_TRUE ( bookmarks_load ( tmpfile ) );
+    TEST_ASSERT_EQUAL_size_t ( 3, bookmarks_count ( ) );
+
+    /* Najdi záznamy podle user_input (= ID se může změnit v replace módu). */
+    bool seen_user = false, seen_mcp = false, seen_test = false;
+    for ( size_t i = 0; i < bookmarks_count ( ); i++ ) {
+        const bookmark_t *bm = bookmarks_get_by_index ( i );
+        TEST_ASSERT_NOT_NULL ( bm );
+        if ( strcmp ( bm->user_input, "0x1234" ) == 0 ) {
+            TEST_ASSERT_EQUAL_INT ( DBGAPI_CMD_ORIGIN_USER, bm->cmd_origin );
+            seen_user = true;
+        } else if ( strcmp ( bm->user_input, "0xABCD" ) == 0 ) {
+            TEST_ASSERT_EQUAL_INT ( DBGAPI_CMD_ORIGIN_MCP, bm->cmd_origin );
+            seen_mcp = true;
+        } else if ( strcmp ( bm->user_input, "0x4242" ) == 0 ) {
+            TEST_ASSERT_EQUAL_INT ( DBGAPI_CMD_ORIGIN_TEST, bm->cmd_origin );
+            seen_test = true;
+        };
+    };
+    TEST_ASSERT_TRUE ( seen_user );
+    TEST_ASSERT_TRUE ( seen_mcp );
+    TEST_ASSERT_TRUE ( seen_test );
+
+    /* Cleanup tmpfile */
+    char *resolved = sdlapp_paths_resolve_cfg ( g_sdlapp->paths, tmpfile );
+    if ( resolved ) {
+        g_remove ( resolved );
+        g_free ( resolved );
+    };
+}
+
+
+/**
  * Default filepath vrací non-NULL non-prázdný řetězec.
  */
 void test_default_filepath ( void ) {
@@ -419,6 +482,7 @@ int main ( int argc, char *argv[] ) {
     /* Persistence */
     RUN_TEST ( test_save_load_round_trip );
     RUN_TEST ( test_merge_skip_duplicate );
+    RUN_TEST ( test_save_load_origin_roundtrip );  /* V1.D.2.C */
     RUN_TEST ( test_default_filepath );
 
     int result = UNITY_END ( );

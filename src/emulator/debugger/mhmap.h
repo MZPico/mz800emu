@@ -574,6 +574,57 @@ extern "C"
     extern const st_MHMAP_EXPORT_REGION *mhmap_get_export_regions ( size_t *out_count );
 
 
+    /*
+     * F8 - mhmap_view_t API pro disassembler-window CDL integraci.
+     *
+     * Snapshot per-byte CDL flagů (X/R/W) v zadaném CPU rozsahu, který
+     * pak @ref dasm_export_collect_labels (a navazující render) konzumuje
+     * pro detekci data zón a cold-code komentářů.
+     */
+
+    /* Forward deklarace - úplná definice je v dasm_export.h. */
+    typedef struct mhmap_view mhmap_view_t;
+
+
+    /**
+     * @brief Vytvoří snapshot CDL flagů pro daný CPU rozsah.
+     *
+     * Zkopíruje aktuální counter hodnoty z @c g_mhmap.bus na region
+     * @p from..@p to do nově alokovaných per-byte flag bufferů.
+     * Konverze counter -> flag: hodnota > 0 => 1, jinak 0 (klasický
+     * CDL bitmap, FCEUX-style).
+     *
+     * Pohled je odpojený - další běh emulátoru countery nemění, takže
+     * následující @c dasm_export_collect_labels volání není v race s
+     * emu vláknem.
+     *
+     * Pokud je @c g_debugger.mhmap_mode == @c DEBUGGER_MHMAP_MODE_OFF,
+     * countery jsou všechny 0 a vrácený snapshot má všechny flagy 0
+     * (= žádná data zóna se nedetekuje). UI vrstva má sdělit uživateli
+     * stav módu separátně - tato funkce mu pohled vyrobí vždy úspěšně.
+     *
+     * @param from Počáteční adresa rozsahu (inclusive).
+     * @param to   Koncová adresa rozsahu (inclusive).
+     *
+     * @return Vlastněný @ref mhmap_view_t snapshot. Caller musí volat
+     *         @ref mhmap_view_destroy. NULL při @p from > @p to nebo
+     *         alokační chybě.
+     *
+     * @post Vrácený view drží 3 buffery velikosti @c (to - from + 1) B.
+     */
+    extern mhmap_view_t *mhmap_view_create_for_range ( uint16_t from, uint16_t to );
+
+
+    /**
+     * @brief Uvolní snapshot vytvořený přes @ref mhmap_view_create_for_range.
+     *
+     * NULL-safe.
+     *
+     * @param view Snapshot k uvolnění (nebo NULL).
+     */
+    extern void mhmap_view_destroy ( mhmap_view_t *view );
+
+
 #ifdef __cplusplus
 }
 #endif

@@ -82,10 +82,19 @@ function(mz_add_emulator target mzarch tvsys)
     list(FILTER _sources_uiimgui EXCLUDE REGEX "/src/ui-imgui/mz[0-9]+/")
 
     # DIRS_EMULATOR rekurzivně
+    #
+    # src/emulator/mcp/ obsahuje JSONL transport + dispatch (V0.A.2+) +
+    # main_pipe.c (V0.A.4 pipe transport, vstupní bod `mcp_pipe_main`,
+    # volaný z src/main.c při detekci --pipe flagu).
+    # Soubory uvnitř jsou obaleny `#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED`,
+    # takže při buildu s MZ_NO_MCP=ON se zkompilují jako prázdné translation
+    # units (= žádné nedefinované symboly, žádná závislost na json-glib
+    # pokud uživatel MCP vypnul build-time).
     mz_glob_sources(_sources_emu
         src/emulator/hw-generic
         src/emulator/debugger
         src/emulator/snapshot
+        src/emulator/mcp
     )
 
     # Flat src soubory
@@ -190,4 +199,138 @@ function(mz_add_emulator target mzarch tvsys)
     # ale linker by mohl ještě default mít WIN32_EXECUTABLE. Necháme default
     # (CMake na Windows defaultně linkuje pro console subsystem; SDL3 svým
     # -mwindows přepíná na GUI - když ho odebereme, vrátíme se ke konzoli).
+endfunction()
+
+
+# ----------------------------------------------------------------------------
+# mz_add_pipe_emulator() - V0.A.4 zakomentováno, deferred do V0.A.4.x
+#
+# Původní plán V0.A.4 byl vytvořit separátní binárku mz800emu_pipe(.exe)
+# se swapnutým entry-pointem (main_pipe.c místo main.c). V MSYS2/UCRT64
+# se ale link mz800emu_pipe.exe nepodařilo zprovoznit - linker (ld přes
+# collect2) selhával tichou chybou "ld returned 5 exit status" bez
+# diagnostiky undefined / multi-defined symbolů; identifikovat root
+# cause se nepodařilo (viz plans/VYSLEDEK-faze-V0.A.4-main-pipe.md).
+#
+# Aktuální cesta V0.A.4: pipe transport je dostupný jako `--pipe`
+# flag v existujícím mz800emu.exe (= delegace na mcp_pipe_main z
+# src/main.c). Tím se obejde problém s linkováním a zachová se
+# funkční pipe transport pro V0.A.5 / V0.B navazující práce.
+#
+# Pokud bude později separátní binárka vyžadovaná, funkce se obnoví.
+# ----------------------------------------------------------------------------
+function(mz_add_pipe_emulator_disabled target mzarch tvsys)
+    set(arch_name "mz${mzarch}")
+
+    # Stejný source mix jako mz_add_emulator() - jen swap main souboru.
+    mz_glob_sources(_sources_main
+        src/app
+        src/baseui
+        src/generic_driver
+        src/iface
+        src/iface-audio
+        src/iface-video
+        src/ui
+        src/version_check
+    )
+
+    mz_glob_sources(_sources_uiimgui src/ui-imgui)
+    list(FILTER _sources_uiimgui EXCLUDE REGEX "/src/ui-imgui/mz[0-9]+/")
+
+    mz_glob_sources(_sources_emu
+        src/emulator/hw-generic
+        src/emulator/debugger
+        src/emulator/snapshot
+        src/emulator/mcp
+    )
+    # Pro pipe target VŠECHNY src/emulator/mcp/ soubory zůstávají (vč.
+    # main_pipe.c) - žádný filter.
+
+    mz_glob_flat(_sources_flat_src      src)
+    mz_glob_flat(_sources_flat_emu      src/emulator)
+    mz_glob_flat(_sources_flat_mzarch   src/emulator/mzarch)
+
+    # Klíčový rozdíl: odstraníme src/main.c (GUI entry) z flat src.
+    list(FILTER _sources_flat_src EXCLUDE REGEX "/src/main\\.c$")
+
+    mz_glob_sources(_sources_arch
+        src/emulator/mzarch/${arch_name}
+        src/ui-imgui/${arch_name}
+    )
+
+    set(_all_sources
+        ${_sources_main}
+        ${_sources_uiimgui}
+        ${_sources_emu}
+        ${_sources_flat_src}
+        ${_sources_flat_emu}
+        ${_sources_flat_mzarch}
+        ${_sources_arch}
+        ${MZ_BUILD_REVISION_C}
+    )
+
+    add_executable(${target} ${_all_sources})
+    add_dependencies(${target} mz_build_revision)
+
+    # Windows .rc - shared s GUI variantou.
+    if(WIN32)
+        mz_add_windows_rc(${target} ${CMAKE_SOURCE_DIR}/src/windows_rc/${arch_name}emu.rc)
+    endif()
+
+    target_compile_definitions(${target} PRIVATE
+        MZARCH=${mzarch}
+        MZARCH_NAME="${arch_name}"
+        MZTVSYS_PAL=50
+        MZTVSYS_NTSC=60
+        MZTVSYS=MZTVSYS_${tvsys}
+        MZTVSYS_NAME="${tvsys}"
+    )
+
+    target_include_directories(${target} PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/emulator
+        ${CMAKE_SOURCE_DIR}/src/emulator/hw-generic
+    )
+
+    file(GLOB_RECURSE _header_dirs LIST_DIRECTORIES true
+        "${CMAKE_SOURCE_DIR}/src/*/headers"
+    )
+    list(FILTER _header_dirs INCLUDE REGEX "/headers$")
+    foreach(_hd IN LISTS _header_dirs)
+        if(IS_DIRECTORY ${_hd})
+            target_include_directories(${target} PRIVATE ${_hd})
+        endif()
+    endforeach()
+
+    target_link_libraries(${target} PRIVATE
+        mz::libs
+        mz::sdl3_console   # bez -mwindows, viz cmake/Dependencies.cmake
+        mz::glib
+        mz::json_glib
+        mz::minizip
+        mz::libcurl
+        mz::opengl
+        mz::platform
+    )
+
+    # Pipe binárka jde do vlastního build-${target}/ pro snadné kopírování.
+    set_target_properties(${target} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/build-${target}
+    )
+
+    # Vynutíme CONSOLE subsystem na Windows. Použít mz::sdl3_console
+    # bohužel nestačí - mz::libs tahá mzlib_sdlapp, který má DEPS
+    # mz::sdl3, takže -mwindows se nakonec stejně dostane do command line.
+    # Triky s -mconsole nepomáhají, protože LINK_FLAGS jdou PŘED LINK_LIBRARIES
+    # a linker bere poslední --subsystem specifikaci.
+    #
+    # Řešení: explicit -Wl,--subsystem,console+exe_format na úrovni ld,
+    # který jde do LINK_LIBRARIES (= za -mwindows), takže vyhraje.
+    if(WIN32)
+        set_target_properties(${target} PROPERTIES WIN32_EXECUTABLE OFF)
+        # PE/COFF: subsystem 3 = WINDOWS_CUI (= console), 2 = WINDOWS (= GUI).
+        # Jdeme přes target_link_libraries jako "linker option string" na konci
+        # link line, aby vyhrál nad -mwindows uprostřed.
+        target_link_libraries(${target} PRIVATE -Wl,--subsystem,console)
+    endif()
 endfunction()

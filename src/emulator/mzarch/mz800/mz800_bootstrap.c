@@ -9,9 +9,17 @@
 #include "memory/mz800_memory.h"
 #include "gdg/mz800_gdg.h"
 
+void mzarch_platform_bootstrap_apply_load_map(void)
+{
+    /* Load-time map: ROM na 0x0000-0x0FFF a 0xE000+, ale RAM na
+     * 0x1000-0x1FFF (= ROM_1000/CG-ROM odmapováno), aby header buffer
+     * 0x10F0 byl RAM a hlavička MZF se korektně zapsala. */
+    g_memory.map = MEMORY_MZ800_MAP_FLAG_ROM_0000 | MEMORY_MZ800_MAP_FLAG_ROM_E000;
+}
+
 void mzarch_platform_bootstrap_init(void)
 {
-    g_memory.map = MEMORY_MZ800_MAP_FLAG_ROM_0000 | MEMORY_MZ800_MAP_FLAG_ROM_E000;
+    mzarch_platform_bootstrap_apply_load_map ();
 
     /* Při bootu MZ-800 monitor ROM rutina kopíruje obsah CG-ROM (4 KB) do
      * CG-RAM (= prvních 4 KB VRAM Plane I, mapovaných v MZ-700 modu na
@@ -24,10 +32,9 @@ void mzarch_platform_bootstrap_init(void)
     memcpy ( g_memoryVRAM_I, &g_memory.ROM[ 0x1000 ], 0x1000 );
 }
 
-void mzarch_platform_bootstrap_post_header(uint16_t fstrt)
+void mzarch_platform_load_prepare_body_map(uint16_t fstrt)
 {
-    /* Bod 1 - společné pro všechny platformy:
-     * Pokud cílová adresa programu je v rozsahu prvních 4 KB, odmapujeme
+    /* Pokud cílová adresa programu je v rozsahu prvních 4 KB, odmapujeme
      * ROM 0x0000-0x0FFF aby se tělo MZF korektně uložilo do RAM. Pozn.:
      * reálná ROM toto chování dělá jen když fstrt == 0x0000, ale naše
      * bootstrap je víc vanilkové (= mapping musí odpovídat skutečné
@@ -36,6 +43,12 @@ void mzarch_platform_bootstrap_post_header(uint16_t fstrt)
     {
         g_memory.map &= ~MEMORY_MZ800_MAP_FLAG_ROM_0000;
     };
+}
+
+void mzarch_platform_bootstrap_post_header(uint16_t fstrt)
+{
+    /* Bod 1 - společné pro všechny platformy: odmapování dolní ROM. */
+    mzarch_platform_load_prepare_body_map ( fstrt );
 
     /* Bod 2 - MZ-800 specific: nastavit startovní mode podle zadního
      * switche (en_SWITCH700) v g_mzarch_main.switch700.

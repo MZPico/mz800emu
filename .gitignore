@@ -10,7 +10,7 @@ mz700emu-ntsc.exe
 # Build artefakty
 /dist/
 /build/
-/doxygen/*
+/doxygen/
 /src/build_revision/build_revision.c
 # Testovací dočasné soubory
 /tests/data/tmp/
@@ -43,6 +43,9 @@ mz700emu-ntsc.exe
 /rd-mz1500.dat
 /mz1500*.lbl
 /mz1500*.watch
+
+# Centronics virtuální tiskárna - capture soubory (per session)
+/centronics-*.bin
 
 # Testovací dočasné soubory
 /MZdata/

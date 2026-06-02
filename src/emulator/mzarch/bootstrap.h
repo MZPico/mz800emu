@@ -15,6 +15,42 @@ extern void mzarch_bootstrap_run_mzf(const char *filename);
 extern void mzarch_platform_bootstrap_init(void);
 
 /**
+ * @brief Nastaví kanonickou load-time memory map (= RAM na header bufferu
+ *        0x10F0 i v dolní RAM), bez resetu PIO/CTC a bez CGROM kopie.
+ *
+ * Vyčleněno z `mzarch_platform_bootstrap_init()` (= jen řádek s
+ * `g_memory.map = ...`). Slouží pro mid-session load (media_load_mzf),
+ * kde nechceme destruktivní machine reset, ale potřebujeme map ve které
+ * `cmthack_load_mzf_filename()` korektně zapíše hlavičku do RAM na 0x10F0
+ * (= na MZ-800 je po resetu na 0x1000-0x1FFF mapovaná CG-ROM, viz
+ * `MEMORY_MZ800_MAP_FLAG_ROM_1000`, takže MAPED zápis hlavičky by se
+ * ztratil).
+ *
+ * Volající si typicky uloží `g_memory.map` před voláním a po dokončení
+ * loadu ho obnoví, aby load neměl trvalý side effect na banking.
+ *
+ * Side effecty: pouze `g_memory.map`. Žádný PIO/CTC/GDG/CGROM zásah.
+ */
+extern void mzarch_platform_bootstrap_apply_load_map(void);
+
+/**
+ * @brief Odmapuje dolní ROM (0x0000-0x0FFF) pokud `fstrt < 0x1000`.
+ *
+ * Identické s "Bodem 1" v `mzarch_platform_bootstrap_post_header()`, ale
+ * BEZ platform-specific GDG/video zásahů (= mz800 Bod 2 přepnutí DMD).
+ * Určeno pro mid-session load (media_load_mzf), kde nechceme měnit video
+ * mód běžícího programu, ale tělo MZF s `fstrt < 0x1000` se musí zapsat
+ * do RAM místo pod ROM.
+ *
+ * Volá se PŘED `cmthack_read_mzf_body()`, na již nastavené load-time mapě
+ * (`mzarch_platform_bootstrap_apply_load_map()`).
+ *
+ * @param fstrt cílová adresa programu (mzf_header.fstrt)
+ * Side effecty: pouze `g_memory.map`.
+ */
+extern void mzarch_platform_load_prepare_body_map(uint16_t fstrt);
+
+/**
  * @brief Platform-specific bootstrap úpravy podle načteného MZF headeru.
  *
  * Volá se po načtení MZF headeru do `0x10F0` a po jeho přečtení do

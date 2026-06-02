@@ -110,11 +110,29 @@ extern "C"
         unsigned wp_callstack;                    /**< Workplace: Callstack (default 0). */
         unsigned wp_breakpoints;                  /**< Workplace: Breakpoints (default 0). */
         unsigned wp_watch;                        /**< Workplace: Watch panel (default 0). */
+        unsigned wp_membrowser;                   /**< Workplace: Memory Browser okno (default 0, membrowser mutant V0). */
+        /**
+         * V3 multi-view: workplace slots pro 4 sekundární Memory Browser
+         * okna (#2 - #5). Default 0 (opt-in). Index 0 = #2, 1 = #3,
+         * 2 = #4, 3 = #5. Pri otevreni/zavreni hlavniho debug okna se
+         * persistovany flag aplikuje na g_gui->showMemoryBrowserWindowExtra[i].
+         */
+        unsigned wp_membrowser_extra[4];
         unsigned wp_profiler;                     /**< Workplace: CPU Profiler okno (default 0). */
         unsigned wp_bookmarks;                    /**< Workplace: Bookmarks okno (default 0). */
         unsigned wp_symbols;                      /**< Workplace: Symbols okno (default 0). */
         unsigned wp_variables;                    /**< Workplace: Variables okno (default 0). */
         unsigned wp_disasm_extra[4];              /**< Workplace: Disassembly #2..#5 (default 0). */
+        /* Per-chip-panels F1 scaffold: workplace slots pro CTC/PPI/Z80
+         * PIO/PSG state okna. Default 0 (opt-in). */
+        unsigned wp_show_ctc;                     /**< Workplace: CTC State okno (default 0). */
+        unsigned wp_show_ppi;                     /**< Workplace: PPI State okno (default 0). */
+        unsigned wp_show_pioz80;                  /**< Workplace: Z80 PIO State okno (default 0). */
+        unsigned wp_show_psg;                     /**< Workplace: PSG State okno (default 0). */
+        unsigned wp_show_gdg;                     /**< Workplace: GDG State okno (default 0, gdg-panel F1). */
+        /* psg-audio-scope mutant F1: workplace slot pro PSG Audio Scope
+         * (samostatné okno, default 0). */
+        unsigned wp_show_psg_audio_scope;         /**< Workplace: PSG Audio Scope okno (default 0). */
     } st_DEBUGGER;
 
     extern st_DEBUGGER g_debugger;

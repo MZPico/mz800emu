@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include "libs/sdlapp/sdlapp.h"
 #include "ui_vkbd.h"
+#include "i18n.h"
 
 #include "mzarch/mzarch_platform_functions.h"
 
@@ -69,7 +70,15 @@ const st_VKBD_KEYDEF vk_row1_def[] = {
 };
 
 const st_VKBD_KEYDEF vk_row2_def[] = {
+#if MZARCH == 800
     {SDL_SCANCODE_TAB, 0, 3, "row2/tab.png"},
+#else
+    /* MZ-700/MZ-1500: na pozici TAB je delší klávesa ALPHA (stejná šířka
+     * jako TAB na MZ-800). HW tu nemá TAB - bit (0, 3) se nikdy nevystaví.
+     * Hostitelská TAB se aplikuje jako ALPHA (viz iface_keyboard.c), proto
+     * má klávesa dva PC ekvivalenty (BACKSLASH + TAB). */
+    {SDL_SCANCODE_BACKSLASH, 0, 4, "row2/alpha.png"},
+#endif
     {SDL_SCANCODE_Q, 2, 7, "row2/q.bmp"},
     {SDL_SCANCODE_W, 2, 1, "row2/w.bmp"},
     {SDL_SCANCODE_E, 4, 3, "row2/e.bmp"},
@@ -107,7 +116,11 @@ const st_VKBD_KEYDEF vk_row3_def[] = {
 
 const st_VKBD_KEYDEF vk_row4_def[] = {
     {SDL_SCANCODE_LSHIFT, 8, 0, "row4/shift_l.png"}, // duplicitni funkce jako SDL_SCANCODE_RSHIFT
+#if MZARCH == 800
     {SDL_SCANCODE_BACKSLASH, 0, 4, "row4/alpha.bmp"},
+#endif
+    /* MZ-700/MZ-1500: ALPHA je v row2 (na pozici TAB), takže tato řada má
+     * o jednu klávesu méně a levý SHIFT je stejně velký jako pravý. */
     {SDL_SCANCODE_Z, 1, 6, "row4/z.bmp"},
     {SDL_SCANCODE_X, 2, 0, "row4/x.bmp"},
     {SDL_SCANCODE_C, 4, 5, "row4/c.bmp"},
@@ -171,4 +184,51 @@ const st_VKBD_OPTFUNC vk_optfunc[] = {
 #endif
     {SDL_SCANCODE_F12, mzarch_platform_fn_reset_request},
     {0, NULL}};
+
+
+/**
+ * @brief Vrátí hint s PC ekvivalentem pro "neintuitivně" mapované Sharp
+ *        klávesy.
+ *
+ * Pokrývá klávesy, které na PC nejsou tam, kde by uživatel čekal (viz sekce
+ * mapování klávesnice v docs/{cz,en}/README.md). Texty jsou anglické a
+ * značené N_() (= jen registrace do .pot); caller je přeloží přes _().
+ *
+ * @param scancode  SDL scancode klávesy (st_VKBD_KEYDEF.scancode).
+ * @return  Konstantní řetězec (N_-marker) s hintem, nebo NULL pokud je
+ *          klávesa na PC na intuitivním místě (= žádný hint).
+ */
+const char *ui_vkbd_pc_hint(SDL_Scancode scancode)
+{
+    switch (scancode)
+    {
+        case SDL_SCANCODE_CAPSLOCK:                 /* GRAPH */
+            return N_("PC key: CapsLock");
+        case SDL_SCANCODE_BACKSLASH:                /* ALPHA */
+#if MZARCH == 800
+            return N_("PC key: \\");
+#else
+            /* MZ-700/1500: ALPHA reaguje i na hostitelskou klávesu Tab. */
+            return N_("PC key: \\ or Tab");
+#endif
+        case SDL_SCANCODE_GRAVE:                    /* BLANK */
+            return N_("PC key: ~");
+        case SDL_SCANCODE_ESCAPE:                   /* BREAK / ESC */
+            return N_("PC key: Esc or End");
+        case SDL_SCANCODE_INSERT:                   /* INST */
+            return N_("PC key: Insert");
+        case SDL_SCANCODE_DELETE:                   /* DEL */
+            return N_("PC key: Backspace or Delete");
+        case SDL_SCANCODE_F6:                       /* @ */
+            return N_("PC key: F6");
+        case SDL_SCANCODE_F7:                       /* \ (backslash znak) */
+            return N_("PC key: F7");
+        case SDL_SCANCODE_F8:                       /* ? */
+            return N_("PC key: F8");
+        case SDL_SCANCODE_F9:                       /* LIBRA */
+            return N_("PC key: F9");
+        default:
+            return NULL;
+    };
+}
 

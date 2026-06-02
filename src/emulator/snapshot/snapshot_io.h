@@ -39,9 +39,63 @@ snapshot_io_t *snapshot_io_open_write(const char *filepath, int compression_leve
 snapshot_io_t *snapshot_io_open_read(const char *filepath);
 
 /**
+ * Otevření archivu pro zápis do paměťového bufferu (save)
+ *
+ * Místo zápisu do souboru se ZIP archiv buduje v paměti přes minizip-ng
+ * mem stream. Pro získání hotových dat zavolat
+ * @ref snapshot_io_close_to_buffer (NIKOLI @ref snapshot_io_close,
+ * jinak data zaniknou).
+ *
+ * @param compression_level ZIP kompresní úroveň (0-9)
+ * @return Handle nebo NULL při chybě
+ *
+ * @note Volající je vlastníkem handle - musí jej uzavřít přes
+ *       @ref snapshot_io_close_to_buffer (úspěšná cesta) nebo
+ *       @ref snapshot_io_close (cesta s chybou, bez extrakce dat).
+ */
+snapshot_io_t *snapshot_io_open_write_buffer(int compression_level);
+
+/**
+ * Otevření archivu pro čtení z paměťového bufferu (load)
+ *
+ * Vstupem jsou hotová .mzs data v paměti (např. dříve vygenerovaná přes
+ * @ref snapshot_io_open_write_buffer, nebo přijatá po síti přes MCP).
+ * Handle udržuje vnitřní mem stream nad volajícím dodanou pamětí -
+ * volající MUSÍ udržet platnost @p data po celou dobu životnosti handle
+ * (uvolnit až po @ref snapshot_io_close).
+ *
+ * @param data Ukazatel na ZIP data v paměti (vlastnictví zůstává volajícímu)
+ * @param size Velikost dat v bajtech
+ * @return Handle nebo NULL při chybě (neplatná data, prázdný buffer, atd.)
+ */
+snapshot_io_t *snapshot_io_open_read_buffer(const uint8_t *data, size_t size);
+
+/**
  * Zavření archivu a uvolnění zdrojů
+ *
+ * Pro writer otevřený přes @ref snapshot_io_open_write_buffer tato funkce
+ * zahodí nasbíraná data. Pokud chceš data získat, volej
+ * @ref snapshot_io_close_to_buffer.
  */
 void snapshot_io_close(snapshot_io_t *io);
+
+/**
+ * Zavření buffer-writeru a extrakce hotových .mzs dat
+ *
+ * Volat MÍSTO @ref snapshot_io_close pro handle otevřený přes
+ * @ref snapshot_io_open_write_buffer. Po návratu je handle invalidní
+ * (nepoužívat opakovaně).
+ *
+ * @param io Handle (musí být buffer-writer; jinak SNAPSHOT_ERR_IO)
+ * @param out_data Výstupní ukazatel na nově alokovaný buffer s .mzs daty.
+ *                 Volající uvolní přes g_free(). Při chybě bude *out_data = NULL.
+ * @param out_size Výstupní velikost dat v bajtech. Při chybě bude *out_size = 0.
+ * @return SNAPSHOT_OK při úspěchu; jinak chybový kód a handle je přesto
+ *         uvolněn (volat znovu close není potřeba).
+ */
+en_SNAPSHOT_RESULT snapshot_io_close_to_buffer(snapshot_io_t *io,
+                                              uint8_t **out_data,
+                                              size_t *out_size);
 
 /**
  * Zápis binárních dat do archivu

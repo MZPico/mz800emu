@@ -56,12 +56,6 @@
 #include "baseui/baseui.h"
 #include "baseui/baseui_filechooser.h"
 
-#ifdef MZ800EMU_CFG_UI_ENABLED
-#include "ui-gtk3/ui_unicard.h"
-#else
-#define ui_unicard_update_menu()
-#endif /* MZ800EMU_CFG_UI_ENABLED */
-
 st_UNICARD g_unicard;
 
 static CFGELM *g_elm_connected;
@@ -732,7 +726,6 @@ void unicard_set_connected ( en_UNICARD_CONNECTION conn ) {
          * "Reinitialize Runtime" v topmenu (= unicard_reinit_sd_runtime). */
         if ( !g_file_test ( path, G_FILE_TEST_IS_DIR ) ) {
             if ( EXIT_SUCCESS != unicard_init_sd_for ( path, g_unicard.fw_emulated ) ) {
-                ui_unicard_update_menu ( );
                 return;
             };
         } else if ( g_unicard.runtime_check_on_connect && !s_unicard_bypass_runtime_check ) {
@@ -771,7 +764,6 @@ void unicard_set_connected ( en_UNICARD_CONNECTION conn ) {
             }
             if ( needs_dialog ) {
                 g_unicard_runtime_mismatch_pending = (int) rc;
-                ui_unicard_update_menu ( );
                 return;
             }
         };
@@ -787,7 +779,6 @@ void unicard_set_connected ( en_UNICARD_CONNECTION conn ) {
     };
     /* Bypass flag je one-shot - po jakémkoli set_connected resetujeme. */
     s_unicard_bypass_runtime_check = 0;
-    ui_unicard_update_menu ( );
 }
 
 
@@ -2077,10 +2068,55 @@ static void unicard_ui_select_sd_root_directory_cb(baseui_fchooser_t *fch)
     };
 
     char *dirpath = fch->selected_path;
-    if (!dirpath) 
+    if (!dirpath)
         return;
 
-    unicard_set_sd_root_dirpath(dirpath);
+    /* Pokud uživatel vybral stejný adresář jako aktuální root, není co
+     * dělat - vyhneme se zbytečnému disruptivnímu reconnectu (analogicky
+     * early-return v unicard_set_fw). */
+    char *cur_root = unicard_get_sd_root_dirpath ( );
+    if ( cur_root && 0 == g_strcmp0 ( cur_root, dirpath ) ) {
+        baseui_filechooser_destroy ( fch );
+        return;
+    }
+
+    /* On-the-fly změna SD root za běhu. Pokud je Unicard připojen,
+     * provedeme force disconnect + reconnect - stejný vzor jako
+     * unicard_set_fw. Disconnect (unimgr_exit) zavře otevřené file/dir
+     * handles starého rootu, reconnect resetuje CWD na "/" (unimgr_init ->
+     * unicard_chdir) a re-armne QD boot loader z nového rootu.
+     *
+     * Bez reconnectu by živý engine zůstal viset na starém rootu
+     * (otevřené handles míří do starého adresáře, CWD, QD loader armnutý
+     * ze starého mzfloader.mzq). Když Unicard připojen není, jen uložíme
+     * nový root - příští manuální Connect ho převezme. */
+    int was_connected = UNICARD_TEST_IS_CONNECTED;
+    if ( was_connected ) {
+        unicard_set_connected ( UNICARD_CONNECTION_DISCONNECTED );
+    }
+
+    unicard_set_sd_root_dirpath ( dirpath );
+
+    if ( was_connected ) {
+        /* Pokud nový root ještě není inicializovaná SD (adresář neexistuje,
+         * nebo existuje ale nemá {SD}/unicard/ runtime - typicky čerstvě
+         * vybraný prázdný adresář), vytvoříme runtime stejně jako při
+         * prvním startu. set_connected auto-init spouští jen když SAMOTNÝ
+         * root adresář neexistuje; prázdný existující adresář by jinak
+         * spadl do runtime-mismatch dialogu (NO_DIR) a Unicard by zůstala
+         * odpojená. Inicializace fresh karty je bezpodmínečná, shodně se
+         * startupem (chybějící root se vytvoří bez ohledu na runtime-check);
+         * runtime-check nastavení řídí jen mismatch dialog pro EXISTUJÍCÍ
+         * runtime jiné verze - ten necháme na set_connected. */
+        char *root = unicard_get_sd_root_dirpath ( );
+        int needs_init = ( !g_file_test ( root, G_FILE_TEST_IS_DIR ) )
+                         || ( unicard_detect_runtime_fw ( ) == UNICARD_RUNTIME_CHECK_NO_DIR );
+        if ( needs_init ) {
+            unicard_init_sd_for ( root, g_unicard.fw_emulated );
+        }
+        unicard_set_connected ( UNICARD_CONNECTION_CONNECTED );
+    }
+
     baseui_filechooser_destroy(fch);
 }
 

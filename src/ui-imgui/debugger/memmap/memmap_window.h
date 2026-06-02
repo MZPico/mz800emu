@@ -142,6 +142,30 @@ extern void memmap_window_request_focus ( void );
 
 
 /**
+ * @brief Vyžádá fokus + zvýraznění konkrétní 4 KB stránky.
+ *
+ * Rozšířená varianta @c memmap_window_request_focus(): kromě focus
+ * navíc zvýrazní řádek tabulky odpovídající dané Z80 adrese (= addr/0x1000
+ * = řádek 0..15). Pulse highlight cca 1.5 sekundy, pak vyprchá.
+ *
+ * Použití: cross-window navigation z Memory Browser (RMB "Show in Memory
+ * Map" na bajtu z Logical Z80 view) - uživatel vidí, do jaké banking
+ * stránky aktuální Memory Browser cursor patří.
+ *
+ * Pro adresy mimo 0..0xFFFF (= mimo Z80 prostor) se highlight nevyvolá,
+ * jen focus okna (= no-op highlight).
+ *
+ * Idempotentní v rámci framu.
+ *
+ * @param addr Z80 adresa (0..0xFFFF). Page index = addr >> 12 (0..15).
+ *
+ * @pre Volat z UI vlákna.
+ * @post Příští memmap_window_render zvýrazní řádek addr>>12.
+ */
+extern void memmap_window_request_focus_at ( unsigned addr );
+
+
+/**
  * @brief Render Memory Map debug okna.
  *
  * Volá se z main_window každý frame, pokud `*p_open` je true.

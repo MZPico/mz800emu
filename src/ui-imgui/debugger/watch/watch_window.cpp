@@ -90,6 +90,8 @@
 extern "C" {
 #include "emulator/debugger/watch.h"
 #include "emulator/debugger/watch_cache.h"  /* Phase E: backend cache + snapshot */
+#include "emulator/debugger/watch_emu_cache.h"  /* V1.D.2.C: dispatch-side mirror */
+#include "ui-imgui/mcp_activity/owner_badge.h"  /* V1.C.3 owner badge */
 #include "mzarch/mzarch.h"        /* g_mzarch_main.reset_count (Phase E.3) */
 }
 
@@ -158,6 +160,11 @@ struct WatchUiState {
     bool highlight_changes = true;
     /* Phase E.1: fade trvání ms (perzist přes cfg, default 500). */
     int  highlight_fade_ms = 500;
+
+    /* V1.E.6.A: pending focus z Activity dvojkliku - hodnota > 0 = render-
+     * loop má najít řádek s watch.id == pending_focus_id, vyčistit filter
+     * a scrollnout. Po spotřebě je 0. */
+    int  pending_focus_id = 0;
 };
 
 
@@ -175,6 +182,8 @@ static void watch_ui_prune_stale_cache ( void )
     size_t n = watch_count ( );
     if ( n == 0 ) {
         watch_cache_prune_stale ( NULL, 0 );
+        /* V1.D.2.C: zároveň prune dispatch-side mirror. */
+        watch_emu_cache_prune_stale ( NULL, 0 );
         return;
     };
     std::vector<int> live;
@@ -184,6 +193,8 @@ static void watch_ui_prune_stale_cache ( void )
         if ( r ) live.push_back ( r->id );
     };
     watch_cache_prune_stale ( live.data ( ), live.size ( ) );
+    /* V1.D.2.C: dispatch-side mirror se synchronizuje stejným seznamem. */
+    watch_emu_cache_prune_stale ( live.data ( ), live.size ( ) );
 }
 
 
@@ -643,6 +654,19 @@ static void watch_ui_cache_update ( const st_WATCH_ROW *r,
         };
         watch_cache_update ( r->id, r->type, r->mode, 0, buf, got, frame_no );
     };
+
+    /* V1.D.2.C: publikuj aktuální stav do dispatch-side mirroru, aby
+     * MCP Resource `emulator://watch/snapshot/{name}` mohl číst snap +
+     * delta + min/max + change_count z dispatch vlákna. Publikujeme jen
+     * pojmenované řádky (= anonymní nelze lookup-ovat URI parametrem).
+     *
+     * 1-frame stale je akceptovatelné per scope (= UI vlákno publish,
+     * dispatch vlákno read). Race-free díky GMutex v zrcadle. */
+    if ( r->name && r->name[0] ) {
+        const st_WATCH_CACHE_VIEW *v = watch_cache_get ( r->id );
+        const st_WATCH_VALUE_SNAP *snap = watch_snapshot_get ( r->id );
+        watch_emu_cache_publish ( r->id, v, r->name, snap, (int) r->type );
+    };
 }
 
 
@@ -1030,6 +1054,12 @@ static void watch_render_row ( size_t i )
         };
     } else {
         const char *display = ( r->name && r->name[0] ) ? r->name : "(anon)";
+        /* V1.C.3: inline owner badge před jméno (= varianta integrace
+         * bez přidání samostatného sloupce, watch má dynamický počet
+         * sloupců závislý na snapshot mode). Tooltip + barva přes shared
+         * owner_badge_render(). */
+        owner_badge_render ( r->cmd_origin );
+        ImGui::SameLine ( );
         /* Selectable s AllowDoubleClick + SpanAllColumns pro spolehlivý
          * double-click handle a row-wide kontext menu. AllowOverlap = umožní
          * následujícím widgetům v dalších sloupcích (např. Delete x button)
@@ -1680,8 +1710,31 @@ void watch_window_render ( bool *p_open )
             /* Custom hlavička s tristate v sloupci 0 (Phase D). */
             watch_render_table_header ( total );
 
+            /* V1.E.6.A: pending focus z watch_window_focus_id() - před loop
+             * vyčisti filter, předznač selection. Scroll provede v loop po
+             * render row. */
+            int focus_id_local = g_wu.pending_focus_id;
+            g_wu.pending_focus_id = 0;
+            if ( focus_id_local > 0 ) {
+                g_wu.filter[0] = '\0';
+                int idx = watch_find_index_by_id ( focus_id_local );
+                if ( idx >= 0 ) {
+                    g_wu.selected.clear ( );
+                    g_wu.selected.insert ( focus_id_local );
+                };
+            };
+
             for ( size_t i = 0; i < total; i++ ) {
                 watch_render_row ( i );
+
+                /* V1.E.6.A: scroll na cílový focus řádek. */
+                if ( focus_id_local > 0 ) {
+                    const st_WATCH_ROW *rr = watch_get ( i );
+                    if ( rr && rr->id == focus_id_local ) {
+                        ImGui::SetScrollHereY ( 0.5f );
+                        focus_id_local = 0;
+                    };
+                };
             };
 
             ImGui::EndTable ( );
@@ -1837,6 +1890,22 @@ void watch_window_render ( bool *p_open )
 void watch_window_show_hide ( void )
 {
     g_gui->showWatchWindow = !g_gui->showWatchWindow;
+}
+
+
+extern "C" void watch_window_focus_id ( int watch_id )
+{
+    /* V1.E.6.A: Activity dvojklik routing - otevři okno, vyčisti filter
+     * (aby cílový řádek byl viditelný) a přednastav selection. Scroll na
+     * konkrétní řádek udělá render-loop v dalším frame. Pokud watch_id
+     * neodpovídá žádnému st_WATCH_ROW.id (= mezičasem smazán), spotřeba
+     * je no-op (= žádný side effect kromě otevření okna).
+     *
+     * Watch.id = stabilní runtime counter (>= 1), takže 0 jako sentinel
+     * pro "no pending" je bezpečné. */
+    if ( watch_id <= 0 ) return;
+    g_gui->showWatchWindow = true;
+    g_wu.pending_focus_id = watch_id;
 }
 
 

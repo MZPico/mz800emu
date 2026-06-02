@@ -122,6 +122,7 @@ extern "C" {
     void cmt_play ( void );
     void cmt_play_paused ( void );
     void cmt_ui_record ( void );
+    int cmt_record_to_file ( const char *path );
     void cmt_pause ( int value );
     void cmt_stop ( void );
     void cmt_eject ( void );

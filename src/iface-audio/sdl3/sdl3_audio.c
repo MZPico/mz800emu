@@ -8,6 +8,7 @@
 #include <math.h>
 
 #include "libs/sdlapp/sdlapp.h"
+#include "libs/sdlapp/sdlapp_options.h"
 #include "iface/iface_audio.h"
 
 #include "mzarch/mzarch.h"
@@ -98,6 +99,17 @@ bool iface_audio_lowlevel_init(void)
     {
         SDLAPP_ERROR("Failed to initialize SDL audio");
         return false;
+    };
+
+    /* Headless režim: žádný SDL audio device neotevíráme. @c g_audio_stream
+     * zůstává NULL, což ostatní funkce v tomto souboru (pause/resume) i v
+     * iface_audio už korektně ošetřují. Nahoře v iface_audio_init je
+     * potřeba zachovat alokaci interních bufferů, takže vracíme TRUE. */
+    if (sdlapp_option_present("--headless"))
+    {
+        g_print("Headless mode: skipping SDL audio device open (no-op)\n");
+        g_iface_audio.state = IFACE_AUDIO_BUFFER_STATE_PAUSED;
+        return true;
     };
 
     /* Open audio device */

@@ -56,6 +56,7 @@
 #include "bpt_window.h"
 #include "bpt_state.h"
 #include "bpt_edit_panel.h"
+#include "ui-imgui/mcp_activity/owner_badge.h"  /* V1.C.3 owner badge */
 
 /* V1.7 C.3.5: cfgmain persistence (active_tab + per-tab filters). */
 #include "libs/cfgfile/cfgmodule.h"
@@ -833,6 +834,51 @@ static void bpt_render_filter_bar ( en_BPT_TAB_FILTER tab, int shown, int total 
  *
  * @param filter  Sada BP typů zobrazená v tomto tabu.
  */
+/*
+ * Kontextové menu pro per-typ taby (plochá tabulka, ne strom). Stejné jako
+ * tree menu v "All", ale bez Expand/Collapse/Add Group (ploché taby strom
+ * nemají) a "Delete Row/Branch" zkráceno na "Delete Row" (v ploché tabulce
+ * není větev). Unparent ponecháno (BP může být ve skupině). Selekce se
+ * nastaví klikem/pravým klikem na řádek v bpt_render_filtered_table.
+ */
+static void bpt_render_filtered_context_menu ( void ) {
+    if ( !ImGui::BeginPopup ( "##bpt_filtered_context" ) ) return;
+
+    if ( ImGui::MenuItem ( _L ( "Add Breakpoint Event...##bptf" ) ) ) {
+        bpt_edit_panel_open ( BPT_ITEM_EVENT, -1 );
+    };
+
+    ImGui::Separator ( );
+
+    bool has_selection = ( g_bpt_ui.selected_id >= 0 &&
+                           g_bpt_ui.selected_type == BPT_ITEM_EVENT );
+
+    if ( ImGui::MenuItem ( _L ( "Edit row...##bptf" ), NULL, false, has_selection ) ) {
+        bpt_edit_panel_open ( BPT_ITEM_EVENT, g_bpt_ui.selected_id );
+    };
+
+    bool can_unparent = has_selection && bpt_selected_has_parent ( );
+    if ( ImGui::MenuItem ( _L ( "Unparent##bptf" ), NULL, false, can_unparent ) ) {
+        dbg_ui_bp_set_parent ( g_bpt_ui.selected_id, -1 );
+    };
+
+    ImGui::Separator ( );
+
+    if ( ImGui::MenuItem ( _L ( "Delete Row##bptf" ), NULL, false, has_selection ) ) {
+        dbg_ui_bp_remove ( g_bpt_ui.selected_id );
+        g_bpt_ui.selected_id = -1;
+    };
+
+    bool has_data = ( breakpoints_group_count ( ) > 0 || breakpoints_count ( ) > 0 );
+    if ( ImGui::MenuItem ( _L ( "Delete All##bptf" ), NULL, false, has_data ) ) {
+        breakpoints_clear_all ( );
+        g_bpt_ui.selected_id = -1;
+    };
+
+    ImGui::EndPopup ( );
+}
+
+
 static void bpt_render_filtered_table ( en_BPT_TAB_FILTER filter ) {
     unsigned count = g_breakpoints.breakpoints->len;
 
@@ -860,14 +906,18 @@ static void bpt_render_filtered_table ( en_BPT_TAB_FILTER filter ) {
                               ImGuiTableFlags_BordersOuter | ImGuiTableFlags_ScrollY |
                               ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Resizable;
 
-    if ( !ImGui::BeginTable ( "##bpt_table", 7, tflags ) ) {
+    if ( !ImGui::BeginTable ( "##bpt_table", 9, tflags ) ) {
         return;
     };
 
     ImGui::TableSetupScrollFreeze ( 0, 1 );
     ImGui::TableSetupColumn ( "##en",  ImGuiTableColumnFlags_WidthFixed, 24.0f );
     ImGui::TableSetupColumn ( _L( "#ID##bpt_col_id" ),     ImGuiTableColumnFlags_WidthFixed, 48.0f );
+    /* V1.C.3 - Owner badge sloupec mezi ID a Type. */
+    ImGui::TableSetupColumn ( _L( "Own##bpt_col_owner" ),  ImGuiTableColumnFlags_WidthFixed, 36.0f );
     ImGui::TableSetupColumn ( _L( "Type##bpt_col_type" ),   ImGuiTableColumnFlags_WidthFixed, 88.0f );
+    /* Group sloupec - jméno skupiny (parent) daného BP, "-" pro root. */
+    ImGui::TableSetupColumn ( _L( "Group##bpt_col_grp" ),   ImGuiTableColumnFlags_WidthFixed, 110.0f );
     ImGui::TableSetupColumn ( _L( "Label##bpt_col_label" ), ImGuiTableColumnFlags_WidthStretch );
     ImGui::TableSetupColumn ( _L( "Target##bpt_col_tgt" ),  ImGuiTableColumnFlags_WidthFixed, 180.0f );
     ImGui::TableSetupColumn ( _L( "Cond##bpt_col_cond" ),   ImGuiTableColumnFlags_WidthStretch );
@@ -902,12 +952,30 @@ static void bpt_render_filtered_table ( en_BPT_TAB_FILTER filter ) {
         ImGui::TableNextColumn ( );
         ImGui::Text ( "#%d", bpt->id );
 
-        /* Sloupec 2: Type. */
+        /* Sloupec 2 (V1.C.3): Owner badge. */
+        ImGui::TableNextColumn ( );
+        owner_badge_render ( bpt->cmd_origin );
+
+        /* Sloupec 3: Type. */
         ImGui::TableNextColumn ( );
         ImU32 fg = bpt_rgb_to_imu32 ( bpt->fg_rgb );
         ImGui::PushStyleColor ( ImGuiCol_Text, fg );
         ImGui::TextUnformatted ( bpt_type_to_string ( bpt->type ) );
         ImGui::PopStyleColor ( );
+
+        /* Sloupec Group: jméno parent skupiny ("-" pro root, "?" pokud
+         * skupina nedohledána). */
+        ImGui::TableNextColumn ( );
+        if ( bpt->parent >= 0 ) {
+            st_BPTGROUP *grp = breakpoints_group_find_by_id ( bpt->parent );
+            if ( grp && grp->name && grp->name[0] ) {
+                ImGui::TextUnformatted ( grp->name );
+            } else {
+                ImGui::TextDisabled ( "?" );
+            };
+        } else {
+            ImGui::TextDisabled ( "-" );
+        };
 
         /* Sloupec 3: Label (= Selectable kvůli interakci nad celým řádkem). */
         ImGui::TableNextColumn ( );
@@ -916,6 +984,13 @@ static void bpt_render_filtered_table ( en_BPT_TAB_FILTER filter ) {
         ImGui::Selectable ( lbl, is_selected,
                             ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick );
         bpt_event_interaction_handler ( bpt );
+        /* Right-click na řádek = selekce + odložené otevření kontextového
+         * menu per-typ tabu (zpracováno po EndTable). */
+        if ( ImGui::IsItemClicked ( ImGuiMouseButton_Right ) ) {
+            g_bpt_ui.selected_id = bpt->id;
+            g_bpt_ui.selected_type = BPT_ITEM_EVENT;
+            g_bpt_ui.open_filtered_context = true;
+        };
 
         /* Sloupec 4: Target. */
         ImGui::TableNextColumn ( );
@@ -950,6 +1025,22 @@ static void bpt_render_filtered_table ( en_BPT_TAB_FILTER filter ) {
 
     ImGui::EndTable ( );
 
+    /* Right-click na plochu tabulky (mimo řádek) také otevře menu - umožní
+     * "Add Breakpoint Event..." i bez selekce. IsItemHovered po EndTable se
+     * vztahuje na tabulku jako celek. */
+    if ( ImGui::IsItemHovered ( ImGuiHoveredFlags_AllowWhenBlockedByPopup ) &&
+         ImGui::IsMouseReleased ( ImGuiMouseButton_Right ) ) {
+        g_bpt_ui.open_filtered_context = true;
+    };
+
+    /* Odložené otevření kontextového menu (nastaveno pravým klikem na řádek
+     * nebo na plochu tabulky výše) - OpenPopup mimo PushID(bpt->id) scope. */
+    if ( g_bpt_ui.open_filtered_context ) {
+        ImGui::OpenPopup ( "##bpt_filtered_context" );
+        g_bpt_ui.open_filtered_context = false;
+    };
+    bpt_render_filtered_context_menu ( );
+
     if ( rendered == 0 ) {
         if ( total_in_tab == 0 ) {
             ImGui::TextDisabled ( "%s", _( "No breakpoints of this type." ) );
@@ -957,6 +1048,171 @@ static void bpt_render_filtered_table ( en_BPT_TAB_FILTER filter ) {
             ImGui::TextDisabled ( "%s", _( "No breakpoints match the filter." ) );
         };
     };
+}
+
+
+/*
+ * Kontextové menu pro záložku Groups (správa skupin). Add Group, Edit row,
+ * Delete Branch (= skupina + podskupiny + jejich BP), Delete All. Bez
+ * Add Breakpoint Event (sem patří jen operace nad skupinami).
+ */
+static void bpt_render_groups_context_menu ( void ) {
+    if ( !ImGui::BeginPopup ( "##bpt_groups_context" ) ) return;
+
+    if ( ImGui::MenuItem ( _L ( "Add Group...##bptg" ) ) ) {
+        bpt_edit_panel_open ( BPT_ITEM_GROUP, -1 );
+    };
+
+    ImGui::Separator ( );
+
+    bool has_selection = ( g_bpt_ui.selected_id >= 0 &&
+                           g_bpt_ui.selected_type == BPT_ITEM_GROUP );
+
+    if ( ImGui::MenuItem ( _L ( "Edit row...##bptg" ), NULL, false, has_selection ) ) {
+        bpt_edit_panel_open ( BPT_ITEM_GROUP, g_bpt_ui.selected_id );
+    };
+
+    ImGui::Separator ( );
+
+    if ( ImGui::MenuItem ( _L ( "Delete Branch##bptg" ), NULL, false, has_selection ) ) {
+        dbg_ui_bpgrp_remove ( g_bpt_ui.selected_id );
+        g_bpt_ui.selected_id = -1;
+    };
+
+    bool has_data = ( breakpoints_group_count ( ) > 0 || breakpoints_count ( ) > 0 );
+    if ( ImGui::MenuItem ( _L ( "Delete All##bptg" ), NULL, false, has_data ) ) {
+        breakpoints_clear_all ( );
+        g_bpt_ui.selected_id = -1;
+    };
+
+    ImGui::EndPopup ( );
+}
+
+
+/*
+ * Záložka Groups - plochá tabulka všech skupin. Sloupce: enabled, #ID, Name,
+ * Parent (jméno rodičovské skupiny), #BP (počet BP přímo v dané skupině).
+ * Pravý klik = kontextové menu pro správu skupin.
+ */
+static void bpt_render_groups_table ( void ) {
+    unsigned gcount = g_breakpoints.groups->len;
+
+    if ( gcount == 0 ) {
+        ImGui::TextDisabled ( "%s", _( "No groups defined." ) );
+        /* I bez skupin nabídni Add Group přes pravý klik do plochy okna. */
+        if ( ImGui::IsWindowHovered ( ) &&
+             ImGui::IsMouseReleased ( ImGuiMouseButton_Right ) ) {
+            g_bpt_ui.open_groups_context = true;
+        };
+        if ( g_bpt_ui.open_groups_context ) {
+            ImGui::OpenPopup ( "##bpt_groups_context" );
+            g_bpt_ui.open_groups_context = false;
+        };
+        bpt_render_groups_context_menu ( );
+        return;
+    };
+
+    ImGuiTableFlags tflags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
+                              ImGuiTableFlags_BordersOuter | ImGuiTableFlags_ScrollY |
+                              ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Resizable;
+
+    if ( !ImGui::BeginTable ( "##bpt_groups_table", 5, tflags ) ) {
+        return;
+    };
+
+    ImGui::TableSetupScrollFreeze ( 0, 1 );
+    ImGui::TableSetupColumn ( "##gen",  ImGuiTableColumnFlags_WidthFixed, 24.0f );
+    ImGui::TableSetupColumn ( _L( "#ID##bpt_gcol_id" ),    ImGuiTableColumnFlags_WidthFixed, 48.0f );
+    ImGui::TableSetupColumn ( _L( "Name##bpt_gcol_name" ),  ImGuiTableColumnFlags_WidthStretch );
+    ImGui::TableSetupColumn ( _L( "Parent##bpt_gcol_par" ), ImGuiTableColumnFlags_WidthStretch );
+    ImGui::TableSetupColumn ( _L( "#BP##bpt_gcol_cnt" ),    ImGuiTableColumnFlags_WidthFixed, 60.0f );
+    ImGui::TableHeadersRow ( );
+
+    unsigned bpcount = g_breakpoints.breakpoints->len;
+
+    for ( unsigned i = 0; i < gcount; i++ ) {
+        st_BPTGROUP *grp = &g_array_index ( g_breakpoints.groups, st_BPTGROUP, i );
+        ImGui::PushID ( grp->id );
+        ImGui::TableNextRow ( );
+
+        /* Sloupec 0: enabled checkbox. */
+        ImGui::TableNextColumn ( );
+        bool enabled = grp->enabled;
+        if ( ImGui::Checkbox ( "##gen", &enabled ) ) {
+            st_DBGAPI_BPGRP_UPDATE_PARAM p;
+            memset ( &p, 0, sizeof ( p ) );
+            p.id = grp->id;
+            p.update_mask = DBGAPI_BPGRP_UM_ENABLED;
+            p.enabled = enabled;
+            dbg_ui_bpgrp_update ( &p );
+        };
+
+        /* Sloupec 1: ID. */
+        ImGui::TableNextColumn ( );
+        ImGui::Text ( "#%d", grp->id );
+
+        /* Sloupec 2: Name (Selectable přes celý řádek). */
+        ImGui::TableNextColumn ( );
+        bool is_selected = ( g_bpt_ui.selected_id == grp->id &&
+                             g_bpt_ui.selected_type == BPT_ITEM_GROUP );
+        const char *gname = ( grp->name && grp->name[0] ) ? grp->name : "(unnamed)";
+        ImGui::Selectable ( gname, is_selected,
+                            ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick );
+        if ( ImGui::IsItemClicked ( ImGuiMouseButton_Left ) ||
+             ImGui::IsItemClicked ( ImGuiMouseButton_Right ) ) {
+            g_bpt_ui.selected_id = grp->id;
+            g_bpt_ui.selected_type = BPT_ITEM_GROUP;
+        };
+        if ( ImGui::IsItemHovered ( ) &&
+             ImGui::IsMouseDoubleClicked ( ImGuiMouseButton_Left ) ) {
+            bpt_edit_panel_open ( BPT_ITEM_GROUP, grp->id );
+        };
+        if ( ImGui::IsItemClicked ( ImGuiMouseButton_Right ) ) {
+            g_bpt_ui.open_groups_context = true;
+        };
+
+        /* Sloupec 3: Parent (jméno rodičovské skupiny, "-" pro root). */
+        ImGui::TableNextColumn ( );
+        if ( grp->parent >= 0 ) {
+            st_BPTGROUP *par = breakpoints_group_find_by_id ( grp->parent );
+            if ( par && par->name && par->name[0] ) {
+                ImGui::TextUnformatted ( par->name );
+            } else {
+                ImGui::TextDisabled ( "?" );
+            };
+        } else {
+            ImGui::TextDisabled ( "-" );
+        };
+
+        /* Sloupec 4: #BP (počet BP přímo v této skupině). */
+        ImGui::TableNextColumn ( );
+        unsigned nbp = 0;
+        for ( unsigned j = 0; j < bpcount; j++ ) {
+            st_BPT *bpt = &g_array_index ( g_breakpoints.breakpoints, st_BPT, j );
+            if ( bpt->parent == grp->id ) nbp++;
+        };
+        if ( nbp > 0 ) {
+            ImGui::Text ( "%u", nbp );
+        } else {
+            ImGui::TextDisabled ( "0" );
+        };
+
+        ImGui::PopID ( );
+    };
+
+    ImGui::EndTable ( );
+
+    /* Right-click na plochu tabulky (mimo řádek) otevře menu (Add Group). */
+    if ( ImGui::IsItemHovered ( ImGuiHoveredFlags_AllowWhenBlockedByPopup ) &&
+         ImGui::IsMouseReleased ( ImGuiMouseButton_Right ) ) {
+        g_bpt_ui.open_groups_context = true;
+    };
+
+    if ( g_bpt_ui.open_groups_context ) {
+        ImGui::OpenPopup ( "##bpt_groups_context" );
+        g_bpt_ui.open_groups_context = false;
+    };
+    bpt_render_groups_context_menu ( );
 }
 
 
@@ -1171,13 +1427,19 @@ static void bpt_render_action_bar ( void ) {
     ImGui::SeparatorEx ( ImGuiSeparatorFlags_Vertical );
     ImGui::SameLine ( 0.0f, 10.0f );
 
-    /* Tlačítko Save */
-    bool has_data = ( breakpoints_group_count ( ) > 0 || breakpoints_count ( ) > 0 );
-    ImGui::BeginDisabled ( !has_data );
+    /* Tlačítko Save - povoleno vždy, včetně prázdného stavu. Po smazání všech
+     * BP musí jít explicitně přepsat soubor "vyčištěným" stavem (auto-save při
+     * ukončení emulátoru na to nestačí). Dřív bylo disabled při 0 skupin i 0
+     * BP, což bránilo uložení prázdného stavu a nekonzistentně s menu
+     * File -> Save (to disabled nikdy nebylo). breakpoints_save_to_filepath()
+     * prázdný stav korektně uloží (validní JSON s prázdnými poli). */
     if ( ImGui::Button ( _L ( "Save##bpt_bar" ) ) ) {
         breakpoints_save_to_file ( );
     };
-    ImGui::EndDisabled ( );
+    if ( ImGui::IsItemHovered ( ) ) {
+        ImGui::SetTooltip ( "%s",
+            _( "Save breakpoints to file (an empty state overwrites the file too)." ) );
+    };
 }
 
 
@@ -1190,6 +1452,35 @@ static void bpt_render_action_bar ( void ) {
 
 void breakpoints_show_hide_window ( void ) {
     g_gui->showBreakpointsWindow = !g_gui->showBreakpointsWindow;
+}
+
+
+extern "C" void bpt_window_focus_id ( int bp_id ) {
+    /* V1.E.6.A: Activity dvojklik routing - otevři okno, ověř že BP s
+     * daným ID v storage existuje a pokud ano nastav selected_id +
+     * pending_focus_id. Render-loop při dalším frame podle
+     * pending_focus_id přesune tree-view focus a otevře editační panel.
+     *
+     * Pokud BP s daným ID neexistuje (= mezičasem smazán), spotřeba je
+     * no-op kromě otevření okna. Sentinel <= 0 = no-op (BP id v storage
+     * začíná od 1 monotonic counterem). */
+    if ( bp_id <= 0 ) return;
+    if ( !g_bpt_ui.initialized ) {
+        bpt_state_init ( );
+    };
+    const st_BPT *bpt = breakpoints_find_by_id ( bp_id );
+    if ( !bpt ) {
+        /* Otevři okno i tak (= user pak vidí prázdný stav nebo log) */
+        g_gui->showBreakpointsWindow = true;
+        return;
+    };
+    g_gui->showBreakpointsWindow = true;
+    g_bpt_ui.selected_id = bp_id;
+    g_bpt_ui.selected_type = BPT_ITEM_EVENT;
+    g_bpt_ui.pending_focus_id = bp_id;
+    /* Přímé otevření editačního panelu = funkční ekvivalent "focus".
+     * Selected_id zajistí, že tree view v render-loop bude označený. */
+    bpt_edit_panel_open ( BPT_ITEM_EVENT, bp_id );
 }
 
 
@@ -1232,7 +1523,8 @@ extern "C" void bpt_window_register_persistence ( void *cmod_void ) {
     st_CFGELEMENT *elm;
 
     /* active_tab: KEYWORD typ s string-namovou mapou.
-     * Default 0 = "all". Hodnoty 1..6 = per-typ taby (= 1 + en_BPT_TAB_FILTER). */
+     * Default 0 = "all". Hodnoty 1..6 = per-typ taby (= 1 + en_BPT_TAB_FILTER),
+     * 7 = záložka Groups. */
     elm = cfgmodule_register_new_element ( cmod, (char *)"active_tab",
                                            CFGENTYPE_KEYWORD, 0,
                                            0,                 "all",
@@ -1242,6 +1534,7 @@ extern "C" void bpt_window_register_persistence ( void *cmod_void ) {
                                            1 + BPT_TAB_IRQ,    "irq",
                                            1 + BPT_TAB_EVENTS, "events",
                                            1 + BPT_TAB_MISC,   "misc",
+                                           7,                  "groups",
                                            -1 );
     cfgelement_set_handlers ( elm,
                               (void *)&g_bpt_ui.active_tab,
@@ -1288,11 +1581,11 @@ void imgui_breakpoints_window ( bool *p_open ) {
     ImGuiWindowFlags flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoCollapse;
 
     const char *bpt_title = _L ( "Breakpoints##bpt_main" );
-    /* Šířka 500 zajišťuje, že všech 7 tabů (All/EXEC/Memory/I/O/IRQ/Events/
-     * Misc) sedí v jediné řadě bez přetečení. Výška 510 dává prostor menu
-     * baru + tab baru + minimálnímu listu BP + bottom row (Add input + Save
-     * tlačítko). */
-    auto_layout_first_use_portrait ( bpt_title, 500.0f, 510.0f );
+    /* Šířka 825 dá prostor 8 tabům (All/EXEC/Memory/I/O/IRQ/Events/Misc/
+     * Groups) v jediné řadě + sloupcům tabulky vč. nového Group sloupce.
+     * Výška 480 pokryje menu bar + tab bar + list BP + bottom row (Add
+     * input + Save tlačítko). Jen initial velikost (FirstUseEver). */
+    auto_layout_first_use_portrait ( bpt_title, 825.0f, 480.0f );
     if ( !ImGui::Begin ( bpt_title, p_open, flags ) ) {
         ImGui::End ( );
         return;
@@ -1432,6 +1725,15 @@ void imgui_breakpoints_window ( bool *p_open ) {
                                     BPT_TAB_FLAGS_FOR ( 1 + BPT_TAB_MISC ) ) ) {
             g_bpt_ui.active_tab = 1 + BPT_TAB_MISC;
             bpt_render_filtered_table ( BPT_TAB_MISC );
+            ImGui::EndTabItem ( );
+        };
+
+        /* Záložka Groups (správa skupin) - na konci za per-typ taby.
+         * Persist index 7 (= za 0..6). */
+        if ( ImGui::BeginTabItem ( _L ( "Groups###bpt_tab_groups" ), NULL,
+                                    BPT_TAB_FLAGS_FOR ( 7 ) ) ) {
+            g_bpt_ui.active_tab = 7;
+            bpt_render_groups_table ( );
             ImGui::EndTabItem ( );
         };
 

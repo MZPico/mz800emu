@@ -286,6 +286,18 @@ int sym_db_remove_user_label ( const char *name ) {
 }
 
 
+int sym_db_set_cmd_origin ( const char *name, en_DBGAPI_CMD_ORIGIN origin ) {
+    if ( !name || !*name ) return -1;
+    int idx = sym_db_find_index_by_name ( name );
+    if ( idx < 0 ) return -1;
+    st_SYMBOL *rec = &g_array_index ( s_syms, st_SYMBOL, idx );
+    rec->cmd_origin = origin;
+    /* sym_db_bump_version() záměrně NEvoláme - origin je metadata bez
+     * dopadu na lookup ani UI cache, žádná invalidace není nutná. */
+    return 0;
+}
+
+
 unsigned sym_db_get_version ( void ) {
     return s_version;
 }

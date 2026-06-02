@@ -45,13 +45,6 @@
 #include "debugger/bp_event.h"
 #endif
 
-#ifdef MZ800EMU_CFG_UI_ENABLED
-#include "ui-gtk3/vkbd/windows_virtual_key_codes.h"
-#include "ui-gtk3/vkbd/ui_vkbd_autotype.h"
-#else
-#define ui_vkbd_autotype_deactivate()
-#endif // MZ800EMU_CFG_UI_ENABLED
-
 #define iface_keyboard_pool_keyboard_events() // v multitask modu je toto volano z jineho vlakna
 
 /*
@@ -595,11 +588,7 @@ uint8_t pio8255_read(int addr)
                 g_pio8255.vkbd_autotype_keydown = (g_pio8255.vkbd_autotype_ret_shift) ? 0 : 1;
             };
 
-            if (g_pio8255.vkbd_autotype_col == -1)
-            {
-                ui_vkbd_autotype_deactivate();
-            }
-            else
+            if (g_pio8255.vkbd_autotype_col != -1)
             {
 
                 uint8_t ret = 0xff;

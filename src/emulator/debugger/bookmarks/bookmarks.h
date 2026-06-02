@@ -13,8 +13,18 @@
  * je do per-arch `.bookmarks` JSON souboru v cfg dir (MZARCH-závislá
  * cesta).
  *
- * Threading: storage je čten i zapisován jen z UI vlákna (ImGui).
- * Žádný mutex - UI vlákno je single-threaded vůči vlastnímu storage.
+ * Threading (V1.D.2.B aktualizace):
+ *   - Mutace storage (add, remove, clear, set_user_input, set_comment,
+ *     load, merge, cleanup) jsou chráněny interním GMutexem, takže mohou
+ *     být voláno z libovolného vlákna (typicky stále UI vlákno přes
+ *     bm_window.cpp).
+ *   - Lookup helpery `bookmarks_count` / `bookmarks_get_by_index` /
+ *     `bookmarks_get_by_id` mutex NEbere - jejich kontrakt zůstává
+ *     single-thread (UI vlákno), v souběhu s mutací z jiného vlákna
+ *     by mohly dát ne-konzistentní stav.
+ *   - Pro thread-safe čtení (MCP I/O thread, EMU thread) je tu
+ *     `bookmarks_snapshot()` který pod mutexem zkopíruje aktuální obsah
+ *     do caller-allocated bufferu.
  *
  * Vzor: `bp_vars.{c,h}` (V1.5.B) - identický pattern (GArray, JSON
  * persist přes json-glib, cfg sekce s auto_save/auto_load).
@@ -36,6 +46,8 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+
+#include "../dbgapi_cmdrq.h"
 
 
     /**
@@ -75,6 +87,14 @@ extern "C" {
         uint32_t  id;            /**< Monotonic counter (>= 1) */
         char     *user_input;    /**< Hex literál nebo symbol jméno */
         char     *comment;       /**< Komentář, NULL = no comment */
+        /**
+         * @brief V1.C.3 - kdo záložku vytvořil.
+         *
+         * Default DBGAPI_CMD_ORIGIN_USER pro nově alokované záznamy (= 0
+         * po memset / calloc). Pole je metadata bez runtime efektu na
+         * resolve ani persist (JSON storage ho neukládá v1.0).
+         */
+        en_DBGAPI_CMD_ORIGIN cmd_origin;
     } bookmark_t;
 
 
@@ -159,6 +179,22 @@ extern "C" {
 
 
     /**
+     * @brief V1.C.3 - nastaví owner attribution pro existující záložku.
+     *
+     * Slouží pro dispatcher v dbgapi.c (= jakmile bude bookmark add CMD
+     * existovat), aby přiřadil záložce origin volajícího klienta.
+     * Aktuálně V1.C.3 dbgapi nemá bookmark CMD - field je dostupný pro
+     * GUI manuální change přes settings dialog (= V1.D scope).
+     *
+     * @param id      ID záznamu.
+     * @param origin  Hodnota en_DBGAPI_CMD_ORIGIN.
+     * @return true pokud záznam existoval a byl aktualizován.
+     */
+    extern bool bookmarks_set_cmd_origin ( uint32_t id,
+                                           en_DBGAPI_CMD_ORIGIN origin );
+
+
+    /**
      * @brief Smaže všechny záložky.
      */
     extern void bookmarks_clear ( void );
@@ -192,6 +228,32 @@ extern "C" {
      * @return Pointer nebo NULL pokud `id` neexistuje.
      */
     extern const bookmark_t *bookmarks_get_by_id ( uint32_t id );
+
+
+    /**
+     * @brief V1.D.2.B - Thread-safe snapshot storage.
+     *
+     * Pod GMutexem překopíruje aktuální obsah storage do caller-allocated
+     * pole `out`. Shallow copy - char pointery `user_input` a `comment`
+     * v `out[i]` ukazují na heap stringy uvnitř storage (= caller NEsmí
+     * dělat g_free); jsou platné jen dokud žádné jiné vlákno neudělá
+     * mutaci. Typicky se hned překopírují do fixed-size struktury a
+     * `out` se zahodí (g_free).
+     *
+     * Funkce je primárně určená pro MCP I/O thread (Resource
+     * `emulator://bookmarks`), který by jinak nemohl bezpečně volat
+     * `bookmarks_count` / `bookmarks_get_by_index` (= ty mají
+     * single-thread UI kontrakt). Snapshot je read-only - storage zůstává
+     * nezměněn.
+     *
+     * @param out         Caller-allocated pole o velikosti `capacity`
+     *                    (může být NULL pokud capacity=0).
+     * @param capacity    Maximální počet zapsaných záznamů.
+     * @param out_count   (OUT, optional) Počet skutečně zapsaných záznamů.
+     * @param truncated   (OUT, optional) true pokud storage > capacity.
+     */
+    extern void bookmarks_snapshot ( bookmark_t *out, size_t capacity,
+                                     size_t *out_count, bool *truncated );
 
 
     /* ===================================================================== */

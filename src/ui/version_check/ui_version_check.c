@@ -10,11 +10,15 @@ typedef struct st_UI_VERSION_CHECK_URL
     char *url;
 } st_UI_VERSION_CHECK_URL;
 
+/* Mapování branch tagu na URL, kde uživatel najde novou verzi.
+ * Po migraci projektu ze SourceForge na GitHub směřujeme uživatele
+ * primárně na GitHub Releases. SourceForge zůstává jen jako archiv
+ * starých 1.0.x release balíků. */
 const st_UI_VERSION_CHECK_URL g_ui_verurl[] = {
-    {VERSION_CHECK_MAJOR_BRANCH, "https://sourceforge.net/projects/mz800emu/"},
-    {"devel", "https://sourceforge.net/projects/mz800emu/"},
+    {VERSION_CHECK_MAJOR_BRANCH, "https://github.com/michalhucik/mz800emu/releases"},
+    {"devel", "https://github.com/michalhucik/mz800emu/releases"},
     {"win-snapshot", "https://www.ordoz.com/mz800emu/snapshot/"},
-    {"2.0-preview", "https://sourceforge.net/projects/mz800emu/"},
+    {"2.0-preview", "https://github.com/michalhucik/mz800emu/releases"},
     {NULL, NULL}};
 
 const char *ui_version_check_get_url_by_tag(const char *tag)

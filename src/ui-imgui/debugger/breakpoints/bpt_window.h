@@ -35,6 +35,27 @@ extern "C" {
     void breakpoints_show_hide_window ( void );
 
     /**
+     * @brief V1.E.6.A - otevre okno, oznaci BP s danym ID a otevre
+     *        editacni panel.
+     *
+     * Pouziti: routing z Activity okna (= dvojklik na radek s
+     * entity_kind = DBGAPI_ENTITY_KIND_BP, entity_id = bp_id).
+     * Volani provede:
+     *   1) Otevre Breakpoints okno
+     *   2) Pokud BP s danym ID v storage existuje, nastavi
+     *      selected_id + selected_type = EVENT
+     *   3) Otevre editacni panel pres bpt_edit_panel_open()
+     *
+     * Pokud BP s danym ID neexistuje (mezicasem smazan), okno se
+     * jen otevre bez selection (= silent fallback).
+     *
+     * Thread-safety: UI vlakno only.
+     *
+     * @param bp_id  Breakpoint ID (= field st_BPT.id, >= 1).
+     */
+    void bpt_window_focus_id ( int bp_id );
+
+    /**
      * @brief V1.7 C.3.5 - registrace persistence pro BP panel UI state.
      *
      * Volá se z debugger.c při registraci cfgmain modulů. Vytvoří

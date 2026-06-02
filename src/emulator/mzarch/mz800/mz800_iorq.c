@@ -44,6 +44,10 @@
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 #include "debugger/trace/iorqlog.h"
 #include "debugger/io_catalog.h"
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+#include <json-glib/json-glib.h>
+#include "mcp/event_bus.h"
+#endif
 #else
 /* No-op definice pro release/non-debug build - flag g_tracelog_iorq_unconnected
  * v non-debug kompilaci neexistuje. */
@@ -716,6 +720,21 @@ void port_write_with_logging_cb(z80_t *cpu, uint16_t addr, uint8_t value, void *
     if ( g_bptmap.per_type_active[ BPTMAP_IDX_IORQ_W ] ) {
         breakpoints_enforce_iorq_w ( addr, value );
     }
+
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+    /* Mutant mcp-server V1.A.5: io_write event emit guarded subscriberem.
+     * Bez subscribera (= žádný MCP klient na topicu "io_write") hot path
+     * jen načte 1 atomic + branch. Subscriber existuje => sestavíme
+     * JsonObject s portem, hodnotou a T-state counterem a emitujeme. */
+    if ( event_bus_has_subscriber ( "io_write" ) ) {
+        JsonObject *payload = json_object_new ( );
+        json_object_set_int_member ( payload, "port",   (gint64) addr );
+        json_object_set_int_member ( payload, "value",  (gint64) value );
+        json_object_set_int_member ( payload, "cycles",
+            (gint64) g_mzarch_main.cpu->total_cycles );
+        event_bus_emit ( "io_write", payload );
+    }
+#endif
 }
 
 

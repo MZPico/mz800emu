@@ -894,4 +894,62 @@ int mhmap_export ( const char *meta_path )
 }
 
 
+/* =========================================================================
+ *  F8 - mhmap_view_t API pro disassembler-window CDL integraci
+ * ========================================================================= */
+
+/* Plnou definici @ref mhmap_view_t drží dasm_export.h (= veřejný typ
+ * pro standalone testovatelnost). Sem include přitáhne struct layout,
+ * aby create/destroy mohly alokovat členy. */
+#include "dasm_export.h"
+
+
+mhmap_view_t *mhmap_view_create_for_range ( uint16_t from, uint16_t to )
+{
+    if ( from > to ) return NULL;
+
+    mhmap_view_t *view = (mhmap_view_t*) calloc ( 1, sizeof ( mhmap_view_t ) );
+    if ( !view ) return NULL;
+
+    const size_t span = (size_t) ( to - from ) + 1u;
+
+    view->from        = from;
+    view->to          = to;
+    view->exec_flag   = (uint8_t*) calloc ( span, 1 );
+    view->read_flag   = (uint8_t*) calloc ( span, 1 );
+    view->write_flag  = (uint8_t*) calloc ( span, 1 );
+
+    if ( !view->exec_flag || !view->read_flag || !view->write_flag )
+    {
+        mhmap_view_destroy ( view );
+        return NULL;
+    }
+
+    /* Převod counter -> CDL flag (count > 0 == 1, jinak 0). Čteme přímo
+     * z @c g_mhmap.bus[addr] - to jsou logické CPU adresy 0000h-FFFFh.
+     * Pokud je mhmap_mode OFF, countery jsou 0 a flag pole zůstanou nuly
+     * (= caller musí uživateli sdělit, že CDL data nejsou nasbíraná). */
+    for ( size_t i = 0; i < span; i++ )
+    {
+        const unsigned addr = (unsigned) from + (unsigned) i;
+        const st_MHMAP_CELL *cell = &g_mhmap.bus [ addr ];
+        if ( cell->x ) view->exec_flag  [ i ] = 1;
+        if ( cell->r ) view->read_flag  [ i ] = 1;
+        if ( cell->w || cell->s ) view->write_flag [ i ] = 1;
+    }
+
+    return view;
+}
+
+
+void mhmap_view_destroy ( mhmap_view_t *view )
+{
+    if ( !view ) return;
+    free ( view->exec_flag );
+    free ( view->read_flag );
+    free ( view->write_flag );
+    free ( view );
+}
+
+
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED && (MZARCH == 800 || MZARCH == 1500) */

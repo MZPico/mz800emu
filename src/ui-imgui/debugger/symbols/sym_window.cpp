@@ -59,6 +59,7 @@
 #include "ui-imgui/auto_layout.h"
 
 #include "sym_window.h"
+#include "ui-imgui/mcp_activity/owner_badge.h"  /* V1.C.3 owner badge */
 
 #include <set>
 #include <string>
@@ -104,6 +105,13 @@ struct SymUiState {
 
     /* Status (= zpráva o load/save výsledku). */
     char status[ 256 ] = "";
+
+    /* V1.E.6.A: pending focus request z Activity okna (= dvojklik routing).
+     * pending_focus_active=true = render-loop má najít první symbol s
+     * addr == pending_focus_addr a scrollnout na něj + označit selected.
+     * Po spotřebě se appearance vrátí na false. */
+    bool     pending_focus_active = false;
+    uint32_t pending_focus_addr   = 0;
 };
 
 }  /* anonymous namespace */
@@ -847,7 +855,11 @@ static void sym_render_row ( size_t idx, std::string *out_pending_delete )
         else g_su.selected.erase ( s->name );
     };
 
-    /* Sloupec 1: Name (dvojklik = rename) */
+    /* Sloupec 1 (V1.C.3): Owner badge */
+    ImGui::TableNextColumn ( );
+    owner_badge_render ( s->cmd_origin );
+
+    /* Sloupec 2: Name (dvojklik = rename) */
     ImGui::TableNextColumn ( );
     if ( is_editing_this && g_su.editing_field == SymUiState::EditField::Name ) {
         ImGui::SetNextItemWidth ( -FLT_MIN );
@@ -988,14 +1000,15 @@ static void sym_render_row ( size_t idx, std::string *out_pending_delete )
 static void sym_render_table_header ( void )
 {
     /* Custom header row - sloupec 0 nahradíme tristate checkboxem,
-     * ostatní sloupce standardní header. */
+     * ostatní sloupce standardní header. V1.C.3 - sloupec 1 je Owner
+     * badge (nová položka v headeru). */
     ImGui::TableNextRow ( ImGuiTableRowFlags_Headers );
     ImGui::TableSetColumnIndex ( 0 );
     sym_render_select_all ( );
 
-    static const char *headers[ 6 ] = { "Name", "Addr", "Bank",
+    static const char *headers[ 7 ] = { "Own", "Name", "Addr", "Bank",
                                           "Source", "Comment", "" };
-    for ( int i = 1; i <= 6; i++ ) {
+    for ( int i = 1; i <= 7; i++ ) {
         ImGui::TableSetColumnIndex ( i );
         const char *name = headers[ i - 1 ];
         ImGui::PushID ( i );
@@ -1174,11 +1187,14 @@ void sym_window_render ( bool *p_open )
                                   ImGuiTableFlags_ScrollY |
                                   ImGuiTableFlags_Resizable |
                                   ImGuiTableFlags_NoSavedSettings;
-        if ( ImGui::BeginTable ( "###sym_tbl", 7, flags ) ) {
+        if ( ImGui::BeginTable ( "###sym_tbl", 8, flags ) ) {
             ImGui::TableSetupScrollFreeze ( 0, 1 );
             ImGui::TableSetupColumn ( "",
                                        ImGuiTableColumnFlags_WidthFixed |
                                        ImGuiTableColumnFlags_NoResize, 26.0f );
+            /* V1.C.3 - Owner badge sloupec mezi Sel a Name. */
+            ImGui::TableSetupColumn ( _L( "Own##sym_col_owner" ),
+                                       ImGuiTableColumnFlags_WidthFixed, 36.0f );
             ImGui::TableSetupColumn ( "Name",
                                        ImGuiTableColumnFlags_WidthFixed, 160.0f );
             ImGui::TableSetupColumn ( "Addr",
@@ -1195,8 +1211,43 @@ void sym_window_render ( bool *p_open )
             sym_render_table_header ( );
 
             std::string pending_delete;
+
+            /* V1.E.6.A: pending focus z sym_window_focus_addr() - před loop
+             * najdi cíl, předznač selection a filter clear. Scrollnutí se
+             * provede v loop po row renderu, kde IsItemHovered+SetScrollHereY
+             * cílí na konkrétní řádek tabulky. */
+            bool     focus_active_local = g_su.pending_focus_active;
+            uint32_t focus_addr_local   = g_su.pending_focus_addr;
+            g_su.pending_focus_active = false;
+
+            if ( focus_active_local ) {
+                /* Vyčisti filter, aby se cílový symbol určitě v listu objevil. */
+                g_su.filter[0] = '\0';
+                /* Nastav selection. Cíl v storage hledáme přes
+                 * sym_db_lookup_by_addr (= bank=0 = default). Pokud nenajde,
+                 * jen filter zůstane vyčištěný a žádný side effect. */
+                const st_SYMBOL *target = sym_db_lookup_by_addr (
+                    focus_addr_local, 0 );
+                if ( target && target->name ) {
+                    g_su.selected.clear ( );
+                    g_su.selected.insert ( std::string ( target->name ) );
+                };
+            };
+
             for ( size_t i = 0; i < total_count; i++ ) {
                 sym_render_row ( i, &pending_delete );
+
+                /* V1.E.6.A: pokud aktuální řádek odpovídá focus targetu,
+                 * scroll. sym_render_row může skipnout filtrem, ale po
+                 * filter clear focusovaný symbol projde. */
+                if ( focus_active_local ) {
+                    const st_SYMBOL *s = sym_db_get_by_index ( i );
+                    if ( s && s->name && s->addr == focus_addr_local ) {
+                        ImGui::SetScrollHereY ( 0.5f );
+                        focus_active_local = false;
+                    };
+                };
+
                 if ( !pending_delete.empty ( ) ) {
                     g_su.selected.erase ( pending_delete );
                     if ( g_su.editing_name == pending_delete ) {
@@ -1221,6 +1272,22 @@ void sym_window_render ( bool *p_open )
 void sym_window_show_hide ( void )
 {
     g_gui->showSymbolsWindow = !g_gui->showSymbolsWindow;
+}
+
+
+extern "C" void sym_window_focus_addr ( uint16_t addr )
+{
+    /* V1.E.6.A: Activity dvojklik routing - otevři okno a označ pending
+     * focus addr. Render loop při dalším frame projde sym_db, najde první
+     * symbol s addr == pending_focus_addr a scrollne na něj + označí jako
+     * selected. Pokud symbol s danou adresou neexistuje, spotřeba je no-op
+     * (= žádný side effect kromě otevření okna).
+     *
+     * Použít flag pending_focus_active místo "addr != 0" sentinel: adresa
+     * 0x0000 je legální RAM cíl (= ROM start) a může být cílem symbolu. */
+    g_gui->showSymbolsWindow = true;
+    g_su.pending_focus_active = true;
+    g_su.pending_focus_addr = (uint32_t)addr;
 }
 
 

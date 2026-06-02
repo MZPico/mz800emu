@@ -153,6 +153,15 @@ void imgui_vkbd_draw_row(imgui_vkbd_t *vkbd, int x, int y, float scale)
             if (hovered)
             {
                 draw_list->AddRect(p1, p2, IM_COL32(255, 255, 0, 255), 0.0f, 0, 2.0f);
+
+                // Hint s PC ekvivalentem pro "neintuitivně" mapované klávesy
+                // (GRAPH, ALPHA, BLANK, @, ?, LIBRA, ...). Ostatní klávesy
+                // vrátí NULL = bez tooltipu.
+                const char *pc_hint = ui_vkbd_pc_hint(vkbd->vkdef[i].scancode);
+                if (pc_hint != NULL)
+                {
+                    ImGui::SetTooltip("%s", _(pc_hint));
+                };
             };
 
             // if (is_active)
@@ -209,8 +218,15 @@ void imgui_vkbd(bool *p_open)
         ImGuiWindowFlags_NoDocking;    // Zakáže možnost dockování
 
     //ImGui::SetNextWindowSize(ImVec2(1200, 768), ImGuiCond_FirstUseEver);
-    /* Auto-layout při fresh open - cache _L() do lokální proměnné. */
+    /* Auto-layout při fresh open - cache _L() do lokální proměnné.
+     * Titulek je per MZARCH (klávesnice se liší mezi modely). */
+#if MZARCH == 700
+    const char *vkbd_title = _L("MZ-700 Virtual Keyboard");
+#elif MZARCH == 1500
+    const char *vkbd_title = _L("MZ-1500 Virtual Keyboard");
+#else
     const char *vkbd_title = _L("MZ-800 Virtual Keyboard");
+#endif
     auto_layout_first_use_portrait(vkbd_title, 700.0f, 300.0f);
     ImGui::Begin(vkbd_title, p_open, flags);
 

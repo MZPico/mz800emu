@@ -123,6 +123,38 @@ extern "C"
     uint8_t *memext_get_ram_read_pointer_by_addr_point(int addr_point);
     uint8_t *memext_get_ram_write_pointer_by_addr_point(int addr_point);
 
+    /**
+     * Vrátí read pointer pro raw bank index (= absolutní index v Memext map
+     * tabulce, bez ohledu na aktuální banking stav).
+     *
+     * Bank index 0..0x7F (= MEMEXT_LUFTNER_BANKS - 1) ukazuje do g_memext.RAM,
+     * index 0x80..0xFF do g_memext.FLASH (Luftner only - PEHU používá jen
+     * dolní polovinu). Velikost banky = MEMEXT_RAW_BANK_SIZE (4 KB).
+     *
+     * Používá se pro debug API (Memory Browser, REGION_LIST) k iteraci přes
+     * všechny banky bez ohledu na aktuální mapování. Direct array access,
+     * žádný side-effect.
+     *
+     * @param rawbank   Raw bank index 0..0xFF.
+     * @return          Pointer na začátek 4 KB banky v g_memext.RAM/FLASH.
+     */
+    uint8_t *memext_get_ram_read_pointer_by_rawbank(int rawbank);
+
+    /**
+     * Vrátí write pointer pro raw bank index. Pro FLASH banky (rawbank
+     * & 0x80) vrací g_memext.WOM (write-only scratch, zápis se zahodí).
+     * Pro RAM banky stejný jako read pointer.
+     *
+     * Pro debug API: zápis do FLASH banky cestou get_*_write_pointer skončí
+     * ve WOM scratch a uživatel by viděl jen "co naposledy spadlo do
+     * ztracena". Proto Memory Browser používá `writable=0` pro
+     * REGION_KIND_MEMEXT_FLASH a tuto funkci nezná na write API.
+     *
+     * @param rawbank   Raw bank index 0..0xFF.
+     * @return          Pointer na 4 KB write target (RAM bank nebo WOM).
+     */
+    uint8_t *memext_get_ram_write_pointer_by_rawbank(int rawbank);
+
     void memext_luftner_set_flash_filepath ( const char *filepath );
 
     /**

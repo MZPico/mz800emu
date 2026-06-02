@@ -218,6 +218,12 @@ typedef struct BptUIState {
     /* Odložené otevření kontextového menu (řeší problém s ID stackem) */
     bool open_context_menu;
 
+    /* Odložené otevření kontextového menu v per-typ tabech (plochá tabulka)
+     * a v záložce Groups. Oddělené flagy = oddělené popupy s vlastním obsahem
+     * (per-typ: bez Expand/Collapse/Add Group; Groups: jen group operace). */
+    bool open_filtered_context;
+    bool open_groups_context;
+
     /* === V1.7: Last triggered BP tracking ===
      * Při DBGAPI_MSG_BREAKPOINT_HIT (= emu pause kvůli BP) dispatcher
      * uloží id zasaženého BP. Slouží pro:
@@ -268,6 +274,12 @@ typedef struct BptUIState {
      * pouzij BPT_ACTIVE_TAB_TO_FILTER macro. */
     unsigned active_tab;                    /**< 0 = All, 1..6 = en_BPT_TAB_FILTER + 1. */
     bool     restore_active_tab_once;       /**< One-shot trigger pro force-select po startu. */
+
+    /* === V1.E.6.A: pending focus z Activity dvojkliku ===
+     * pending_focus_id > 0 = render-loop má najít BP s daným id, scrollnout
+     * a aktivovat selection (= otevřít editační panel pro daný BP). Po
+     * spotřebě je 0. */
+    int      pending_focus_id;              /**< BP ID požadovaný k zafokusování (0 = none). */
 } BptUIState;
 
 

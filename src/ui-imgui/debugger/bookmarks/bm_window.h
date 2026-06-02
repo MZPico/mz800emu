@@ -70,6 +70,27 @@ extern void bm_window_render ( bool *p_open );
 extern void bm_window_open_with_focus_to_input ( void );
 
 
+/**
+ * @brief V1.E.6.A - otevře okno a požaduje focus na bookmark s daným ID.
+ *
+ * Použití: routing z Activity okna (= dvojklik na řádek s
+ * entity_kind = DBGAPI_ENTITY_KIND_BOOKMARK). Nastaví show flag
+ * a pending_focus_id; render-loop při dalším frame najde řádek
+ * a scrollne na něj + označí jako selected.
+ *
+ * Pokud bookmark s daným ID neexistuje (= mezičasem smazán), spotřeba
+ * je no-op (= žádný side effect kromě otevření okna). Hodnota 0 je
+ * v current schema rezervovaná pro "no bookmark" - volání s bm_id=0
+ * okno NEotevírá a nic neflagne (= silent no-op).
+ *
+ * Thread-safety: UI vlákno only (volá se z mcp_activity_window
+ * dvojklikového handleru, který běží v render frame UI vlákna).
+ *
+ * @param bm_id  Bookmark.id z bookmarks storage.
+ */
+extern void bm_window_focus_id ( uint32_t bm_id );
+
+
 /* Pro focus do disassembly instance používáme přímo veřejné API
  * dbg_disasm_show_in_slot (= sjednocené ensure-open + focus +
  * auto-disable Follow PC). Viz dbg_disassembled.h. */

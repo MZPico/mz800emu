@@ -88,4 +88,4 @@ GNU General Public License v3.0 (GPLv3). Viz [LICENSE](LICENSE).
 
 ## Autor
 
-Michal Hučík (chaky)
+Michal Hučík (https://github.com/michalhucik)

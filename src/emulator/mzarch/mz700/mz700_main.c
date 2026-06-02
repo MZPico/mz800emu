@@ -53,13 +53,6 @@
 #include "hw-generic/qdisk/qdisk.h"
 #endif /* CFG_HWEXT_HAVE_QDISK */
 
-// #ifdef MZ800EMU_CFG_UI_ENABLED
-// #include "ui-gtk3/ui_main.h"
-// #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-// #include "ui-gtk3/debugger/ui_debugger.h"
-// #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */
-// #endif /* MZ800EMU_CFG_UI_ENABLED */
-
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 #include "debugger/debugger.h"
 #include "debugger/trace/cputrack.h"
@@ -68,21 +61,7 @@
 #include "debugger/trace/hwlog.h"
 #include "debugger/trace/marklog.h"
 #include "debugger/bptmap.h"
-#ifndef MZ800EMU_CFG_UI_ENABLED
-#define ui_debugger_hide_spinner_window()
-#define ui_debugger_show_spinner_window()
-#endif /* MZ800EMU_CFG_UI_ENABLED */
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */
-
-// st_mz800 g_mz800;
-
-#ifdef MZ800EMU_CFG_UI_ENABLED
-#include "ui-gtk3/ui_main.h"
-#else
-// #define ui_main_iteration()
-// #define ui_main_update_cpu_speed_menu(a)
-// #define ui_main_update_emulation_state(a)
-#endif /* MZ800EMU_CFG_UI_ENABLED */
 
 // #ifndef USE_SDL_VIDEO
 // #define iface_events_pool()

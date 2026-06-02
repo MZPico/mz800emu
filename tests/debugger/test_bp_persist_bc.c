@@ -403,6 +403,63 @@ void test_bc_schema_version_missing_in_v1_5_fixture ( void ) {
 /* ========================================================================= */
 
 
+/**
+ * V1.D.2.C - origin field round-trip přes save/load.
+ *
+ * Vytvoří BP, nastaví různé cmd_origin, save, wipe, load - origin
+ * fields se musí obnovit z JSON `origin` klíče.
+ */
+void test_bc_origin_field_roundtrip ( void ) {
+    breakpoints_clear_all ( );
+    g_breakpoints.next_id = 1;
+
+    int id_a = breakpoints_add ( 0x4000, "bp_user",     -1 );
+    int id_b = breakpoints_add ( 0x5000, "bp_mcp",      -1 );
+    int id_c = breakpoints_add ( 0x6000, "bp_internal", -1 );
+    TEST_ASSERT_TRUE ( id_a > 0 );
+    TEST_ASSERT_TRUE ( id_b > 0 );
+    TEST_ASSERT_TRUE ( id_c > 0 );
+
+    st_BPT *bp_a = breakpoints_find_by_id ( id_a );
+    st_BPT *bp_b = breakpoints_find_by_id ( id_b );
+    st_BPT *bp_c = breakpoints_find_by_id ( id_c );
+    TEST_ASSERT_NOT_NULL ( bp_a );
+    TEST_ASSERT_NOT_NULL ( bp_b );
+    TEST_ASSERT_NOT_NULL ( bp_c );
+
+    bp_a->cmd_origin = DBGAPI_CMD_ORIGIN_USER;
+    bp_b->cmd_origin = DBGAPI_CMD_ORIGIN_MCP;
+    bp_c->cmd_origin = DBGAPI_CMD_ORIGIN_INTERNAL;
+
+    char *resolved = sdlapp_paths_resolve_cfg ( g_sdlapp->paths,
+                                                 "test_bp_origin_rt.bpt" );
+    TEST_ASSERT_NOT_NULL ( resolved );
+
+    breakpoints_save_to_filepath ( resolved );
+
+    breakpoints_clear_all ( );
+    g_breakpoints.next_id = 1;
+    TEST_ASSERT_EQUAL_INT ( 0, (int) breakpoints_count ( ) );
+
+    breakpoints_load_from_filepath ( resolved );
+    TEST_ASSERT_EQUAL_INT ( 3, (int) breakpoints_count ( ) );
+
+    /* Po reload najdi BP podle addr (= ID se může změnit) a ověř origin. */
+    st_BPT *r_a = breakpoints_find_by_addr ( 0x4000 );
+    st_BPT *r_b = breakpoints_find_by_addr ( 0x5000 );
+    st_BPT *r_c = breakpoints_find_by_addr ( 0x6000 );
+    TEST_ASSERT_NOT_NULL ( r_a );
+    TEST_ASSERT_NOT_NULL ( r_b );
+    TEST_ASSERT_NOT_NULL ( r_c );
+    TEST_ASSERT_EQUAL_INT ( DBGAPI_CMD_ORIGIN_USER,     r_a->cmd_origin );
+    TEST_ASSERT_EQUAL_INT ( DBGAPI_CMD_ORIGIN_MCP,      r_b->cmd_origin );
+    TEST_ASSERT_EQUAL_INT ( DBGAPI_CMD_ORIGIN_INTERNAL, r_c->cmd_origin );
+
+    remove ( resolved );
+    g_free ( resolved );
+}
+
+
 int main ( int argc, char *argv[] ) {
     mztest_parse_args ( argc, argv );
     mztest_init ( );
@@ -420,6 +477,9 @@ int main ( int argc, char *argv[] ) {
     /* V1.6+ TODO 4.7 - schema_version BC fallback */
     RUN_TEST ( test_bc_schema_version_missing_in_fixture );
     RUN_TEST ( test_bc_schema_version_missing_in_v1_5_fixture );
+
+    /* V1.D.2.C - cmd_origin field persist */
+    RUN_TEST ( test_bc_origin_field_roundtrip );
 
     int result = UNITY_END ( );
 

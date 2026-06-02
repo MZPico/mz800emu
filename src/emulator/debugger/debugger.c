@@ -32,30 +32,13 @@
 
 #include "debugger.h"
 
-#ifdef MZ800EMU_CFG_UI_ENABLED
-#include "ui-gtk3/debugger/ui_debugger.h"
-#include "ui-gtk3/debugger/ui_breakpoints.h"
-#include "ui-gtk3/debugger/ui_membrowser.h"
-#else
-
-/* NOT_HAVE_DEBUGGER_UI značí: nemáme legacy GTK3 UI. Defined i v ImGui
- * production buildu - některé staré GTK3 callbacky (g_membrowser,
- * MEMBROWSER_PEZIK_*) ImGui side nereimplementoval, takže #ifndef
- * NOT_HAVE_DEBUGGER_UI bloky volající ty symboly se v ImGui buildu
- * korektně vynechávají. POZOR: tento guard NEumožňuje rozlišit ImGui
- * vs headless test build - pro registrace, které mají běžet v ImGui
- * production ale ne v test core, použij #ifndef MZTEST_HEADLESS. */
+/* NOT_HAVE_DEBUGGER_UI je historický guard ze starého GTK3 portu -
+ * dnes vždy defined v debugger buildu (= odpovídající #ifndef bloky
+ * jsou mrtvý kód, kandidát na další cleanup). POZOR: tento guard
+ * NErozliší ImGui production vs headless test build - pro registrace,
+ * které mají běžet v ImGui production ale ne v test core, použij
+ * #ifndef MZTEST_HEADLESS. */
 #define NOT_HAVE_DEBUGGER_UI
-
-#define ui_breakpoints_save()
-#define ui_debugger_update_mmap()
-#define ui_debugger_update_disassembled(a, b)
-#define ui_debugger_update_stack()
-#define ui_debugger_update_registers()
-#define ui_debugger_update_flag_reg()
-#define ui_debugger_pause_emulation()
-#define ui_debugger_update_animated()
-#define ui_debugger_update_all()
 
 /*
  * ui_debugger_show/hide_main_window — implementovány v ImGui UI vrstvě
@@ -68,8 +51,6 @@
 #include "ui-imgui/debugger/sections/dbg_disassembled.h"
 #include "ui-imgui/debugger/sections/dbg_stack_panel.h"
 #include "ui-imgui/debugger/sections/dbg_callstack.h"
-
-#endif
 
 #include "mzarch/mzarch.h"
 #include "mzarch/mzarch_platform_functions.h"
@@ -90,14 +71,19 @@
 #include "profiler.h"
 #include "symbols/sym_db.h"
 #include "bookmarks/bookmarks.h"
+#include "freeze/freeze.h"
 #include "stack_regions.h"
 #include "stack_history.h"
 #include "watch.h"
 #include "watch_cache.h"  /* Phase E: per-row cache + snapshot baseline */
+#include "watch_emu_cache.h"  /* V1.D.2.C: dispatch-side thread-safe mirror */
 #if ( MZARCH == 800 ) || ( MZARCH == 1500 ) || ( MZARCH == 700 )
 #include "ui-imgui/debugger/heatmap/mhmap_window.h"
 #include "ui-imgui/debugger/ioview/io_window.h"
 #include "ui-imgui/debugger/memmap/memmap_window.h"
+#include "ui-imgui/debugger/dasm_window/dasm_window.h"
+/* membrowser mutant V0 - Memory Browser hex MVP. */
+#include "ui-imgui/debugger/membrowser/membrowser_window.h"
 #include "ui-imgui/debugger/eventview/event_viewer_window.h"
 #endif
 #include "libs/sdlapp/sdlapp_options.h"
@@ -125,7 +111,6 @@ void debugger_step_call ( unsigned value ) {
         /* Emulator neni v pauze, takze neprovedeme step, ale prozatim jen zastavime emulaci */
         if ( !EMULATOR_TEST_PAUSED ) {
             //mz800_pause_emulation ( 1 );
-            ui_debugger_pause_emulation ( );
             return;
         };
 #endif
@@ -196,15 +181,14 @@ void debugger_exit ( void ) {
      * jen row_id, takže technicky pořadí nezáleží, ale logicky cache
      * patří k UI snapshot lifecycle). */
     watch_cache_shutdown ( );
+    /* V1.D.2.C: dispatch-side mirror shutdown (= thread-safe storage). */
+    watch_emu_cache_shutdown ( );
     watch_shutdown ( );
 
     breakpoints_exit ( );
     bookmarks_cleanup ( );  /* Bookmarks (D.6) - auto-save + free */
     sym_db_cfg_auto_save ( ); /* V1.7+ 3.2: auto-save default .lbl */
     sym_db_destroy ( );    /* symbol DB (D.8) */
-    if ( g_debugger.auto_save_breakpoints ) {
-        ui_breakpoints_save ( );
-    };
 }
 
 
@@ -257,6 +241,7 @@ void debugger_init ( void ) {
     sym_db_init ( );         /* symbol DB (D.8) - prázdná, populated user load akcí */
     sym_db_cfg_init ( );     /* V1.7+ 3.2: cfg [SYMBOLS] + auto-load .lbl */
     bookmarks_init ( );      /* Bookmarks - storage + cfg + auto-load */
+    freeze_init ( );         /* V1: Freeze Bytes - cheat-engine style hot byte override */
 
     /* Watch panel (Phase A = L0 Address Watch MVP).
      * Storage init + cfg sekce [WATCH_PANEL] + případný auto-load
@@ -265,6 +250,9 @@ void debugger_init ( void ) {
     watch_cfg_init ( );
     /* Phase E: per-row cache + snapshot baseline storage. */
     watch_cache_init ( );
+    /* V1.D.2.C: thread-safe dispatch-side mirror watch statistik
+     * pro MCP Resource `emulator://watch/snapshot/{name}`. */
+    watch_emu_cache_init ( );
 
     /* V6: persistence stack regions (definice name/base/limit, ne
      * watermark/counters). Registrace sekce [STACK_REGIONS] v cfgmain.ini
@@ -351,6 +339,21 @@ void debugger_init ( void ) {
     elm = cfgmodule_register_new_element ( cmod, "wp_watch", CFGENTYPE_BOOL, 0 );
     cfgelement_set_handlers ( elm, (void*) &g_debugger.wp_watch, (void*) &g_debugger.wp_watch );
 
+    /* membrowser mutant V0: Memory Browser hex MVP workplace slot. */
+    elm = cfgmodule_register_new_element ( cmod, "wp_membrowser", CFGENTYPE_BOOL, 0 );
+    cfgelement_set_handlers ( elm, (void*) &g_debugger.wp_membrowser, (void*) &g_debugger.wp_membrowser );
+
+    /* V3 multi-view: workplace sloty pro sekundarni Memory Browser okna
+     * #2..#5. Default 0 (opt-in). Index 0..3 = #2..#5. */
+    elm = cfgmodule_register_new_element ( cmod, "wp_membrowser2", CFGENTYPE_BOOL, 0 );
+    cfgelement_set_handlers ( elm, (void*) &g_debugger.wp_membrowser_extra[0], (void*) &g_debugger.wp_membrowser_extra[0] );
+    elm = cfgmodule_register_new_element ( cmod, "wp_membrowser3", CFGENTYPE_BOOL, 0 );
+    cfgelement_set_handlers ( elm, (void*) &g_debugger.wp_membrowser_extra[1], (void*) &g_debugger.wp_membrowser_extra[1] );
+    elm = cfgmodule_register_new_element ( cmod, "wp_membrowser4", CFGENTYPE_BOOL, 0 );
+    cfgelement_set_handlers ( elm, (void*) &g_debugger.wp_membrowser_extra[2], (void*) &g_debugger.wp_membrowser_extra[2] );
+    elm = cfgmodule_register_new_element ( cmod, "wp_membrowser5", CFGENTYPE_BOOL, 0 );
+    cfgelement_set_handlers ( elm, (void*) &g_debugger.wp_membrowser_extra[3], (void*) &g_debugger.wp_membrowser_extra[3] );
+
     elm = cfgmodule_register_new_element ( cmod, "wp_profiler", CFGENTYPE_BOOL, 0 );
     cfgelement_set_handlers ( elm, (void*) &g_debugger.wp_profiler, (void*) &g_debugger.wp_profiler );
 
@@ -374,6 +377,38 @@ void debugger_init ( void ) {
 
     elm = cfgmodule_register_new_element ( cmod, "wp_disasm5", CFGENTYPE_BOOL, 0 );
     cfgelement_set_handlers ( elm, (void*) &g_debugger.wp_disasm_extra[3], (void*) &g_debugger.wp_disasm_extra[3] );
+
+    /* Per-chip-panels F1 scaffold: workplace registrace pro per-chip
+     * detail okna. Default 0 = opt-in přes menu Debugger -> DBG Workplace. */
+    elm = cfgmodule_register_new_element ( cmod, "wp_show_ctc", CFGENTYPE_BOOL, 0 );
+    cfgelement_set_handlers ( elm, (void*) &g_debugger.wp_show_ctc, (void*) &g_debugger.wp_show_ctc );
+
+    elm = cfgmodule_register_new_element ( cmod, "wp_show_ppi", CFGENTYPE_BOOL, 0 );
+    cfgelement_set_handlers ( elm, (void*) &g_debugger.wp_show_ppi, (void*) &g_debugger.wp_show_ppi );
+
+#if HAVE_PIOZ80
+    /* Z80 PIO workplace slot - jen MZ-800 / MZ-1500. MZ-700 čip nemá,
+     * INI klíč se neregistruje. */
+    elm = cfgmodule_register_new_element ( cmod, "wp_show_pioz80", CFGENTYPE_BOOL, 0 );
+    cfgelement_set_handlers ( elm, (void*) &g_debugger.wp_show_pioz80, (void*) &g_debugger.wp_show_pioz80 );
+#endif
+
+#if HAVE_PSG >= 1
+    /* PSG SN76489 workplace slot - jen MZ-800 / MZ-1500. MZ-700 čip nemá,
+     * INI klíč se neregistruje. */
+    elm = cfgmodule_register_new_element ( cmod, "wp_show_psg", CFGENTYPE_BOOL, 0 );
+    cfgelement_set_handlers ( elm, (void*) &g_debugger.wp_show_psg, (void*) &g_debugger.wp_show_psg );
+
+    /* psg-audio-scope mutant F1: PSG Audio Scope okno - workplace slot
+     * (stejný arch gate HAVE_PSG >= 1, default 0). */
+    elm = cfgmodule_register_new_element ( cmod, "wp_show_psg_audio_scope", CFGENTYPE_BOOL, 0 );
+    cfgelement_set_handlers ( elm, (void*) &g_debugger.wp_show_psg_audio_scope, (void*) &g_debugger.wp_show_psg_audio_scope );
+#endif
+
+    /* gdg-panel F1 scaffold: GDG state inspector workplace slot. GDG je
+     * ve všech 3 archech (MZ-700 / MZ-800 / MZ-1500), žádný guard. */
+    elm = cfgmodule_register_new_element ( cmod, "wp_show_gdg", CFGENTYPE_BOOL, 0 );
+    cfgelement_set_handlers ( elm, (void*) &g_debugger.wp_show_gdg, (void*) &g_debugger.wp_show_gdg );
 
 #ifndef NOT_HAVE_DEBUGGER_UI
     /* Disassembled hlavní instance: persistence per-instance dynamic flagů
@@ -458,10 +493,8 @@ void debugger_init ( void ) {
 
     /* UI persistence registrace volající funkce z ui-imgui/ - skip jen v
      * headless test buildu, kde ui-imgui/ není linkován (jinak undefined
-     * reference). Pre-existing #ifndef NOT_HAVE_DEBUGGER_UI guard pokrýval
-     * legacy GTK3 vs no-UI, ale NOT_HAVE_DEBUGGER_UI je v ImGui buildu
-     * vždy defined (= GTK3 callbacky nejsou reimplementovány), takže by
-     * tyto registrace vynechal i v production ImGui buildu. */
+     * reference). Historický #ifndef NOT_HAVE_DEBUGGER_UI guard sem
+     * nesedí (je vždy defined, vynechal by i production ImGui build). */
 #ifndef MZTEST_HEADLESS
     /* I/O Ports panel persistence - samostatná sekce [IO_PORTS_PANEL]
      * (per UX spec a Michalovo rozhodnutí). Klíče: collapse_<chip>,
@@ -487,6 +520,19 @@ void debugger_init ( void ) {
             cfgmodule_propagate ( mmod );
         }
     }
+
+    /* V3 multi-view: 5 instancí Memory Browser oken (main + #2..#5).
+     * Per-instance sekce [MEMBROWSER_WINDOW_MAIN..5] + legacy fallback
+     * sekce [MEMBROWSER_WINDOW] pro upgrade z V0/V1/V2 INI (jednorázová
+     * migrace na MAIN slot, pokud MAIN sekce v INI chybí).
+     *
+     * Registrace + parse + propagate VŠECH sekcí proběhne uvnitř
+     * membrowser_window_register_persistence_all - neopakovat zde.
+     *
+     * V0-leftovers F4: CLI option --memory-browser propagate v
+     * membrowser_window_apply_persisted volaném později z
+     * sdlapp_imgui_video.cpp (až po vytvoření g_gui). */
+    membrowser_window_register_persistence_all ( g_cfgmain );
 
     /* Events okno persistence - samostatná sekce [EVENT_VIEWER_WINDOW].
      * Klíče: window_open (bool, start with okno otevřené?),
@@ -529,6 +575,20 @@ void debugger_init ( void ) {
             bpt_window_register_persistence ( bmod );
             cfgmodule_parse ( bmod );
             cfgmodule_propagate ( bmod );
+        }
+    }
+
+    /* F7 disassembler-window-v1: Disassembler V1 okno persistence - sekce
+     * [DASM_WINDOW] s rozsahem From/To, options (sym_db/CDL/dialect/ORG/
+     * bytes/uppercase) a poslední save path. */
+    {
+        CFGMOD *dmod = cfgroot_register_new_module ( g_cfgmain,
+                                                      "DASM_WINDOW" );
+        if ( dmod ) {
+            dasm_window_register_persistence ( dmod );
+            cfgmodule_parse ( dmod );
+            cfgmodule_propagate ( dmod );
+            dasm_window_apply_persisted ( );
         }
     }
 
@@ -760,13 +820,11 @@ void debugger_show_hide_main_window ( void ) {
 
 void debugger_update_all ( void ) {
     if ( !TEST_DEBUGGER_ACTIVE ) return;
-    ui_debugger_update_all ( );
 }
 
 
 void debugger_animation ( void ) {
     if ( !TEST_DEBUGGER_ACTIVE ) return;
-    ui_debugger_update_animated ( );
 }
 
 
@@ -818,19 +876,11 @@ void debugger_screen_refresh_if_enabled ( void ) {
 
 void debugger_mmap_mount ( unsigned value ) {
     g_memory.map |= value;
-
-    ui_debugger_update_mmap ( );
-    ui_debugger_update_disassembled ( ui_debugger_dissassembled_get_first_addr ( ), -1 );
-    ui_debugger_update_stack ( );
 }
 
 
 void debugger_mmap_umount ( unsigned value ) {
     g_memory.map &= ( ~value ) & 0x0f;
-
-    ui_debugger_update_mmap ( );
-    ui_debugger_update_disassembled ( ui_debugger_dissassembled_get_first_addr ( ), -1 );
-    ui_debugger_update_stack ( );
 }
 
 
@@ -838,7 +888,6 @@ void debugger_change_z80_flagbit ( unsigned flagbit, unsigned value ) {
 
     if ( !EMULATOR_TEST_PAUSED ) {
         /* Toggle button neni potreba nastavovat zpet, protoze po pauze dojde k update */
-        ui_debugger_pause_emulation ( );
         return;
     };
 
@@ -851,15 +900,12 @@ void debugger_change_z80_flagbit ( unsigned flagbit, unsigned value ) {
     };
 
     z80_set_reg ( g_mzarch_main.cpu, Z80_REG_AF, af_value );
-
-    ui_debugger_update_registers ( );
 }
 
 
 void debugger_change_z80_register ( z80_reg_t reg, uint16_t value ) {
 
     if ( !EMULATOR_TEST_PAUSED ) {
-        ui_debugger_pause_emulation ( );
         return;
     };
 
@@ -869,16 +915,6 @@ void debugger_change_z80_register ( z80_reg_t reg, uint16_t value ) {
     } else {
         z80_set_reg ( g_mzarch_main.cpu, reg, value );
     };
-
-    ui_debugger_update_registers ( );
-
-    if ( reg == Z80_REG_AF ) {
-        ui_debugger_update_flag_reg ( );
-    } else if ( reg == Z80_REG_PC ) {
-        ui_debugger_update_disassembled ( z80_get_reg ( g_mzarch_main.cpu, Z80_REG_PC ), -1 );
-    } else if ( reg == Z80_REG_SP ) {
-        ui_debugger_update_stack ( );
-    };
 }
 
 
@@ -886,15 +922,10 @@ void debugger_change_dmd ( uint8_t value ) {
 
     if ( !EMULATOR_TEST_PAUSED ) {
         /* Hodnotu comboboxu neni potreba nastavovat zpet, protoze po pauze dojde k update */
-        ui_debugger_pause_emulation ( );
         return;
     };
 
     gdg_write_byte ( 0xce, value );
-
-    ui_debugger_update_mmap ( );
-    ui_debugger_update_disassembled ( ui_debugger_dissassembled_get_first_addr ( ), -1 );
-    ui_debugger_update_stack ( );
 }
 
 
@@ -902,7 +933,6 @@ void debugger_change_gdg_reg_border ( uint8_t value ) {
 
     if ( !EMULATOR_TEST_PAUSED ) {
         /* Hodnotu comboboxu neni potreba nastavovat zpet, protoze po pauze dojde k update */
-        ui_debugger_pause_emulation ( );
         return;
     };
 
@@ -914,7 +944,6 @@ void debugger_change_gdg_reg_palgrp ( uint8_t value ) {
 
     if ( !EMULATOR_TEST_PAUSED ) {
         /* Hodnotu comboboxu neni potreba nastavovat zpet, protoze po pauze dojde k update */
-        ui_debugger_pause_emulation ( );
         return;
     };
 
@@ -926,7 +955,6 @@ void debugger_change_gdg_reg_pal ( uint8_t pal, uint8_t value ) {
 
     if ( !EMULATOR_TEST_PAUSED ) {
         /* Hodnotu comboboxu neni potreba nastavovat zpet, protoze po pauze dojde k update */
-        ui_debugger_pause_emulation ( );
         return;
     };
 
@@ -938,14 +966,10 @@ void debugger_change_gdg_rfr ( uint8_t value ) {
 
     if ( !EMULATOR_TEST_PAUSED ) {
         /* Hodnotu comboboxu neni potreba nastavovat zpet, protoze po pauze dojde k update */
-        ui_debugger_pause_emulation ( );
         return;
     };
 
     gdg_write_byte ( 0xcd, value );
-
-    ui_debugger_update_disassembled ( ui_debugger_dissassembled_get_first_addr ( ), -1 );
-    ui_debugger_update_stack ( );
 }
 
 
@@ -953,16 +977,10 @@ void debugger_change_gdg_wfr ( uint8_t value ) {
 
     if ( !EMULATOR_TEST_PAUSED ) {
         /* Hodnotu comboboxu neni potreba nastavovat zpet, protoze po pauze dojde k update */
-        ui_debugger_pause_emulation ( );
         return;
     };
 
     gdg_write_byte ( 0xcc, value );
-
-    // pokud se nahodou zmenila i banka A/B, tak ta je pro WF a RF spolecna, takze musime udelat aktualizaci kvuli cteni z pameti
-    // TODO: fakt? :)
-    ui_debugger_update_disassembled ( ui_debugger_dissassembled_get_first_addr ( ), -1 );
-    ui_debugger_update_stack ( );
 }
 
 

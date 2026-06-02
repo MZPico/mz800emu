@@ -31,7 +31,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "baseui/baseui.h"
 #include "baseui/baseui_tools.h"
 #include "fs_layer.h"
 #include "memext.h"
@@ -43,20 +42,7 @@
 #include "debugger/trace/hwlog.h"
 #endif
 
-#ifdef MZ800EMU_CFG_UI_ENABLED
-#include "ui-gtk3/ui_memext.h"
-#include "ui-gtk3/ui_main.h"
-#else
-#define ui_main_debugger_windows_refresh()
-#define ui_memext_menu_update()
-#endif // MZ800EMU_CFG_UI_ENABLED
-
-
 st_MEMEXT g_memext;
-
-#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-#define ui_memext_menu_update()
-#endif
 
 void memext_reset ( void ) {
     if ( ( MEMEXT_TEST_TYPE_LUFTNER ) && ( !MEMEXT_TEST_LUFTNER_AUTO_INIT ) ) return;
@@ -82,9 +68,6 @@ void memext_flash_reload ( void ) {
             baseui_tools_mem_free ( filepath_locale );
         };
     };
-#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-    ui_main_debugger_windows_refresh ( );
-#endif
 }
 
 
@@ -98,9 +81,6 @@ static void memext_init_luftner ( void ) {
 
     if ( MEMEXT_TEST_CONNECTED ) {
         memext_flash_reload ( );
-#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-        ui_main_debugger_windows_refresh ( );
-#endif
     };
 }
 
@@ -111,14 +91,12 @@ void memext_connect ( en_MEMEXT_TYPE type ) {
     if ( MEMEXT_TEST_TYPE_LUFTNER ) memext_init_luftner ( );
     memext_reset ( );
     memory_reconnect_ram ( );
-    ui_memext_menu_update ( );
 }
 
 
 void memext_disconnect ( void ) {
     g_memext.connection = MEMEXT_CONNECTION_NO;
     memory_reconnect_ram ( );
-    ui_memext_menu_update ( );
 }
 
 
@@ -179,8 +157,6 @@ void memext_init ( void ) {
     if ( MEMEXT_TEST_TYPE_LUFTNER ) memext_init_luftner ( );
 
     memext_reset ( );
-
-    ui_memext_menu_update ( );
 }
 
 
@@ -227,7 +203,7 @@ void memext_map_pwrite ( int addr_point, uint8_t value ) {
 }
 
 
-static uint8_t* memext_get_ram_read_pointer_by_rawbank ( int rawbank ) {
+uint8_t* memext_get_ram_read_pointer_by_rawbank ( int rawbank ) {
     if ( rawbank & 0x80 ) {
         return &g_memext.FLASH[( ( rawbank & 0x7f ) * MEMEXT_RAW_BANK_SIZE )];
     };
@@ -240,7 +216,7 @@ uint8_t* memext_get_ram_read_pointer_by_addr_point ( int addr_point ) {
 }
 
 
-static uint8_t* memext_get_ram_write_pointer_by_rawbank ( int rawbank ) {
+uint8_t* memext_get_ram_write_pointer_by_rawbank ( int rawbank ) {
     if ( rawbank & 0x80 ) {
         return g_memext.WOM;
     };

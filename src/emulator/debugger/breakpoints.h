@@ -44,6 +44,7 @@ extern "C" {
 #include <glib.h>
 
 #include "bp_event.h"
+#include "dbgapi_cmdrq.h"
 
 /* Forward decl - opaque AST handle z bp_expr.h. Plný include zde
  * neuvádíme, abychom udrželi breakpoints.h štíhlý. */
@@ -386,6 +387,20 @@ struct st_BP_ACTION;
          * Default 0 = invalid (= UI validation requires aspoň 1).
          */
         uint8_t irq_sig_source_mask;        /* bitmask en_BP_IRQ_SIG_SOURCE */
+
+        /* === V1.C.3 - Owner attribution (mutant mcp-server) ===============
+         *
+         * Indikuje, kdo BP vytvořil (= USER GUI klik / MCP klient / TEST /
+         * INTERNAL emu). Pole je čisté metadata - žádný runtime efekt na
+         * matching, fire ani persistenci v XML (v1.0).
+         *
+         * Default DBGAPI_CMD_ORIGIN_USER pro nově alokované BP (= legacy
+         * chování = vytvořeno GUI). Dispatcher v dbgapi.c po úspěšném
+         * breakpoints_add_auto() přepíše hodnotu na rq->cmd_origin.
+         *
+         * UI tabulka BP zobrazuje krátký badge přes owner_badge_render().
+         */
+        en_DBGAPI_CMD_ORIGIN cmd_origin;
     } st_BPT;
 
 

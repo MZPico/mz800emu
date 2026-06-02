@@ -20,11 +20,38 @@
 #include "ui-imgui/debugger/sections/dbg_focus_to.h"
 #include "ui-imgui/debugger/sections/dbg_inline_asm.h"
 #include "ui-imgui/debugger/profiler/profiler_window.h"
+/* Per-chip-panels F1 scaffold: per-chip detail okna pro CTC/PPI/PIO/PSG. */
+#include "ui-imgui/debugger/ctc_window.h"
+#include "ui-imgui/debugger/ppi_window.h"
+#if HAVE_PIOZ80
+#include "ui-imgui/debugger/pioz80_window.h"
+#endif
+#if HAVE_PSG >= 1
+#include "ui-imgui/debugger/psg_window.h"
+#include "ui-imgui/debugger/psg_audio_scope_window.h"
+#endif
+/* gdg-panel F1 scaffold: GDG state inspector (per-arch dispatch uvnitř). */
+#include "ui-imgui/debugger/gdg_window.h"
+/* Memory Browser V0 hex MVP - hex view paměti přes dbgapi_regions. */
+#include "ui-imgui/debugger/membrowser/membrowser_window.h"
+#include "ui-imgui/debugger/membrowser/membrowser_diff_window.h"
+#include "ui-imgui/debugger/membrowser/membrowser_pcg.h"
+#include "ui-imgui/debugger/membrowser/membrowser_char_inserter.h"
+/* Disassembler V1 - samostatné range-based disasm okno (mutant). */
+#include "ui-imgui/debugger/dasm_window/dasm_window.h"
 #endif
 #include "mzarch/mzarch_config.h"
 #include "emulator/emulator_measuring.h"
 #include "version_check/version_check.h"
 #include "message/message_window.h"
+
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+/* MCP Activity okno (V1.C.2) - render funkce volaná za běhu pokud
+ * g_gui->showMcpActivityWindow je true. Init/shutdown řídí bootstrap
+ * UI vrstva (myimgui_init_cb / myimgui_destroy_cb). */
+#include "ui-imgui/mcp_activity/mcp_activity_window.h"
+#include "ui-imgui/mcp_activity/action_toast.h"
+#endif
 
 extern "C"
 {
@@ -39,6 +66,9 @@ extern "C"
 
     /* Jazyk */
     void imgui_language_window(void);
+
+    /* MCP server settings (V0.B.4). Pri NO_MCP_TCP=1 je no-op. */
+    void imgui_mcp_settings_dialog(void);
 };
 
 static void ShowOverlayWindow(void)
@@ -302,6 +332,22 @@ void imgui_main_window(GLuint texture)
     /* Jazyk */
     imgui_language_window();
 
+    /* MCP server settings (V0.B.4) - okno se kreslí pouze pokud
+     * g_gui->showMcpSettingsWindow == true; při buildu s NO_MCP_TCP=1
+     * je funkce no-op. */
+    imgui_mcp_settings_dialog();
+
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+    /* MCP Activity okno (V1.C.2 mutant mcp-server). Real-time GUI log
+     * MCP akcí (= DBGAPI_MSG_MCP_ACTION broadcast). Init/shutdown řeší
+     * bootstrap UI vrstva; zde jen render při zobrazeném flagu. */
+    if (g_gui->showMcpActivityWindow)
+        mcp_activity_window_render(&g_gui->showMcpActivityWindow);
+    /* V1.C.3 - action toast pro destruktivní MCP akce. Render vždy
+     * (= queue obsahuje jen platné toasty, prázdná queue je no-op). */
+    action_toast_render();
+#endif
+
     /* PEZIK nastavení */
     if (g_gui->showPezikSettingsWindow)
         imgui_pezik_settings_window(&g_gui->showPezikSettingsWindow);
@@ -363,6 +409,32 @@ void imgui_main_window(GLuint texture)
     if (g_gui->showMemoryMapWindow)
         memmap_window_render(&g_gui->showMemoryMapWindow);
 
+    /* Memory Browser - hex view paměti přes dbgapi_regions (V0 hex MVP) */
+    if (g_gui->showMemoryBrowserWindow)
+        membrowser_window_render(&g_gui->showMemoryBrowserWindow);
+
+    /* Disassembler V1 - samostatné range-based disasm okno (mutant). */
+    dasm_window_render();
+
+    /* V3 multi-view: 4 sekundární Memory Browser okna (#2 - #5). Render
+     * funkce sama přeskočí zavřené sloty + lazy-create/destroy instance
+     * podle g_gui->showMemoryBrowserWindowExtra[] flagů. */
+    membrowser_window_render_all_secondary();
+
+    /* V5: Memory Diff - samostatné okno se side-by-side hex porovnáním
+     * dvou snapshotů. Singleton, lazy state init při prvním renderu. */
+    if (g_gui->showMemoryDiffWindow)
+        membrowser_diff_window_render(&g_gui->showMemoryDiffWindow);
+
+    /* V6: PCG glyph editor - samostatné okno (MZ-1500 only). */
+    if (g_gui->showMembrowserPcgEditor)
+        membrowser_pcg_window_render(&g_gui->showMembrowserPcgEditor);
+
+    /* V1.5+ ASCII edit follow-up: Char Inserter okno - paleta znaků pro
+     * vkládání speciálních znaků (SharpMZ EU/JP, KOI8-CS) do Memory
+     * Browseru. Show flag se interně testuje ve funkci. */
+    membrowser_char_inserter_render();
+
     /* CPU Registers - Variant B samostatné plovoucí okno */
     if (g_gui->showCpuWindow)
         cpu_window_render(&g_gui->showCpuWindow);
@@ -396,6 +468,35 @@ void imgui_main_window(GLuint texture)
      * stavu okna mezi sezeními: INI [PROFILER] show_window. */
     if (g_gui->showProfilerWindow)
         profiler_window_render(&g_gui->showProfilerWindow);
+
+    /* Per-chip-panels: per-chip detail okna. CTC a PPI jsou ve všech 3
+     * archech, Z80 PIO + PSG jen v MZ-800 / MZ-1500. Toggle přes menu
+     * Debugger -> CTC/PPI/PIO/PSG State nebo Alt+Shift+C/I/Z/G. */
+    if (g_gui->showCtcStateWindow)
+        imgui_ctc_state_window(&g_gui->showCtcStateWindow);
+    if (g_gui->showPpiStateWindow)
+        imgui_ppi_state_window(&g_gui->showPpiStateWindow);
+#if HAVE_PIOZ80
+    if (g_gui->showPiozStateWindow)
+        imgui_pioz80_state_window(&g_gui->showPiozStateWindow);
+#endif
+#if HAVE_PSG >= 1
+    if (g_gui->showPsgStateWindow)
+        imgui_psg_state_window(&g_gui->showPsgStateWindow);
+    /* psg-audio-scope mutant F1: tick callback (= snapshot do ring bufferu)
+     * je nepodmíněný - ring buffer drží 10 s historie i pokud okno není
+     * otevřené, takže po otevření je rovnou plný. Vlastní render jen pokud
+     * je okno viditelné. */
+    psg_audio_scope_tick();
+    if (g_gui->showPsgAudioScopeWindow)
+        imgui_psg_audio_scope_window(&g_gui->showPsgAudioScopeWindow);
+#endif
+
+    /* gdg-panel F1 scaffold: GDG state inspector (per-arch render shell).
+     * GDG je ve všech 3 archech, žádný HAVE_* guard nepotřeba - per-arch
+     * dispatch je uvnitř gdg_window.cpp přes #if MZARCH ==. */
+    if (g_gui->showGdgStateWindow)
+        imgui_gdg_state_window(&g_gui->showGdgStateWindow);
 #endif
 
     /* Events - eventlog ring viewer (Vlna 1 = Log tab + Strip placeholder).

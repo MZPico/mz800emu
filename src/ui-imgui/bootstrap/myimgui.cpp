@@ -25,7 +25,27 @@
 #include "main.h"  /* g_sdlapp */
 extern "C" void imgui_filechooser_settings_init(void);
 
+#include "mzarch/mzarch_config.h"
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+/* MCP Activity okno (V1.C.2 mutant mcp-server) - init/shutdown ring
+ * bufferu pro real-time log MCP akcí. Bootstrap UI vrstva si vlastní
+ * lifecycle, vlastní render volá main_window.cpp. */
+#include "ui-imgui/mcp_activity/mcp_activity_window.h"
+#include "ui-imgui/mcp_activity/action_toast.h"
+#endif
+
 static ImVec4 default_bg_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+
+/* Monospace font - načten v myimgui_set_fonts() jako samostatný font
+ * (NE merged) - takže ho lze přepnout přes PushFont() pro hex dumpy.
+ * NULL pokud TTF soubor chybí (chytí to caller přes
+ * myimgui_get_monospace_font() == NULL kontrolu). */
+static ImFont *s_monospace_font = nullptr;
+
+ImFont *myimgui_get_monospace_font(void)
+{
+    return s_monospace_font;
+}
 
 void myimgui_set_fonts(ImGuiIO &io)
 {
@@ -77,8 +97,21 @@ void myimgui_set_fonts(ImGuiIO &io)
         io.Fonts->AddFontFromMemoryCompressedBase85TTF(FONT_ICON_BUFFER_NAME_IGFD, 28.0f, &icons_config_3, icons_ranges_3);
     }
 
-    { /* Glyphs — MZ specifické ikony (kazetová páska apod.) */
-        static const ImWchar icon_ranges[] = {0xE000, 0xE000, 0};
+    { /* Glyphs - MZ specifické ikony + CG-ROM glyfy (Memory Browser).
+       *
+       * Rozsahy:
+       *   U+E000        - kazetová páska a další UI ikony (původní use case)
+       *   U+E100-U+E4FF - 4x 256 CG-ROM glyfů z mzglyphs lib:
+       *                   E1xx=EU1, E2xx=EU2, E3xx=JP1, E4xx=JP2.
+       *
+       * Pokud font soubor chybí, ImGui pokračuje bez glyfů - na
+       * relevantních místech (Memory Browser ASCII column) se zobrazí
+       * replacement glyph. Žádný crash. */
+        static const ImWchar icon_ranges[] = {
+            0xE000, 0xE000,    /* UI ikony (kazeta apod.) */
+            0xE100, 0xE4FF,    /* mzglyphs CG-ROM glyfy (4 charsety) */
+            0
+        };
         ImFontConfig config;
         config.MergeMode = true;
         config.PixelSnapH = true;
@@ -86,6 +119,58 @@ void myimgui_set_fonts(ImGuiIO &io)
                                                          "ui_resources/imgui/symbols/mzglyphs.ttf");
         io.Fonts->AddFontFromFileTTF(mzglyphs_path, 20.0f, &config, icon_ranges);
         g_free(mzglyphs_path);
+    }
+
+    /* Monospace font (Cousine-Regular) pro hex dumpy (Memory Browser
+     * a podobné). Načten jako SAMOSTATNÝ font (NE merge) - lze ho
+     * přepnout přes PushFont(). Merge mzglyphs nahoru zajišťuje, že
+     * DISPLAY EU/JP glyfy v ASCII column fungují i v monospace módu.
+     *
+     * Velikost 28 px = stejná jako default UI font (DroidSans) aby
+     * řádkování v okně zůstalo konzistentní. */
+    {
+        char *mono_path = sdlapp_paths_resolve_home(g_sdlapp->paths,
+                                                     "ui_resources/imgui/fonts/Cousine-Regular.ttf");
+        FILE *mf = fopen(mono_path, "rb");
+        if (mf) {
+            fclose(mf);
+            ImFontConfig mono_cfg;
+            mono_cfg.OversampleH = 2;
+            mono_cfg.OversampleV = 2;
+            mono_cfg.PixelSnapH = true;
+            /* Pouze ASCII + Latin Extended - hex dump používá jen
+             * 0-9 / A-F / běžné ASCII znaky. Pro národní znaky v ASCII
+             * column ve Sharp encodingu by se musely přidat rozsahy.
+             * V0-polish-2 záměrně omezeno - národní znaky se ukáží přes
+             * fallback. */
+            static const ImWchar mono_ranges[] = {
+                0x0020, 0x024F,
+                0
+            };
+            s_monospace_font = io.Fonts->AddFontFromFileTTF(mono_path, 28.0f,
+                                                             &mono_cfg, mono_ranges);
+
+            /* Merge mzglyphs nahoru aby DISPLAY EU/JP CG-ROM glyfy
+             * fungovaly v ASCII column při monospace módu. */
+            char *mzglyphs2_path = sdlapp_paths_resolve_home(g_sdlapp->paths,
+                                                              "ui_resources/imgui/symbols/mzglyphs.ttf");
+            FILE *gf = fopen(mzglyphs2_path, "rb");
+            if (gf) {
+                fclose(gf);
+                static const ImWchar mono_icon_ranges[] = {
+                    0xE000, 0xE000,
+                    0xE100, 0xE4FF,
+                    0
+                };
+                ImFontConfig mono_icon_cfg;
+                mono_icon_cfg.MergeMode = true;
+                mono_icon_cfg.PixelSnapH = true;
+                io.Fonts->AddFontFromFileTTF(mzglyphs2_path, 20.0f,
+                                              &mono_icon_cfg, mono_icon_ranges);
+            }
+            g_free(mzglyphs2_path);
+        }
+        g_free(mono_path);
     }
 }
 
@@ -339,6 +424,41 @@ gboolean myimgui_init_cb(SdlAppWindow *win, gpointer user_data)
      * Debugger -> Callstack. */
     gui->showCallstackWindow = false;
 
+    /* Per-chip-panels F1 scaffold: per-chip detail panely (CTC 8253,
+     * PPI 8255, Z80 PIO, PSG SN76489). Default closed, user otevírá přes
+     * menu Debugger -> CTC/PPI/PIO/PSG State nebo zkratky Alt+Shift+C/I/Z/G.
+     * Visibilita se v F1 nepersistuje (= chování konzistentní s FDC State
+     * a Callstack), persistence případně přidaná v F6 docs fázi. */
+    gui->showCtcStateWindow = false;
+    gui->showPpiStateWindow = false;
+    gui->showPiozStateWindow = false;
+    gui->showPsgStateWindow = false;
+
+    /* gdg-panel F1 scaffold: GDG (Graphic Display Generator) custom video
+     * LSI inspector. Per-arch dispatch v gdg_window.cpp (MZ-700 / MZ-800 /
+     * MZ-1500 mají různý state). Default closed, user otevírá přes menu
+     * Debugger -> GDG State nebo zkratku Alt+Shift+V (V = Video). */
+    gui->showGdgStateWindow = false;
+
+    /* PSG Audio Scope (psg-audio-scope mutant F1) - samostatné okno pro
+     * dynamickou audio analýzu PSG (oscilloscope, plánovaný envelope /
+     * piano roll v dalších F-fázích). Default closed, user otevírá přes
+     * menu Debugger -> PSG Audio Scope nebo Alt+Shift+A. Visibilita se
+     * v F1 nepersistuje (= konzistentní s PSG State a per-chip-panels). */
+    gui->showPsgAudioScopeWindow = false;
+
+    /* MCP Activity okno (V1.C.2 mutant mcp-server) - default closed,
+     * inicializace ring bufferu se dělá zde aby log_action() byla
+     * bezpečně volatelná i pokud okno nikdy nebylo otevřené
+     * (= dispatcher feeduje buffer při každém MCP_ACTION broadcastu).
+     * Shutdown ring bufferu je v myimgui_destroy_cb. */
+    gui->showMcpActivityWindow = false;
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+    mcp_activity_window_init();
+    /* V1.C.3 - action toast subsystém pro destruktivní MCP akce. */
+    action_toast_init();
+#endif
+
     sdlapp_window_set_event_cb(win, myimgui_event_cb, user_data);
     sdlapp_window_set_render_cb(win, myimgui_render_cb, user_data);
     sdlapp_window_set_destroy_cb(win, myimgui_destroy_cb, user_data);
@@ -548,6 +668,14 @@ void myimgui_destroy_cb(SdlAppWindow *win, gpointer user_data)
     ImGui_ImplSDL3_Shutdown();
 
     ImGui::DestroyContext(ctx);
+
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+    /* MCP Activity okno (V1.C.2) - uvolnit ring buffer a interní GMutex.
+     * Volání musí být idempotentní (= povoleno i pokud init nebyl volán). */
+    mcp_activity_window_shutdown();
+    /* V1.C.3 - action toast subsystém. */
+    action_toast_shutdown();
+#endif
 
     g_free(gui);
     win->gui_data = NULL;

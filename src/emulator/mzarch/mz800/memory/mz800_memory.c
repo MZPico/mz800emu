@@ -54,12 +54,6 @@
 #include "debugger/io_activity.h"
 #include "baseui/baseui.h"
 
-#ifdef MZ800EMU_CFG_UI_ENABLED
-#include "ui-gtk3/ui_main.h"
-#else
-#define ui_main_debugger_windows_refresh()
-#endif /* MZ800EMU_CFG_UI_ENABLED */
-
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */
 
 st_MEMORY g_memory;
@@ -266,11 +260,6 @@ void memory_reconnect_ram ( void ) {
         };
     };
 
-#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-    if ( EMULATOR_TEST_PAUSED ) {
-        ui_main_debugger_windows_refresh ( );
-    };
-#endif
 }
 
 

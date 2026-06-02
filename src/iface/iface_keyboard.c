@@ -51,7 +51,11 @@ static inline void iface_keyboard_scan_col0(const bool *state)
     {
         PIO8255_MZKEYBIT_RESET(0, 5); /* LIBRA */
     };
-    if (state[SDL_SCANCODE_BACKSLASH])
+#if MZARCH == 800
+    /* ALPHA: obě hostitelské klávesy generující "\" - BACKSLASH (ImGui 604)
+     * i NONUSBACKSLASH (ImGui Oem102 631, ISO klávesa, na ANSI klávesnicích
+     * obvykle u levého Shiftu / dolního Enteru). Obě plní funkci ALPHA. */
+    if ((state[SDL_SCANCODE_BACKSLASH]) || (state[SDL_SCANCODE_NONUSBACKSLASH]))
     {
         PIO8255_MZKEYBIT_RESET(0, 4); /* ALPHA */
     };
@@ -59,6 +63,15 @@ static inline void iface_keyboard_scan_col0(const bool *state)
     {
         PIO8255_MZKEYBIT_RESET(0, 3); /* TAB */
     };
+#else
+    /* MZ-700/MZ-1500: HW nemá klávesu TAB. Hostitelská TAB i obě "\" klávesy
+     * (BACKSLASH + NONUSBACKSLASH/Oem102) se aplikují jako ALPHA (0, 4);
+     * bit (0, 3) se nikdy nevystaví. */
+    if ((state[SDL_SCANCODE_BACKSLASH]) || (state[SDL_SCANCODE_NONUSBACKSLASH]) || (state[SDL_SCANCODE_TAB]))
+    {
+        PIO8255_MZKEYBIT_RESET(0, 4); /* ALPHA */
+    };
+#endif
     if ((state[SDL_SCANCODE_SEMICOLON]) || (state[SDL_SCANCODE_KP_PLUS]))
     {
         PIO8255_MZKEYBIT_RESET(0, 2); /* ; */

@@ -71,6 +71,8 @@ extern "C" {
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "dbgapi_cmdrq.h"
+
 
 /**
  * @brief Maximální délka uživatelského jména řádku (bez terminátoru).
@@ -216,6 +218,17 @@ typedef struct st_WATCH_ROW {
     char         *expr_text;   /**< Text výrazu (NULL pro mode=ADDRESS) */
     bp_expr_t    *expr_ast;    /**< Cached parsed AST (NULL = parse error nebo ADDRESS) */
     char         *expr_error;  /**< Heap kopie poslední parse error (NULL = OK) */
+    /**
+     * @brief V1.C.3 - kdo watch řádek vytvořil. V1.E.6.B - persistuje se
+     *        do .watch JSON jako stable string token.
+     *
+     * Default DBGAPI_CMD_ORIGIN_USER (= 0, dosazené přes calloc / memset).
+     * Dispatcher v dbgapi.c po úspěšném watch_add() přepíše hodnotu na
+     * rq->cmd_origin. Persistence v .watch JSON přes stable tokeny
+     * "user"/"mcp"/"test"/"internal"; tolerant load (chybějící klíč nebo
+     * unknown token = USER fallback) zachovává backward kompat.
+     */
+    en_DBGAPI_CMD_ORIGIN cmd_origin;
 } st_WATCH_ROW;
 
 
@@ -455,6 +468,20 @@ extern void watch_set_length ( int row_index, uint16_t length );
  * @param bit_index  Pozice bitu (0-7).
  */
 extern void watch_set_bit_index ( int row_index, uint8_t bit_index );
+
+
+/**
+ * @brief V1.C.3 - nastaví owner attribution pro daný řádek.
+ *
+ * Slouží pro dispatcher v dbgapi.c, aby po úspěšném watch_add() /
+ * watch_add_expr() přiřadil řádku origin volajícího klienta (USER /
+ * MCP / TEST / INTERNAL). Hodnota je pouze metadata - žádný runtime
+ * efekt na evaluaci watch.
+ *
+ * @param row_index  Index 0..count-1. Out-of-range = no-op.
+ * @param origin     Hodnota enum en_DBGAPI_CMD_ORIGIN.
+ */
+extern void watch_set_cmd_origin ( int row_index, en_DBGAPI_CMD_ORIGIN origin );
 
 
 /* ===================================================================== */

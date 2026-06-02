@@ -127,6 +127,7 @@ static SdlApp *create_sdlapp(void)
     }
 
     app->running = FALSE;
+    app->quit_requested = FALSE;
     app->loop_mode = SDLAPP_LOOP_POLL;
     app->wait_timeout_ms = 0;
     app->fps_limit = 0;
@@ -353,7 +354,10 @@ void sdlapp_run(SdlApp *app)
 {
     app->running = TRUE;
 
-    while (app->running)
+    /* Respektuj i quit_requested - pokud bylo ukončení vyžádáno ještě
+     * před spuštěním smyčky (running se mezitím nastaví na TRUE), smyčka
+     * se nesmí rozběhnout. */
+    while (app->running && !app->quit_requested)
     {
         sdlapp_iteration(app);
     }
@@ -363,11 +367,13 @@ void sdlapp_run(SdlApp *app)
  * Ukončení a zničení
  * ====================================================================== */
 
-/** @brief Požádá o ukončení hlavní smyčky (nastaví running=FALSE). */
+/** @brief Požádá o ukončení hlavní smyčky (nastaví quit_requested=TRUE
+ *         a running=FALSE). */
 void sdlapp_quit(SdlApp *app)
 {
     if (app)
     {
+        app->quit_requested = TRUE;
         app->running = FALSE;
     }
 }
@@ -378,6 +384,14 @@ gboolean sdlapp_is_running(SdlApp *app)
     if (!app)
         return FALSE;
     return app->running;
+}
+
+/** @brief Zjistí, zda bylo vyžádáno ukončení aplikace (nezávisle na running). */
+gboolean sdlapp_is_quit_requested(SdlApp *app)
+{
+    if (!app)
+        return FALSE;
+    return app->quit_requested;
 }
 
 /** @brief Zničí aplikaci a uvolní všechny zdroje. */

@@ -117,7 +117,11 @@ mz_glob_sources(_test_emu_sources
     src/emulator/debugger
     src/emulator/snapshot
     src/emulator/mzarch/mz800
+    src/emulator/mcp
 )
+# main_pipe.c (V0.A.4) má vlastní main() - kolize s Unity testovacím
+# main, ani v EMU testovacím prostředí ho nebuildíme.
+list(FILTER _test_emu_sources EXCLUDE REGEX "/src/emulator/mcp/main_pipe\\.c$")
 mz_glob_flat(_test_emu_flat_emu      src/emulator)
 mz_glob_flat(_test_emu_flat_mzarch   src/emulator/mzarch)
 

@@ -31,6 +31,7 @@
 #include "libs/cpu-z80/z80.h"
 
 #include "pioz80/pioz80.h"
+#include "centronics/centronics.h"
 #include "mzarch/mzarch.h"
 #include "mzarch/interrupt.h"
 #include "ctc8253/ctc8253.h"
@@ -557,6 +558,21 @@ static inline uint8_t pioz80_port_get_raw_input ( st_PIOZ80_PORT *port ) {
     if ( port->port_id == PIOZ80_PORT_A ) {
         retval |= ( CTC8253_OUT ( 0 ) == 1 ) ? 0 : 1 << 4; /* invertovany CTC0 */
         retval |= SIGNAL_GDG_VBLNK ? 1 << 5 : 0x00;
+        /* Centronics: připojená virtuální tiskárna řídí signál BUSY (PA0)
+         * podle úrovně STROBE (PA7, výstupní bit v data_output). Reálné
+         * chování pozorované v ovladači MRS: po assertu STROBE (PA7=1) host
+         * čeká, až tiskárna potvrdí příjem zvednutím BUSY=1; po deassertu
+         * (PA7=0) tiskárna BUSY uvolní. Modelujeme tedy nekonečně rychlou
+         * tiskárnu: BUSY (PA0) zrcadlí STROBE (PA7).
+         * Bez tohoto by LPT vstup floatoval na 1 (busy) a polling smyčka
+         * čekající na potvrzení by se zacyklila. */
+        if ( g_centronics.active ) {
+            if ( ( port->data_output >> 7 ) & 0x01 ) {
+                retval |= 0x01;   /* STROBE asserted -> BUSY = 1 (bajt přijat) */
+            } else {
+                retval &= ~( ( uint8_t ) 0x01 ); /* STROBE klid -> BUSY = 0 */
+            };
+        };
     };
     return retval;
 }
@@ -722,6 +738,14 @@ static inline void pioz80_port_event_internal ( st_PIOZ80_PORT *port, en_PIOZ80_
 static inline void pioz80_port_wr_data ( st_PIOZ80_PORT *port, uint8_t value ) {
     port->data_output = value;
     DBGPRINTF ( DBGINF, "port: %c, value = 0x%02x, PC = 0x%04x\n", pioz80_dbg_get_port_name ( port->port_id ), port->data_output, g_mzarch_main.instruction_addr );
+
+    /* Centronics: PA7 je STROBE (RDP). Při zápisu na bránu PA sledujeme hranu
+     * PA7 a na aktivaci STROBE zachytíme aktuální bajt na datové bráně PB. */
+    if ( port->port_id == PIOZ80_PORT_A ) {
+        centronics_pa_strobe_update ( ( value >> 7 ) & 0x01,
+                                      g_pioz80.port[ PIOZ80_PORT_B ].data_output );
+    };
+
     // pripadny INT je spusten ihned
     // TODO: tento fenomen se zrejme neobjevuje uplne vzdy
     pioz80_port_event_internal ( port, PIOZ80_PORT_EVENT_INTERNAL_WR_DATA );

@@ -29,8 +29,14 @@
 
 #include "psg.h"
 #include "hw-generic/gdg/gdg.h"
+#include "hw-generic/gdg/gdgclk.h"
 #include "audio.h"
 #include "mzarch/mzarch.h"
+
+#include <glib.h>
+#include <glib/gstdio.h>
+#include <stdio.h>
+#include <stdint.h>
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 #include "debugger/trace/hwlog.h"
@@ -38,6 +44,176 @@
 #endif
 
 st_PSG_MODULE g_psg_module;
+
+/* ========================================================================= */
+/* PSG Write Log - autoritativní 1:1 záznam register zápisů.                */
+/*                                                                           */
+/* Datový tok:                                                               */
+/*   psg_write_byte() -> if (enabled) psg_write_log_record()                 */
+/*                       -> mutex lock -> fprintf -> mutex unlock            */
+/*                                                                           */
+/* Thread safety:                                                            */
+/*   - `enabled` je gboolean modifikovaný jen pod mutexem; fast-path check  */
+/*     v hot pathu (psg_write_byte) je nezamknutý - benigní race: nejhůř   */
+/*     se vynechá jeden zápis kolem disable transition, ne crash.           */
+/*   - file pointer `fp` je čten/měněn jen pod mutexem.                     */
+/*                                                                           */
+/* Performance:                                                              */
+/*   - mutex lock per write, ale PSG zápisy jsou ~100-1000/s (= hluboko     */
+/*     pod CPU instruction rate), režie zanedbatelná.                       */
+/*   - fflush per řádek = odolnost proti crash emulátoru (TSV usable i bez  */
+/*     graceful exit).                                                       */
+/*                                                                           */
+/* Lifetime: globální statická instance, mutex inicializován při prvním    */
+/* enable přes g_once_init.                                                  */
+/* ========================================================================= */
+
+/**
+ * @brief Stav PSG write log subsystému.
+ *
+ * Invarianty:
+ *   - `enabled == TRUE`  => `fp != NULL`
+ *   - `enabled == FALSE` => `fp == NULL` (po disable cleanup)
+ *   - mutex_inited == TRUE je terminální (jednou inicialovaný mutex
+ *     se nedealokuje, žije po celou dobu procesu).
+ */
+typedef struct st_PSG_WRITE_LOG
+{
+    gboolean enabled;        /**< Atomic-read fast-path flag. */
+    FILE    *fp;             /**< Otevřený TSV soubor; NULL = uzavřeno. */
+    GMutex   mutex;          /**< Chrání fp + enabled při write/enable/disable. */
+    gsize    mutex_inited;   /**< g_once_init flag (= 1 po inicializaci). */
+    unsigned row_count;      /**< Počet řádků zapsaných od posledního enable. */
+} st_PSG_WRITE_LOG;
+
+static st_PSG_WRITE_LOG g_psg_write_log = { FALSE, NULL, { 0 }, 0, 0u };
+
+/**
+ * @brief Lazy init GMutex (idempotent, thread-safe).
+ *
+ * Používá g_once_init_enter/leave - bezpečné při souběhu UI a emu vlákna
+ * při prvním enable.
+ */
+static inline void psg_write_log_ensure_mutex_init(void)
+{
+    if (g_once_init_enter(&g_psg_write_log.mutex_inited))
+    {
+        g_mutex_init(&g_psg_write_log.mutex);
+        g_once_init_leave(&g_psg_write_log.mutex_inited, 1);
+    }
+}
+
+/**
+ * @brief Vrací nominální emulátor clock (pxCLK) v Hz.
+ *
+ * Pro TSV header metadata. Hodnota je arch-specifická (PAL/NTSC, MZ-800/
+ * MZ-1500); čte se z runtime gdgclk konfigurace.
+ */
+static inline uint32_t psg_write_log_pxclk_hz(void)
+{
+    /* GDGCLK_BASE = nominální pxCLK kompilovaný per architektura
+     * (MZ-800: ~17.73 MHz, MZ-1500/MZ-700-NTSC: ~14.32 MHz). */
+    return (uint32_t)GDGCLK_BASE;
+}
+
+bool psg_write_log_enable(const char *path)
+{
+    if (path == NULL)
+        return false;
+
+    psg_write_log_ensure_mutex_init();
+    g_mutex_lock(&g_psg_write_log.mutex);
+
+    /* Re-enable: zavři předchozí session (= idempotentní enable). */
+    if (g_psg_write_log.fp != NULL)
+    {
+        fclose(g_psg_write_log.fp);
+        g_psg_write_log.fp = NULL;
+    }
+    g_psg_write_log.enabled = FALSE;
+    g_psg_write_log.row_count = 0u;
+
+    g_psg_write_log.fp = g_fopen(path, "w");
+    if (g_psg_write_log.fp == NULL)
+    {
+        g_mutex_unlock(&g_psg_write_log.mutex);
+        return false;
+    }
+
+    /* TSV header s metadaty (= external tool zná jak interpretovat). */
+    fprintf(g_psg_write_log.fp,
+            "# PSG write log\n"
+            "# emulator_clock_hz=%u\n"
+            "# stereo=%d\n"
+            "# columns: pxclk_ticks\tchannel_mask\traw_byte_hex\n",
+            (unsigned)psg_write_log_pxclk_hz(),
+            g_psg_module.stereo ? 1 : 0);
+    fflush(g_psg_write_log.fp);
+
+    g_psg_write_log.enabled = TRUE;
+    g_mutex_unlock(&g_psg_write_log.mutex);
+    return true;
+}
+
+void psg_write_log_disable(void)
+{
+    /* Pokud mutex není inicializovaný, není ani co zavírat. */
+    if (g_once_init_enter(&g_psg_write_log.mutex_inited))
+    {
+        g_mutex_init(&g_psg_write_log.mutex);
+        g_once_init_leave(&g_psg_write_log.mutex_inited, 1);
+    }
+
+    g_mutex_lock(&g_psg_write_log.mutex);
+    g_psg_write_log.enabled = FALSE;
+    if (g_psg_write_log.fp != NULL)
+    {
+        fflush(g_psg_write_log.fp);
+        fclose(g_psg_write_log.fp);
+        g_psg_write_log.fp = NULL;
+    }
+    g_mutex_unlock(&g_psg_write_log.mutex);
+}
+
+bool psg_write_log_is_enabled(void)
+{
+    /* Atomic single-byte read; v case souběhu vrátí buď starou nebo novou
+     * hodnotu, ale ne corrupted. */
+    return g_psg_write_log.enabled ? true : false;
+}
+
+unsigned psg_write_log_row_count(void)
+{
+    return g_psg_write_log.row_count;
+}
+
+/**
+ * @brief Zapíše jeden write event do TSV logu.
+ *
+ * Voláno z emu vlákna po každém PSG zápisu, ale jen pokud je `enabled`.
+ * Pod mutexem znovu ověří enabled (= TOCTOU obrana při souběžném disable).
+ *
+ * @param total_ticks  pxCLK timestamp od startu emulace.
+ * @param channel      PSG channel mask (PSG_CH_LEFT / PSG_CH_RIGHT / both).
+ * @param value        Surový byte tak, jak ho CPU zapsal.
+ */
+static inline void psg_write_log_record(uint64_t total_ticks,
+                                        unsigned channel,
+                                        uint8_t value)
+{
+    g_mutex_lock(&g_psg_write_log.mutex);
+    if (g_psg_write_log.enabled && g_psg_write_log.fp != NULL)
+    {
+        fprintf(g_psg_write_log.fp,
+                "%" G_GUINT64_FORMAT "\t%u\t%02X\n",
+                (guint64)total_ticks,
+                (unsigned)(channel & 0xFFu),
+                (unsigned)value);
+        fflush(g_psg_write_log.fp);
+        g_psg_write_log.row_count++;
+    }
+    g_mutex_unlock(&g_psg_write_log.mutex);
+}
 
 void psg_instance_init(st_PSG *psg)
 {
@@ -157,6 +333,13 @@ void psg_write_byte(unsigned channel, uint8_t value)
     {
         /* Mono režim — channel se ignoruje */
         psg_write_byte_core(&g_psg_module.psg[0], value, total_ticks);
+
+        /* Write-log hook (mono path). Channel mask = PSG_CH_LEFT (= 0x01),
+         * protože mono PSG zapisuje do psg[0]. Fast-path skip když disabled. */
+        if (g_psg_write_log.enabled)
+        {
+            psg_write_log_record(total_ticks, PSG_CH_LEFT, value);
+        }
         return;
     }
 
@@ -170,6 +353,14 @@ void psg_write_byte(unsigned channel, uint8_t value)
     if (channel & PSG_CH_RIGHT)
     {
         psg_write_byte_core(&g_psg_module.psg[1], value, total_ticks);
+    }
+
+    /* Write-log hook (stereo path): zaznamená každý zápis přesně jak ho
+     * CPU provedl. Channel mask zachycuje cílový PSG (broadcast = 0x03).
+     * Fast-path skip když disabled. */
+    if (g_psg_write_log.enabled)
+    {
+        psg_write_log_record(total_ticks, channel, value);
     }
 }
 

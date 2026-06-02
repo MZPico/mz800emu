@@ -74,13 +74,6 @@
 #include "cfgmain.h"
 #include "baseui/baseui.h"
 
-#ifdef MZ800EMU_CFG_UI_ENABLED
-#include "ui-gtk3/ui_file_chooser.h"
-#include "ui-gtk3/ui_ramdisk.h"
-#else
-#define ui_ramdisk_update_menu()
-#endif
-
 //#define DBGLEVEL        ( DBGNON /* | DBGERR | DBGWAR | DBGINF */ )
 //#define DBGLEVEL        ( DBGNON | DBGERR | DBGWAR | DBGINF )
 #include "debug.h"
@@ -331,8 +324,6 @@ void ramdisk_propagatecfg ( void *m, void *data ) {
     char *mr1r18_filepath = cfgmodule_get_element_text_value_by_name ( (CFGMOD *) m, "mr1r18_filepath" );
 
     ramdisk_std_init ( mr1r18_pluged, mr1r18_type, mr1r18_size, mr1r18_filepath );
-
-    ui_ramdisk_update_menu ( );
 }
 
 

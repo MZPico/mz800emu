@@ -92,6 +92,44 @@ if(MZ_NO_DEBUGGER)
     message(STATUS "  MZ_NO_DEBUGGER: ON (debugger subsystem disabled)")
 endif()
 
+# ----------------------------------------------------------------------------
+# MCP server toggles (volitelne)
+#
+# MZ_NO_MCP      - vypne cely MCP backend (pipe + JSONL + TCP).
+# MZ_NO_MCP_TCP  - vypne jen TCP listener; pipe transport zustane.
+#
+# Cascade rules (auto-vynucene zde):
+#   MZ_NO_DEBUGGER=ON  =>  MZ_NO_MCP=ON     (MCP vyzaduje debugger)
+#   MZ_NO_MCP=ON       =>  MZ_NO_MCP_TCP=ON (TCP vyzaduje MCP backend)
+#
+# Bez cascade by hostujici kod resetoval pres validacni #error v
+# mzarch_config.h. Cascade dela uzivatelsky priznivejsi UX (jeden flag
+# misto rucniho vypsani vsech). Validacni #error zustava jako sit pro
+# rucni edit config souboru.
+# ----------------------------------------------------------------------------
+option(MZ_NO_MCP     "Build without the MCP server backend" OFF)
+option(MZ_NO_MCP_TCP "Build without the MCP TCP listener (pipe-only)" OFF)
+
+if(MZ_NO_DEBUGGER AND NOT MZ_NO_MCP)
+    message(STATUS "  MZ_NO_MCP: forced ON (cascade from MZ_NO_DEBUGGER)")
+    set(MZ_NO_MCP ON CACHE BOOL "Build without MCP server backend (forced by NO_DEBUGGER)" FORCE)
+endif()
+
+if(MZ_NO_MCP AND NOT MZ_NO_MCP_TCP)
+    message(STATUS "  MZ_NO_MCP_TCP: forced ON (cascade from MZ_NO_MCP)")
+    set(MZ_NO_MCP_TCP ON CACHE BOOL "Build without MCP TCP listener (forced by NO_MCP)" FORCE)
+endif()
+
+if(MZ_NO_MCP)
+    add_compile_definitions(MZ800EMU_NO_MCP)
+    message(STATUS "  MZ_NO_MCP: ON (MCP server backend disabled)")
+endif()
+
+if(MZ_NO_MCP_TCP)
+    add_compile_definitions(MZ800EMU_NO_MCP_TCP)
+    message(STATUS "  MZ_NO_MCP_TCP: ON (MCP TCP listener disabled)")
+endif()
+
 # Default Debug pokud build type není specifikován
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
@@ -172,6 +210,15 @@ if(MZ_BUILD_MZ700_NTSC)
 endif()
 
 # ----------------------------------------------------------------------------
+# Pipe (JSONL transport) - V0.A.4
+#
+# Pipe transport je dostupný jako `--pipe` flag v `mz800emu(.exe)` (=
+# delegace z src/main.c na mcp_pipe_main v src/emulator/mcp/main_pipe.c).
+# Separátní binárka mz800emu_pipe.exe byla původním cílem V0.A.4 ale
+# linkování v MSYS2/UCRT64 dosud selhává - viz plans/VYSLEDEK V0.A.4.
+# ----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # Test suite (Unity + mztest + CTest)
 # ----------------------------------------------------------------------------
 if(BUILD_TESTING)
@@ -197,6 +244,9 @@ message(STATUS "  MZ1500 build:      ${MZ_BUILD_MZ1500}")
 message(STATUS "  MZ700 PAL build:   ${MZ_BUILD_MZ700_PAL}")
 message(STATUS "  MZ700 NTSC build:  ${MZ_BUILD_MZ700_NTSC}")
 message(STATUS "  Force console:     ${MZ_FORCE_CONSOLE}")
+message(STATUS "  Debugger disabled: ${MZ_NO_DEBUGGER}")
+message(STATUS "  MCP disabled:      ${MZ_NO_MCP}")
+message(STATUS "  MCP TCP disabled:  ${MZ_NO_MCP_TCP}")
 message(STATUS "  Binary dir:        ${CMAKE_BINARY_DIR}")
 message(STATUS "=========================================================")
 message(STATUS "")

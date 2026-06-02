@@ -1,8 +1,3 @@
-# Features missing after the transition from the old to the new version
-
-- Memory Browser + Disassembler completely missing
-- observation and modification of GDG, CTC, PIO, PIO-Z80 and PSG chips
-
 
 # Planned features
 
@@ -22,7 +17,8 @@
 - complete overscreen menu
 - TapeMZ support and online conversion from wav to mzf
 - gdb support
-
+- full CENTRONICS plotter support (D100 printer simulation)
+- full Sharp MZ-1P16 plotter/printer simulation
 
 ## Emulation
 

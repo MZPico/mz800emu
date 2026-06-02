@@ -37,7 +37,6 @@
 #include "i18n.h"
 
 #include "cmt.h"
-#include "mzarch/mzarch.h"
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 #include "debugger/bp_event.h"
@@ -49,27 +48,11 @@
 #include "baseui/baseui.h"
 #include "baseui/baseui_filechooser.h"
 
-#ifdef MZ800EMU_CFG_UI_ENABLED
-#include "ui-gtk3/ui_main.h"
-#include "ui-gtk3/ui_file_chooser.h"
-#include "ui-gtk3/ui_cmt.h"
-#else
-
 #define NOT_HAVE_CMT_UI
 
 #include "ui-imgui/cmt/imgui_cmt.h"
 
-#define ui_cmt_init()
-#define ui_file_chooser_open_cmt_file(last_filename) NULL
-#define ui_cmt_update_player()
-#define ui_cmt_cpu_boost_menu_update()
-#define ui_cmt_mzfsize_check_menu_update()
 #define ui_cmt_window_update() imgui_cmt_tape_update_filelist()
-#define ui_file_chooser_open_wav_to_record() NULL
-#define ui_file_chooser_get_filename_extension(f) NULL
-#define ui_cmt_set_show_time(x)
-#define ui_main_update_rear_dip_switch_cmt_inverted_polarity(p)
-#endif // MZ800EMU_CFG_UI_ENABLED
 
 #include "cfgmain.h"
 
@@ -310,7 +293,6 @@ static void cmt_record(void)
     // printf ( "CMT start: %ul\n", gdg_get_total_ticks ( ) );
     g_cmt.ui_player_update = 0;
     g_cmt.recording_to_stream = 0;
-    ui_cmt_set_show_time(UICMT_SHOW_PLAY_TIME);
     ui_cmt_window_update();
     /*
         if ( g_cmt.cpu_boost == CMT_CPU_BOOST_ENABLED ) {
@@ -433,6 +415,92 @@ void cmt_ui_record(void)
     };
 }
 
+/**
+ * @brief Non-UI vstupní bod pro zahájení nahrávání do WAV souboru.
+ *
+ * Spustí RECORD bez file dialogu (= ekvivalent cmt_ui_record minus
+ * baseui_filechooser). Určeno pro programové ovládání (MCP server,
+ * testy). Output formát je WAV (= recording extension vrácená
+ * cmtext_get_recording_extension).
+ *
+ * Sekvence zrcadlí cmt_ui_record + cmt_ui_record_cb:
+ *   1. Pokud CMT není ve STOP, nahrávání nelze zahájit (= EXIT_FAILURE).
+ *   2. Pokud je nahrán nerecordable obraz, je vysunut (cmt_eject).
+ *   3. Pokud po kroku 2 zůstává nahrán recordable obraz, nahrává se do
+ *      něj (cmt_record bez nového cb_open).
+ *   4. Jinak se otevře recording extension nad zadanou cestou a spustí
+ *      se cmt_record.
+ *
+ * Nahrávání startuje v pauze (= cmt_record nastaví g_cmt.paused = 1),
+ * shodně s UI variantou. Pro reálný zápis dat musí klient následně
+ * zrušit pauzu (cmt_pause(0)).
+ *
+ * @param path Cesta k cílovému WAV souboru. Nesmí být NULL/prázdná.
+ *             Funkce parametr nemodifikuje (cast na char* kvůli legacy
+ *             signatuře cb_open).
+ * @return EXIT_SUCCESS při úspěšném zahájení nahrávání, jinak
+ *         EXIT_FAILURE (= špatný stav, neplatná cesta nebo selhání
+ *         otevření souboru).
+ *
+ * @pre Musí být voláno z emulátorového vlákna (manipuluje g_cmt a
+ *      volá cmtext cb_open, stejně jako ostatní cmt_* funkce).
+ * @post Při úspěchu je g_cmt.state == CMT_STATE_RECORD a g_cmt.paused == 1.
+ */
+int cmt_record_to_file(const char *path)
+{
+    if (!path || path[0] == '\0')
+        return EXIT_FAILURE;
+
+    /* Nahrávat lze jen ze stavu STOP (= shodně s cmt_ui_record). */
+    if (!CMT_TEST_STOP)
+        return EXIT_FAILURE;
+
+    /* Pokud je nahrán obraz, do kterého nelze nahrávat, vysunout ho. */
+    if ((CMT_TEST_FILLED) && (EXIT_SUCCESS != cmtext_is_recordable(g_cmt.ext)))
+    {
+        cmt_eject();
+    };
+
+    /* Recordable obraz už nahrán -> nahrávat do něj bez nového cb_open. */
+    if (CMT_TEST_FILLED)
+    {
+        cmt_record();
+        return EXIT_SUCCESS;
+    };
+
+    /* Pre-check zapisovatelnosti cílové cesty.
+     *
+     * Recording cb_open (cmtsave_container_open) si název jen
+     * zapamatuje a fyzicky soubor otevírá až líně při prvním zápisu
+     * dat - tedy sám neselže nad neexistujícím adresářem / read-only
+     * cestou. To je v pořádku pro UI flow (file dialog cestu validuje),
+     * ale pro programové volání (MCP) potřebujeme deterministické
+     * selhání hned. Otevřeme proto cestu pro zápis (= vytvoří/zkrátí
+     * soubor, do kterého se stejně bude nahrávat) a hned zavřeme;
+     * pokud open selže, cesta není zapisovatelná. */
+    FILE *wtst = baseui_tools_file_open(path, "wb");
+    if (!wtst)
+    {
+        baseui_error("CMT recording: path not writable: '%s'\n", path);
+        return EXIT_FAILURE;
+    };
+    baseui_tools_file_close(wtst);
+
+    /* Otevřít recording extension nad cílovou cestou. */
+    st_CMTEXT *ext = cmtext_get_recording_extension();
+
+    if (EXIT_SUCCESS != ext->cb_open((char *) path))
+    {
+        baseui_error("%s can't open file '%s'\n", cmtext_get_description(ext), path);
+        ui_cmt_window_update();
+        return EXIT_FAILURE;
+    };
+
+    g_cmt.ext = ext;
+    cmt_record();
+    return EXIT_SUCCESS;
+}
+
 int cmt_change_speed(en_CMTSPEED cmtspeed)
 {
     int ret = EXIT_SUCCESS;
@@ -489,7 +557,6 @@ void cmt_rear_dip_switch_cmt_inverted_polarity(unsigned value)
     if (value == g_cmt.polarity)
         return;
     g_cmt.polarity = value;
-    ui_main_update_rear_dip_switch_cmt_inverted_polarity(g_cmt.polarity);
     if (!CMT_TEST_FILLED)
         return;
     if (g_cmt.ext->block->cb_set_polarity != NULL)
@@ -499,10 +566,7 @@ void cmt_rear_dip_switch_cmt_inverted_polarity(unsigned value)
 void cmt_propagatecfg_inverted_polarity(void *e, void *data)
 {
     (void)data;
-#ifdef NOT_HAVE_CMT_UI
     (void)e;
-#endif
-    ui_main_update_rear_dip_switch_cmt_inverted_polarity(cfgelement_get_bool_value((CFGELM *)e));
 }
 
 void cmt_propagatecfg_cpu_boost(void *e, void *data)
@@ -568,7 +632,6 @@ void cmt_init(void)
     g_string_append_printf(gs, ", .mzf, .m12, .mzt, .tap, .wav, .wave, .*");
     g_ui_cmt_filters = g_string_free(gs, FALSE);
 
-    ui_cmt_init();
     ui_cmt_window_update();
 
     cmthack_init();
@@ -723,7 +786,6 @@ void cmt_screen_done_period(void)
         return;
 
     g_cmt.ui_player_update = 0;
-    ui_cmt_update_player();
 
     if (CMT_TEST_RECORD)
     {
@@ -792,12 +854,9 @@ void cmt_cpu_boost_set(en_CMT_CPU_BOOST cpu_boost)
             emulator_max_speed(false);
         };
     };
-
-    ui_cmt_cpu_boost_menu_update();
 }
 
 void cmt_mzfsize_check_set(en_CMT_MZFSIZE_CHECK mzfsize_check)
 {
     g_cmt.mzfsize_check = mzfsize_check;
-    ui_cmt_mzfsize_check_menu_update();
 }

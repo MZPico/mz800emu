@@ -176,6 +176,126 @@ void test_load_sym_basic ( void ) {
 }
 
 
+/**
+ * .sym - pasmo formát (NAME\t\tEQU NNNNH s uppercase H suffix).
+ *
+ * Real-world pasmo --sym output:
+ *   end_lab\t\tEQU 0C100H\r\n
+ *   loop\t\tEQU 0C003H\r\n
+ *   start\t\tEQU 0C000H\r\n
+ */
+void test_load_sym_pasmo_format ( void ) {
+    const char *path = "test_sym_pasmo.sym";
+    write_file ( path,
+        "end_lab\t\tEQU 0C100H\r\n"
+        "loop\t\tEQU 0C003H\r\n"
+        "start\t\tEQU 0C000H\r\n" );
+
+    int n = sym_db_load_sym ( path );
+    TEST_ASSERT_EQUAL_INT ( 3, n );
+
+    const st_SYMBOL *s = sym_db_lookup_by_name ( "start" );
+    TEST_ASSERT_NOT_NULL ( s );
+    TEST_ASSERT_EQUAL_UINT32 ( 0xC000, s->addr );
+
+    s = sym_db_lookup_by_name ( "loop" );
+    TEST_ASSERT_NOT_NULL ( s );
+    TEST_ASSERT_EQUAL_UINT32 ( 0xC003, s->addr );
+
+    s = sym_db_lookup_by_name ( "end_lab" );
+    TEST_ASSERT_NOT_NULL ( s );
+    TEST_ASSERT_EQUAL_UINT32 ( 0xC100, s->addr );
+
+    remove ( path );
+}
+
+
+/**
+ * .sym - mixed hex styly v jednom souboru ($, 0x, H, dec).
+ * Ověří, že parser je tolerantní napříč zdroji.
+ */
+void test_load_sym_mixed_hex_styles ( void ) {
+    const char *path = "test_sym_mixed.sym";
+    write_file ( path,
+        "label_dollar  EQU $1234\n"
+        "label_0x      EQU 0xABCD\n"
+        "label_upper_h EQU 0DEADH\n"
+        "label_lower_h EQU 0BEEFh\n"
+        "label_dec     EQU 4242\n" );
+
+    int n = sym_db_load_sym ( path );
+    TEST_ASSERT_EQUAL_INT ( 5, n );
+
+    const st_SYMBOL *s = sym_db_lookup_by_name ( "label_dollar" );
+    TEST_ASSERT_NOT_NULL ( s );
+    TEST_ASSERT_EQUAL_UINT32 ( 0x1234, s->addr );
+
+    s = sym_db_lookup_by_name ( "label_0x" );
+    TEST_ASSERT_NOT_NULL ( s );
+    TEST_ASSERT_EQUAL_UINT32 ( 0xABCD, s->addr );
+
+    s = sym_db_lookup_by_name ( "label_upper_h" );
+    TEST_ASSERT_NOT_NULL ( s );
+    TEST_ASSERT_EQUAL_UINT32 ( 0xDEAD, s->addr );
+
+    s = sym_db_lookup_by_name ( "label_lower_h" );
+    TEST_ASSERT_NOT_NULL ( s );
+    TEST_ASSERT_EQUAL_UINT32 ( 0xBEEF, s->addr );
+
+    s = sym_db_lookup_by_name ( "label_dec" );
+    TEST_ASSERT_NOT_NULL ( s );
+    TEST_ASSERT_EQUAL_UINT32 ( 4242, s->addr );
+
+    remove ( path );
+}
+
+
+/**
+ * .sym - corrupt řádky se přeskočí, parser nepadne. Validní řádky se
+ * naimportují.
+ */
+void test_load_sym_corrupt_skips_invalid ( void ) {
+    const char *path = "test_sym_corrupt.sym";
+    write_file ( path,
+        "valid_one EQU $1000\n"
+        "no_equ_keyword 0x2000\n"            /* chybí EQU */
+        "missing_value EQU\n"                 /* chybí value */
+        "bad_hex_format EQU XYZH\n"           /* invalid hex digits */
+        ";; pure comment\n"
+        "\n"                                  /* prázdný řádek */
+        "valid_two EQU 0C000H\n" );
+
+    int n = sym_db_load_sym ( path );
+    /* Naimportují se jen valid_one a valid_two. */
+    TEST_ASSERT_EQUAL_INT ( 2, n );
+
+    const st_SYMBOL *s = sym_db_lookup_by_name ( "valid_one" );
+    TEST_ASSERT_NOT_NULL ( s );
+    TEST_ASSERT_EQUAL_UINT32 ( 0x1000, s->addr );
+
+    s = sym_db_lookup_by_name ( "valid_two" );
+    TEST_ASSERT_NOT_NULL ( s );
+    TEST_ASSERT_EQUAL_UINT32 ( 0xC000, s->addr );
+
+    /* Corrupt řádky nesmí vzniknout v DB. */
+    TEST_ASSERT_NULL ( sym_db_lookup_by_name ( "no_equ_keyword" ) );
+    TEST_ASSERT_NULL ( sym_db_lookup_by_name ( "missing_value" ) );
+    TEST_ASSERT_NULL ( sym_db_lookup_by_name ( "bad_hex_format" ) );
+
+    remove ( path );
+}
+
+
+/**
+ * .sym - I/O chyba při neexistujícím souboru = -1.
+ */
+void test_load_sym_io_error ( void ) {
+    int n = sym_db_load_sym ( "this_file_definitely_does_not_exist_xyz.sym" );
+    TEST_ASSERT_EQUAL_INT ( -1, n );
+    TEST_ASSERT_EQUAL_UINT ( 0, (unsigned) sym_db_count ( ) );
+}
+
+
 /* ========================================================================= */
 /*  .lbl parser + serializer                                                 */
 /* ========================================================================= */
@@ -601,6 +721,10 @@ int main ( int argc, char *argv[] ) {
     RUN_TEST ( test_lookup_by_addr );
     RUN_TEST ( test_load_map_basic );
     RUN_TEST ( test_load_sym_basic );
+    RUN_TEST ( test_load_sym_pasmo_format );
+    RUN_TEST ( test_load_sym_mixed_hex_styles );
+    RUN_TEST ( test_load_sym_corrupt_skips_invalid );
+    RUN_TEST ( test_load_sym_io_error );
     RUN_TEST ( test_load_lbl_basic );
     RUN_TEST ( test_lbl_save_reload_roundtrip );
     RUN_TEST ( test_priority_lbl_over_noi_by_addr );

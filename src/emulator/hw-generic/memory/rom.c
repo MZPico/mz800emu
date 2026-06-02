@@ -28,7 +28,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "mzarch/mzarch_config.h"
 #include "rom.h"
 #include "memory.h"
 #include "hw-generic/cmt/cmthack.h"
@@ -38,13 +37,6 @@
 
 #include "baseui/baseui.h"
 #include "fs_layer.h"
-
-#ifdef MZ800EMU_CFG_UI_ENABLED
-#include "ui-gtk3/ui_rom.h"
-#else
-#define ui_rom_menu_update()
-#define ui_rom_settings_open_window()
-#endif /* MZ800EMU_CFG_UI_ENABLED */
 
 st_ROM g_rom;
 
@@ -205,11 +197,8 @@ static void rom_install ( st_ROM_CONFIG_ROW *row ) {
         row = g_rom_config->default_rom;
         rom_install_predefined ( (uint8_t*) row->rom_0000, (uint8_t*) row->rom_cgrom, (uint8_t*) row->rom_e000 );
         g_rom.rom_cfg = row;
-        ui_rom_menu_update ( );
-        ui_rom_settings_open_window ( );
     } else {
         g_rom.rom_cfg = row;
-        ui_rom_menu_update ( );
     };
 }
 

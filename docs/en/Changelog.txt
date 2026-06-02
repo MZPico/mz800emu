@@ -1,4 +1,45 @@
 
+2026-06-02 - Released version 2.0.3 - preview
+
+	- New standalone window for disassembling a memory block
+
+	- Debugger: added GDG State panel (video subsystem, raster, palette, PCG)
+
+	- Debugger: added per-chip detail panels (CTC / PPI / Z80 PIO / PSG)
+
+	- Debugger: added PSG Audio Scope window (oscilloscopes, envelope, piano roll, MIDI/CSV export)
+
+	- Debugger: Memory Browser window, Memory Diff
+
+	- all GTK artifacts and legacy have finally been removed from the project
+
+	- MCP server implemented
+
+	- Created a virtual CENTRONIX printer that performs automatic capture to a file
+
+	- Virtual keyboard: added hint with description of PC key for non-intuitively placed keys
+
+	- Breakpoints Window: added Groups section + minor improvements
+
+	- Unicard: the SD root directory can now be changed on the fly while the card is connected (automatic reconnect to the new directory; a non-existent or empty directory is initialized just like at startup)
+
+	- BUGFIX: MZ-700/1500 keyboard - removed TAB and fixed the Virtual Keyboard layout (key colors kept the original MZ-800 ones)
+
+	- BUGFIX: CPU Registers window - the buttons in front of VEC[A/B] and ISR[A/B] had no working right-click menu
+
+	- BUGFIX: Breakpoints - an empty breakpoint list could not be saved
+
+	- BUGFIX: CPU z80-mz800 showed an already incremented regPC during an unfinished HALT
+
+	- BUGFIX: dbgapi: when the CPU is in HALT and regPC is changed manually, it must wake up from HALT (the previous wrong behavior kept waiting for an INT)
+
+	- BUGFIX: keyboard - the ALPHA key now also responds to the second PC backslash key (ISO / Oem102 next to the left Shift; CZ layout has two backslash keys)
+
+	- BUGFIX: Version Check Setup Window - fixed a z-order issue with the Check period combo
+
+	- there were also a few minor corrections in localization
+
+
 2026-05-21 - Released version 2.0.2 - preview
 
 	- Added main debugger window + IASM + 4 auxiliary disassembled windows, CPU Registers and Memory Map windows, Symbols, Bookmarks, Watch
@@ -28,7 +69,7 @@
 	- GDG MZ-800: added some previously undocumented features, see the GDG Documented project https://www.ordoz.com/gdg-documented/
 	The only intentionally unimplemented feature remains the Superimpose bit, which would not bring anything fundamental from an emulation standpoint but would unnecessarily complicate the counting of screens by elapsed pxCLK.
 
-	- Unicard: full integration of the complete FS API for firmware uc1 rev.60 and uc3 v0.26 (the latter still uses the original QD bootstrap)
+	- Unicard: full integration of the complete FS API for firmware uc1 rev.60 and uc3 v0.26 (both versions still use the original QD bootstrap)
 
 	- The project is now officially split into three MZ architectures: MZ-800 / MZ-1500 / MZ-700 (PAL, NTSC).
 	The primary architecture remains MZ-800.

@@ -393,6 +393,30 @@ static void fmt_displacement(buf_ctx_t *ctx, int8_t disp,
 }
 
 /**
+ * @brief Zapíše znaménkový displacement jako dekadické číslo pro Motorola styl.
+ *
+ * Pomocná funkce pro renderování indexované adresace ve stylu sdas/sdcc:
+ * formát "(d,IX)" / "(-d,IY)". Sdas-z80 přijímá hexadecimální i dekadický
+ * zápis displacementu, ale dekadická forma je čitelnější a pro typické
+ * displacement v rozsahu -128..+127 jednoznačná. Záporné hodnoty mají
+ * leading mínus, kladné a nula jsou bez znaménka.
+ *
+ * Příklady: 5 -> "5", -2 -> "-2", 0 -> "0", -128 -> "-128", 127 -> "127".
+ *
+ * @param[in,out] ctx  Kontext bufferu. Nesmí být NULL.
+ * @param[in]     disp Znaménkový displacement (-128 až +127).
+ *
+ * @pre ctx != NULL
+ */
+static void fmt_displacement_dec_signed(buf_ctx_t *ctx, int8_t disp)
+{
+    /* Rozsah int8_t je -128..+127. snprintf produkuje max 4 znaky ("-128"). */
+    char tmp[8];
+    snprintf(tmp, sizeof tmp, "%d", (int)disp);
+    buf_puts(ctx, tmp);
+}
+
+/**
  * @brief Zapise jeden operand instrukce do bufferu.
  *
  * Formatuje operand podle jeho typu s respektovanim formatovaci konfigurace.
@@ -454,17 +478,32 @@ static void fmt_operand(buf_ctx_t *ctx, const z80_operand_t *op,
 
     case Z80_OP_MEM_IX_D:
         buf_putc(ctx, '(');
-        buf_puts_case(ctx, "IX", fmt->uppercase);
-        fmt_displacement(ctx, op->val.displacement, fmt->hex_style,
-                         fmt->uppercase);
+        if (fmt->ix_iy_style == Z80_IX_MOTOROLA) {
+            /* Motorola/sdas styl: "(d,IX)" - signed decimal displacement
+             * první, oddělený čárkou. Sdas-z80 ho takto vyžaduje. */
+            fmt_displacement_dec_signed(ctx, op->val.displacement);
+            buf_putc(ctx, ',');
+            buf_puts_case(ctx, "IX", fmt->uppercase);
+        } else {
+            /* Zilog styl: "(IX+d)" / "(IX-d)" - mainstream. */
+            buf_puts_case(ctx, "IX", fmt->uppercase);
+            fmt_displacement(ctx, op->val.displacement, fmt->hex_style,
+                             fmt->uppercase);
+        }
         buf_putc(ctx, ')');
         break;
 
     case Z80_OP_MEM_IY_D:
         buf_putc(ctx, '(');
-        buf_puts_case(ctx, "IY", fmt->uppercase);
-        fmt_displacement(ctx, op->val.displacement, fmt->hex_style,
-                         fmt->uppercase);
+        if (fmt->ix_iy_style == Z80_IX_MOTOROLA) {
+            fmt_displacement_dec_signed(ctx, op->val.displacement);
+            buf_putc(ctx, ',');
+            buf_puts_case(ctx, "IY", fmt->uppercase);
+        } else {
+            buf_puts_case(ctx, "IY", fmt->uppercase);
+            fmt_displacement(ctx, op->val.displacement, fmt->hex_style,
+                             fmt->uppercase);
+        }
         buf_putc(ctx, ')');
         break;
 
@@ -551,6 +590,7 @@ void z80_dasm_format_default(z80_dasm_format_t *fmt)
     fmt->show_addr = 0;
     fmt->rel_as_absolute = 1;
     fmt->undoc_ix_style = 0;
+    fmt->ix_iy_style = Z80_IX_ZILOG;
 }
 
 int z80_dasm_to_str(char *buf, int buf_size,

@@ -35,6 +35,7 @@
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -65,6 +66,25 @@ extern void sym_window_render ( bool *p_open );
  * Přepne g_gui->showSymbolsWindow. Volá se z menu položky.
  */
 extern void sym_window_show_hide ( void );
+
+
+/**
+ * @brief V1.E.6.A - otevře okno a požaduje focus na symbol s danou adresou.
+ *
+ * Použití: routing z Activity okna (= dvojklik na řádek s
+ * entity_kind = DBGAPI_ENTITY_KIND_SYMBOL, entity_id = adresa).
+ * Nastaví show flag, vyčistí filter (aby symbol byl viditelný)
+ * a označí selection podle sym_db_lookup_by_addr(addr, 0). Render-loop
+ * při dalším frame scrollne na cílový řádek.
+ *
+ * Pokud symbol s danou adresou neexistuje, focus se uplatní pouze
+ * jako otevření okna a vyčištění filtru (= žádný selection change).
+ *
+ * Thread-safety: UI vlákno only.
+ *
+ * @param addr  CPU 16-bit adresa (= entity_id z MSG_DATA).
+ */
+extern void sym_window_focus_addr ( uint16_t addr );
 
 
 #ifdef __cplusplus

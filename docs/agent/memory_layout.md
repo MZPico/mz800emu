@@ -1,0 +1,187 @@
+# Memory layout - Z80 64 KB address space
+
+The Sharp MZ-700 / MZ-800 / MZ-1500 each use the full Z80 64 KB address
+space (`0x0000..0xFFFF`), but with very different banking. This document
+summarises the static layout per platform and the dynamic banking
+toggles.
+
+For the **live** banking snapshot at the current moment, read
+`emulator://memory/map` - it returns the 16 x 4 KB slot mapping.
+
+## Overview - banking ports
+
+All banking is performed via Z80 I/O ports `0xE0..0xE6`. **The value
+written/read is irrelevant** - the port number alone selects the
+mapping.
+
+| Port | OUT effect (MZ-700 mode) | OUT effect (MZ-800 native) | IN effect (MZ-800 native) |
+|------|---------------------------|-----------------------------|----------------------------|
+| `0xE0` | low ROM off (= RAM at `0000..0FFF`) | low ROM off | CG-ROM + VRAM mapped (`1000..1FFF` + `8000..BFFF`) |
+| `0xE1` | upper region RAM (= VRAM/ROM off at `D000..FFFF`) | upper ROM off (= RAM at `E000..FFFF`) | CG-ROM + VRAM **unmapped** |
+| `0xE2` | low ROM on | low ROM on | - |
+| `0xE3` | VRAM + upper ROM at `D000..FFFF` | upper ROM on | - |
+| `0xE4` | low ROM on + VRAM + upper ROM | low ROM + upper ROM | - |
+| `0xE5` | (= forbid upper - WOM artefact) | (= same) | - |
+| `0xE6` | (= restore state before `0xE5`) | (= same) | - |
+
+Key MZ-800 specific rules:
+- **IORQ OUT does not touch VRAM / CG-ROM mapping** in MZ-800 native
+  mode. VRAM at `0x8000..0xBFFF` and CG-ROM at `0x1000..0x1FFF` are
+  controlled exclusively via **IORQ IN** on `0xE0` / `0xE1` (they are
+  mapped together).
+- After ROM monitor exit on MZ-800, VRAM may be unmapped - a program
+  that writes to VRAM must call `IN A, (0xE0)` first.
+- `0xE5` / `0xE6` are leftovers from the predecessor HW - on MZ-800
+  the only practical effect is making `0xE000..0xFFFF` write-only
+  (= WOM artefact). Avoid in new code.
+
+For the authoritative banking reference see
+`mz800-knowledge/reference/agent/hw/03-banking.md`.
+
+## MZ-700 layout
+
+| Range | Default | Alternative |
+|-------|---------|-------------|
+| `0x0000..0x0FFF` | low MONITOR ROM (4 KB) | RAM |
+| `0x1000..0x1FFF` | RAM | CG-ROM (4 KB) |
+| `0x2000..0xBFFF` | RAM | - |
+| `0xC000..0xCFFF` | RAM | CG-RAM (PCG, 4 KB) |
+| `0xD000..0xD7FF` | RAM | Text VRAM (chars, 1 KB used at `D000..D3E7`) |
+| `0xD800..0xDFFF` | RAM | Attribute VRAM (1 KB used at `D800..DBE7`) |
+| `0xE000..0xFFFF` | upper MONITOR ROM (8 KB) + MMIO at `0xE000..0xE008` | RAM |
+
+Memory-mapped I/O in MZ-700 mode (only when upper ROM is active):
+
+| Address | Function |
+|---------|----------|
+| `0xE000..0xE003` | 8255 PIO (PA, PB, PC, control word) |
+| `0xE004..0xE007` | 8253 CTC (counter 0, 1, 2, control) |
+| `0xE008` | OUT bit 0 = GATE0 (audio); IN = status register |
+
+## MZ-800 native layout
+
+| Range | Default | Alternative |
+|-------|---------|-------------|
+| `0x0000..0x0FFF` | low MONITOR ROM | RAM |
+| `0x1000..0x1FFF` | RAM | CG-ROM |
+| `0x2000..0x7FFF` | RAM | - |
+| `0x8000..0xBFFF` | VRAM (16 KB in 640x200 mode, 8 KB at `8000..9FFF` in 320x200 mode with RAM at `A000..BFFF`) | RAM |
+| `0xC000..0xDFFF` | RAM | - |
+| `0xE000..0xFFFF` | upper MONITOR ROM (8 KB) | RAM |
+
+No memory-mapped I/O in MZ-800 native mode - everything is controlled
+via IORQ ports. The VRAM at `0x8000..0xBFFF` has a 4-plane organisation
+in the 16-colour mode (see `mz800-knowledge/.../hw/10-vram-organization.md`).
+
+## MZ-800 in 700-compat mode
+
+The MZ-800 has a runtime flag (GDG `regDMD` MZ700 bit) that switches
+between native 800 layout and 700-compat layout. In 700-compat the
+text VRAM at `0xD000..0xD7FF` and attribute VRAM at `0xD800..0xDFFF`
+are accessible and `emulator://video/text_dump` returns data. The
+mode flip is detectable via `emulator://platform/info` (`mode` field
+= `native` / `compat700`).
+
+## MZ-1500 layout
+
+MZ-1500 is a Japanese-market MZ-700 successor with PCG / palette
+enhancements. It does **not** have the MZ-800 bitmap graphics mode.
+Memory layout is essentially the MZ-700 layout with the same text
+VRAM + attribute regions, identical banking ports, and the same
+0xE000..0xE008 MMIO region.
+
+Key MZ-1500 deltas (from `devdoc/mz1500.md`):
+- Z80A at 3.58 MHz (vs 3.5 MHz on MZ-800).
+- PCG addressed via I/O ports (not the MZ-700 `0xC000..0xCFFF` window).
+- DMD register on port `0xF0` (not `0xCE` like MZ-800) with different
+  bit semantics: bit 0 = mode (0 = MZ-700, 1 = MZ-1500), bit 1 = draw
+  priority.
+
+For details see `devdoc/mz1500.md` in the repo.
+
+## Key ROM entry points (MZ-800)
+
+The low MONITOR ROM at `0x0000..0x0FFF` exposes a JP table at
+`0x0000..0x004A`. The most useful entries:
+
+| Address | Symbol | Category | What |
+|---------|--------|----------|------|
+| `0x0000` | `@COLD` | start | Cold start (jumps to IPL) |
+| `0x0003` | `@GETL` | KBD | Read line from keyboard (blocking) |
+| `0x0006` | `@LETNL` | CRT | CR + LF |
+| `0x0012` | `@PRNTC` | CRT | Print char in A |
+| `0x0015` | `@MSG` | CRT | Print string at DE (control codes executed) |
+| `0x0018` | `@RST18` | CRT | Print string at DE (control codes shown) |
+| `0x001B` | `@GETKY` | KBD | Current key (non-blocking) |
+| `0x0021..0x002D` | `@WHEAD` / `@WDATA` / `@RHEAD` / `@RDATA` / `@VERIF` | CMT | Tape header / data I/O |
+| `0x0030` | `@MELDY` | SND | Play melody from BASIC string |
+| `0x0033` | `@TIMST` | RTC | Set time |
+| `0x0038` | `@RST38` | INT | ISR entry (jumps to `0x1038`) |
+| `0x003B` | `@TIMRD` | RTC | Read time |
+| `0x003E` | `@BEEP` | SND | Short beep |
+
+Internal CRT helpers (= not in the JP table, but stable across ROM
+revisions):
+
+| Address | Symbol | What |
+|---------|--------|------|
+| `0x0DDC` | `@?DPCT` | Dispatch DPCT control glyphs `0xC0..0xCD` (CLS, cursor, etc.) |
+| `0x0DB5` | `@AVRAM` | Write A to VRAM at cursor + advance |
+| `0x0BB9` | `@?ADCN` | Sharp MZ ASCII -> display code |
+| `0x0BCE` | `@?DACN` | Display code -> Sharp MZ ASCII |
+| `0x096C` | `@PRNTA` | Write through AVRAM + CSRH |
+
+Full catalogue:
+`mz800-knowledge/reference/agent/firmware/rom-deep/03-rom-api.md`.
+
+## Interrupt vectors
+
+The MZ-800 IRQ system has two **independent** paths wired-OR to the Z80
+`/INT` pin:
+
+1. **CTC2 OUT2** ANDed with PPI 8255 `PC2` (= software-maskable). The
+   stock ROM uses CTC1 (HSYNC / 15600 reload) feeding CTC2 to produce
+   a slow real-time-clock IRQ.
+2. **Z80 PIO** in Mode 3 monitoring PA / PB input bits. The popular
+   bits on PA:
+   - PA4 = inverted CTC0 OUT0 (PCM timing).
+   - **PA5 = VBLN** (50 Hz vertical blanking) - the most-used IRQ
+     source for games / demos.
+   - PA0 = printer BUSY, PA1 = printer STA.
+
+Standard ROM uses IM 1 with `RST38` -> `0x0038` -> `0x1038`. Advanced
+apps may set IM 2 with a 256-byte vector table in RAM (the I register
+holds the high byte) and use Z80 PIO IRQs.
+
+NMI is not used by the stock platform.
+
+For full IRQ pathway documentation see
+`mz800-knowledge/reference/agent/firmware/interrupts.md`.
+
+## Reading / writing memory via MCP
+
+`emu_mem_read` and `emu_mem_write` use the **current** Z80 memory map.
+This means:
+
+- Reading `0x0000` returns ROM byte if low ROM is mapped, RAM otherwise.
+- Reading `0xD000` returns text VRAM in MZ-700 / 700-compat with proper
+  banking; in MZ-800 native mode it returns RAM (text VRAM is at
+  `0x8000..0xBFFF` and has different layout).
+- Writes to a read-only mapping (e.g. CG-ROM at `0x1000..0x1FFF` when
+  banked in) are silently discarded.
+
+For deterministic reads of a specific region irrespective of current
+banking, use `emu_mem_read_force` (planned) / pause and switch banking
+first via `OUT (0xE0..0xE6), A` from a debug stub. For now, inspect
+`emulator://memory/map` to know what is mapped where.
+
+## Related
+
+- `emulator://memory/map` - live 16 x 4 KB banking snapshot.
+- `emulator://memory/{addr_hex}/{length}` - template URI for a memory
+  read.
+- `emulator://memext/info` - memory expansion adapter (Luftner / PEHU).
+- `emulator://platform/info` - architecture + mode (`native` /
+  `compat700`) + clocks.
+- `mz800-knowledge/reference/agent/hw/02-memory-map.md` and
+  `03-banking.md` for authoritative HW reference.

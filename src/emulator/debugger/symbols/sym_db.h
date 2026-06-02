@@ -47,6 +47,8 @@ extern "C" {
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "../dbgapi_cmdrq.h"
+
 
 /**
  * @brief Zdroj symbolu (= odkud byl naimportován).
@@ -84,6 +86,14 @@ typedef struct st_SYMBOL {
     en_SYM_SOURCE source;      /**< Odkud byl symbol naimportován */
     char         *comment;     /**< Volitelný komentář (jen .lbl), nebo NULL */
     char         *module;      /**< Volitelně module/source file (jen .map), nebo NULL */
+    /**
+     * @brief V1.C.3 - kdo symbol vytvořil (audit + cooperative UX).
+     *
+     * Default DBGAPI_CMD_ORIGIN_USER (= 0). Pole je metadata - žádný
+     * runtime efekt na lookup ani render disassembleru. Setter
+     * sym_db_set_cmd_origin() umožní dispatcheru přepsat na MCP origin.
+     */
+    en_DBGAPI_CMD_ORIGIN cmd_origin;
 } st_SYMBOL;
 
 
@@ -130,9 +140,11 @@ int sym_db_load_map ( const char *path );
 
 
 /**
- * @brief Načte sjasmplus symbol export (.sym).
+ * @brief Načte .sym soubor (sjasmplus i pasmo formát).
  *
- * Format: per řádek "<NAME> EQU <hex_or_dec_value>" (nebo s '$' pro hex).
+ * Format: per řádek "<NAME> EQU <value>". Hex notace přes prefix
+ * ($NNNN / 0xNNNN - sjasmplus styl) nebo suffix (NNNNH - pasmo styl).
+ * Decimal hodnoty bez prefixu/suffixu.
  *
  * @return počet načtených symbolů, nebo -1 při chybě
  */
@@ -413,6 +425,20 @@ int sym_db_add_user_label ( uint32_t addr, const char *name,
  * @return 0 při úspěchu, -1 pokud neexistoval
  */
 int sym_db_remove_user_label ( const char *name );
+
+
+/**
+ * @brief V1.C.3 - nastaví owner attribution pro symbol s daným jménem.
+ *
+ * Volá ho dispatcher v dbgapi.c po úspěšném sym_db_add_user_label(),
+ * aby přiřadil symbolu origin volajícího klienta. Pole je metadata -
+ * žádný runtime efekt na lookup ani render.
+ *
+ * @param name    Jméno symbolu (NULL/prázdné = no-op, vrátí -1).
+ * @param origin  Hodnota en_DBGAPI_CMD_ORIGIN.
+ * @return 0 při úspěchu, -1 pokud symbol s daným jménem neexistuje.
+ */
+int sym_db_set_cmd_origin ( const char *name, en_DBGAPI_CMD_ORIGIN origin );
 
 
 #ifdef __cplusplus

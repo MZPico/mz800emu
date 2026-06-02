@@ -31,6 +31,12 @@ void sdlapp_quit(void *app)
     (void)app;
 }
 
+int sdlapp_is_quit_requested(void *app)
+{
+    (void)app;
+    return 0; /* v testu "ukončení nevyžádáno" — neutrální default */
+}
+
 void *sdlapp_get_winmanager(void *app)
 {
     (void)app;
@@ -290,4 +296,21 @@ uint8_t iface_joy_scan(int joy_devid)
 void mhmap_window_register_persistence(void *cmod_void)
 {
     (void)cmod_void;
+}
+
+
+/* ================================================================
+ *  dasm_window_register_persistence + dasm_window_apply_persisted stub
+ * ================================================================
+ * Stejně jako mhmap_window_register_persistence - debugger.c volá tyto
+ * funkce pro UI persistenci Disassembler V1 okna (mutant
+ * disassembler-window-v1). V testech UI nemáme - stuby jsou no-op.
+ */
+void dasm_window_register_persistence(void *cmod_void)
+{
+    (void)cmod_void;
+}
+
+void dasm_window_apply_persisted(void)
+{
 }

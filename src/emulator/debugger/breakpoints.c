@@ -551,6 +551,37 @@ static void breakpoints_json_emit_group ( JsonBuilder *b, const st_BPTGROUP *grp
  *   irq_sig_sources (JSON array stable string names pro BPT_TYPE_IRQ_SIG,
  *     BC fallback prázdné = mask 0 = invalid).
  */
+/**
+ * @brief V1.D.2.C - en_DBGAPI_CMD_ORIGIN -> stable persist token.
+ *
+ * Stable tokeny "user" / "mcp" / "test" / "internal" napříč verzemi
+ * schématu - loader je tolerantní k unknown (= default USER).
+ */
+static const char *_bp_origin_to_str ( en_DBGAPI_CMD_ORIGIN o ) {
+    switch ( o ) {
+        case DBGAPI_CMD_ORIGIN_USER:     return "user";
+        case DBGAPI_CMD_ORIGIN_MCP:      return "mcp";
+        case DBGAPI_CMD_ORIGIN_TEST:     return "test";
+        case DBGAPI_CMD_ORIGIN_INTERNAL: return "internal";
+    }
+    return "user";
+}
+
+
+/**
+ * @brief V1.D.2.C - parse stable persist token -> en_DBGAPI_CMD_ORIGIN.
+ *
+ * Tolerantní k missing / unknown tokenům: fallback na USER (= GUI default).
+ */
+static en_DBGAPI_CMD_ORIGIN _bp_origin_from_str ( const char *s ) {
+    if ( !s || !s[0] ) return DBGAPI_CMD_ORIGIN_USER;
+    if ( strcmp ( s, "mcp" )      == 0 ) return DBGAPI_CMD_ORIGIN_MCP;
+    if ( strcmp ( s, "test" )     == 0 ) return DBGAPI_CMD_ORIGIN_TEST;
+    if ( strcmp ( s, "internal" ) == 0 ) return DBGAPI_CMD_ORIGIN_INTERNAL;
+    return DBGAPI_CMD_ORIGIN_USER;
+}
+
+
 static void breakpoints_json_emit_bpt ( JsonBuilder *b, const st_BPT *bpt ) {
     json_builder_begin_object ( b );
 
@@ -740,6 +771,12 @@ static void breakpoints_json_emit_bpt ( JsonBuilder *b, const st_BPT *bpt ) {
 
     json_builder_set_member_name ( b, "hits" );
     json_builder_add_int_value ( b, (gint64) bpt->hits );
+
+    /* V1.D.2.C - persist cmd_origin pro audit trail. Stable token
+     * "user"/"mcp"/"test"/"internal"; load tolerantní k missing klíči
+     * (default USER) a unknown tokenům (= forward compat). */
+    json_builder_set_member_name ( b, "origin" );
+    json_builder_add_string_value ( b, _bp_origin_to_str ( bpt->cmd_origin ) );
 
     json_builder_end_object ( b );
 }
@@ -1217,6 +1254,11 @@ static int breakpoints_json_load_bpt ( JsonObject *obj ) {
     } else {
         bpt.name = g_strdup ( name );
     };
+
+    /* V1.D.2.C - load cmd_origin tolerantně (= chybějící klíč defaultuje
+     * na USER, neznámé tokeny taky na USER). */
+    const char *origin_str = breakpoints_json_get_string_or ( obj, "origin", NULL );
+    bpt.cmd_origin = _bp_origin_from_str ( origin_str );
 
     g_array_append_val ( g_breakpoints.breakpoints, bpt );
     return bpt.id;
@@ -2818,11 +2860,10 @@ bool breakpoints_run_action ( const st_BPT *bpt,
 #include "bp_event.h"       /* Vlna 1 mutant event-viewer: g_bp_fire_reason */
 #include "trace/eventlog.h" /* Vlna 1 mutant event-viewer: BP_FIRE fan-out */
 
-#ifdef MZ800EMU_CFG_UI_ENABLED
-#include "ui-gtk3/debugger/ui_breakpoints.h"
-#else
-#define ui_breakpoints_show_window()
-#define ui_breakpoints_select_id(id)
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+#include <json-glib/json-glib.h>
+#include "../mcp/event_bus.h"
+#include "../mcp/trap_manager.h"
 #endif
 
 
@@ -2967,8 +3008,6 @@ void breakpoints_enforce ( st_BPT *bpt, struct bp_expr_ctx_s *ctx ) {
     if ( !should_continue ) {
         emulator_pause ( true );
         debugger_show_main_window ( );
-        ui_breakpoints_show_window ( );
-        ui_breakpoints_select_id ( bpt->id );
 
         /* MSG do UI vlákna - heap alloc per dbgapi_msg.h kontraktu
          * (dispatcher přebírá ownership a uvolňuje). */
@@ -2977,6 +3016,31 @@ void breakpoints_enforce ( st_BPT *bpt, struct bp_expr_ctx_s *ctx ) {
         msg_data->addr = bpt->addr;
         msg_data->id = bpt->id;
         dbgapi_emu_send_msg ( DBGAPI_MSG_BREAKPOINT_HIT, msg_data );
+
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+        /* V1.A.4: MCP EVENT subscribe pattern - emituj "breakpoint_hit"
+         * + zaregistruj TRAP. Klient přes emu_event_poll dostane event
+         * s trap_id a přes emu_trap_respond reaguje (continue / step /
+         * abort). Pause je už nastaven výše (= emergentní TRAP semantika
+         * bez blocking GCond). */
+        int64_t trap_id = trap_manager_register ( );
+        JsonObject *bp_payload = json_object_new ( );
+        json_object_set_int_member ( bp_payload, "id", bpt->id );
+        json_object_set_int_member ( bp_payload, "addr", bpt->addr );
+        json_object_set_string_member ( bp_payload, "type",
+                                         bpt_type_to_string ( bpt->type ) );
+        json_object_set_int_member ( bp_payload, "hits", bpt->hits );
+        json_object_set_int_member ( bp_payload, "trap_id", trap_id );
+        event_bus_emit ( "breakpoint_hit", bp_payload );
+
+        /* Současně emit "paused" event pro klienty, kteří poslouchají
+         * obecný pause topic (= union BP/manual/fatal/quit). */
+        JsonObject *p_payload = json_object_new ( );
+        json_object_set_string_member ( p_payload, "reason", "breakpoint" );
+        uint16_t pc_now = ctx->cpu ? (uint16_t) ctx->cpu->pc : bpt->addr;
+        json_object_set_int_member ( p_payload, "pc", pc_now );
+        event_bus_emit ( "paused", p_payload );
+#endif /* MZ800EMU_CFG_MCP_SERVER_ENABLED */
     };
 }
 

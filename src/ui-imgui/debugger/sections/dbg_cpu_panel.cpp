@@ -1351,14 +1351,25 @@ static void cpu_panel_draw_focus_button(const char *id_suffix,
  *
  * Cilovy registr je g_cpu.rmb_popup_reg_id, hodnota se vezme z
  * g_cpu.regs[reg_id]. ImGui clipboard pres SetClipboardText.
+ *
+ * Platni cilovi reg_id: skutecne 16-bit Z80 registry (0..DBGAPI_REG_COUNT-1),
+ * I/R 8-bit pseudo-registry (CPU_VREG_I/R - jen Copy, hodnota neni adresa)
+ * a VEC/ISR 16-bit PIO-Z80 pseudo-registry (CPU_VREG_VECA..ISRB - plne menu
+ * vc. Focus/Watch/BPT, hodnota je adresa).
  */
 static void cpu_panel_render_rmb_popup(void)
 {
     if (!ImGui::BeginPopup("cpu_focus_popup")) return;
 
     int reg_id = g_cpu.rmb_popup_reg_id;
-    bool is_vreg = cpu_reg_is_virtual_8bit(reg_id);
-    if (!is_vreg && (reg_id < 0 || reg_id >= DBGAPI_REG_COUNT)) {
+    /* is_vreg8 = I/R (8-bit pseudo-registry, jen Copy - hodnota neni adresa).
+     * is_pio16 = VEC/ISR (16-bit PIO-Z80 pseudo-registry, plne menu jako
+     * skutecne 16-bit registry - hodnota je adresa v Z80 adresnim prostoru).
+     * Bez is_pio16 vetve padaly VEC/ISR (reg_id 200..203 >= DBGAPI_REG_COUNT)
+     * do guardu a popup se zaviral prazdny - RMB menu se nezobrazilo. */
+    bool is_vreg8 = cpu_reg_is_virtual_8bit(reg_id);
+    bool is_pio16 = cpu_reg_is_virtual_pio16(reg_id);
+    if (!is_vreg8 && !is_pio16 && (reg_id < 0 || reg_id >= DBGAPI_REG_COUNT)) {
         ImGui::EndPopup();
         return;
     };
@@ -1369,9 +1380,9 @@ static void cpu_panel_render_rmb_popup(void)
      * Focus / Watch / Add BPT smysl - hodnota I a R neni adresa v Z80
      * adresnim prostoru (R je refresh counter, I je high byte IM2 vectoru,
      * ne primy pointer). Tj. tyto polozky se skryvaji a popup pro I/R
-     * obsahuje pouze Copy hex/dec/bin. Pro 16-bit registry je layout
-     * beze zmeny. */
-    if (!is_vreg)
+     * obsahuje pouze Copy hex/dec/bin. Pro 16-bit registry (vc. VEC/ISR
+     * pseudo-registru, ktere drzi adresu) je layout beze zmeny. */
+    if (!is_vreg8)
     {
         /* Focus to Disassembly #1..#5 */
         for (int slot = 0; slot < 5; slot++) {

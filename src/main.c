@@ -20,6 +20,15 @@
 #include "emulator/i18n_lang.h"
 #include "emulator.h"
 
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+#include "emulator/mcp/main_pipe.h"
+#endif
+
+#ifdef MZ800EMU_CFG_MCP_TCP_ENABLED
+#include "emulator/mcp/tcp_server.h"
+#include "emulator/mcp/mcp_config.h"
+#endif
+
 SdlApp *g_sdlapp = NULL;
 
 
@@ -39,6 +48,15 @@ static const char *const MODE_VALUES[] = { "off", "window", "always", NULL };
 
 /* FDC voličí pro --fdc-bus-xlate. */
 static const char *const FDC_BUS_XLATE_VALUES[] = { "invert", "passthrough", NULL };
+
+/* MCP volby pro --mcp-bind (V0.B.4 - dvě dovolené hodnoty). */
+static const char *const MCP_BIND_VALUES[] = { "127.0.0.1", "0.0.0.0", NULL };
+
+/* MCP volby pro --mcp-profile (V0.B.4 - 4 dovolené hodnoty;
+ * v V0 ukládáme jen vybranou hodnotu, plné vynucení přijde v V1.A). */
+static const char *const MCP_PROFILE_VALUES[] = {
+    "wild", "confined", "sandboxed", "observer", NULL
+};
 
 /* Sloupce: name, kind, value_type, allowed_values, value_placeholder, description.
  * Pro FLAG: value_type=NONE, allowed_values=NULL, value_placeholder=NULL.
@@ -136,16 +154,33 @@ static const st_SDLAPP_OPTION_DEF g_known_options[] = {
     { "--callstack",          SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
       "Activate the Callstack subsystem on startup (shadow stack of CALL/RST/IRQ/NMI). "
       "Overrides the [CALLSTACK] active value from the INI." },
+    /* Memory Browser window auto-open. */
+    { "--memory-browser",     SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
+      "Open the Memory Browser window automatically at startup "
+      "(equivalent to pressing Alt+E once the emulator GUI is up)." },
     /* Profiler subsystem (per-function CPU profiler, built on Callstack listener). */
     { "--profiler",           SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
       "Activate the CPU Profiler subsystem on startup (per-function profilation on top of Callstack). "
       "Implies --callstack (Profiler will force Callstack ON if needed). "
       "Overrides the [PROFILER] active value from the INI." },
+    /* Centronics virtual printer (capture bytes sent to the printer into a file). */
+    { "--centronics",         SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
+      "Enable the virtual Centronics printer at startup. When active, the printer "
+      "reports ready (BUSY=0) on the Z80 PIO and bytes strobed to it are captured "
+      "into a per-session file named centronics-<timestamp>.bin in the working "
+      "directory. Overrides the [CENTRONICS] active value from the INI." },
     { "--no-save-ini",      SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
       "Do not write the .ini file at exit (CLI overrides become session-only)." },
     { "--no-first-run-windows", SDLAPP_OPTION_FLAG, SDLAPP_OPTVAL_NONE,     NULL,        NULL,
       "Suppress About + Version Check Setup windows shown automatically on first run "
       "(when no .ini file exists). Useful for headless / scripted launches." },
+    { "--headless",         SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
+      "Run the emulator without GUI window and audio output. SDL3 video/audio "
+      "subsystems run in no-op mode (no SDL window, no audio device opened). "
+      "Framebuffer is still rendered into memory (usable later via MCP frame "
+      "Resources). Intended for CI / batch / subprocess scenarios where no "
+      "display or audio device is available. Implies --no-first-run-windows. "
+      "The process keeps running until SIGINT (Ctrl+C) or SDL quit event." },
     { "--home-dir",         SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<dirpath>",
       "Override the home directory (where the binary's read-only assets live: "
       "ui_resources/, locale/, certs/). Default: auto-detected from the binary "
@@ -164,6 +199,28 @@ static const st_SDLAPP_OPTION_DEF g_known_options[] = {
       "cfg-dir/mz<arch>emu-imgui.ini." },
     { "--spdfd",            SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
       "Reserved internal launch mode." },
+    { "--mcp-pipe",         SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
+      "Run in MCP pipe transport mode (headless emu, JSONL on stdin/stdout). "
+      "Intended for spawning by mcp_server.py as a subprocess. Implies "
+      "--headless and switches the main thread to mcp_pipe_main(). "
+      "Only effective if the binary was built with MCP backend enabled "
+      "(no NO_MCP=1)." },
+    { "--mcp-tcp-port",     SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_UINT,        NULL,        "<N>",
+      "Automatically start the MCP TCP listener on the given port after "
+      "emulator initialization. Useful for headless / scripted workflows. "
+      "Overrides INI [MCP] tcp_port. Implies auto-start (overrides INI "
+      "[MCP] auto_start_tcp=false). Default: server is OFF on startup, "
+      "the user enables it via Tools -> MCP TCP Server -> Start. Only "
+      "effective if the binary was built with MCP TCP backend enabled "
+      "(no NO_MCP_TCP=1)." },
+    { "--mcp-bind",         SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_ENUM,        MCP_BIND_VALUES, "<127.0.0.1|0.0.0.0>",
+      "Bind address for the MCP TCP server. '127.0.0.1' = loopback only "
+      "(default, safe); '0.0.0.0' = all interfaces (RISKY without auth - "
+      "V0 has no authentication). Overrides INI [MCP] bind_address." },
+    { "--mcp-profile",      SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_ENUM,        MCP_PROFILE_VALUES, "<wild|confined|sandboxed|observer>",
+      "MCP security profile. 'wild' (default) = no restrictions, dev "
+      "mode; others are persisted but not yet enforced (full enforcement "
+      "lands in V1.A). Overrides INI [MCP] profile." },
     /* FDC volby (viz src/emulator/hw-generic/fdc/). */
     { "--fdc-bus-xlate",    SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_ENUM,        FDC_BUS_XLATE_VALUES, "<invert|passthrough>",
       "FDC BUS translation polarity. 'invert' = Sharp default "
@@ -209,6 +266,25 @@ int main(int argc, char *argv[])
         };
     };
 
+    /* --pipe: deleguj na MCP pipe entry-point. Funkce sama injectuje
+     * --headless, spawnuje emu vlákno, posílá HELLO message a blokuje
+     * až do shutdown signálu. Po návratu rovnou exit, nepokračujeme
+     * v GUI inicializaci. Když build je s NO_MCP=1, mcp_pipe_main
+     * v jeho TU neexistuje - whitelist entry zůstává viditelný v
+     * --help kvůli stabilnímu CLI, ale runtime cesta selže linkrem
+     * (build time error). Proto guard zde:
+     */
+    if (sdlapp_option_present("--mcp-pipe"))
+    {
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+        return mcp_pipe_main(argc, argv);
+#else
+        fprintf(stderr,
+                "[mz800emu] --mcp-pipe requires MCP backend (rebuild without NO_MCP=1)\n");
+        return EXIT_FAILURE;
+#endif
+    }
+
 #ifdef _WIN32
     if (sdlapp_option_present("--console"))
     {
@@ -221,6 +297,15 @@ int main(int argc, char *argv[])
 
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
+
+    /* Detekce --headless módu - SDL3 video/audio backendy běží v no-op
+     * režimu (žádné SDL okno, žádný audio device). Framebuffer pipeline
+     * pokračuje renderovat do paměti. Smyčka sdlapp_run drží proces běžet
+     * do SDL_EVENT_QUIT (SIGINT / Ctrl+C). */
+    if (sdlapp_option_present("--headless"))
+    {
+        g_print("[INFO] Running in headless mode (SDL3 video/audio: no-op)\n");
+    };
 
     // printf ("Hello, World!\n"); // prints Hello, World! :-)
     g_print("\n");
@@ -263,6 +348,78 @@ int main(int argc, char *argv[])
     dbgapi_dispatcher_init();
 #endif
 
+#ifdef MZ800EMU_CFG_MCP_TCP_ENABLED
+    /* V0.B.4: aplikujeme CLI overrides na g_mcp_config (INI hodnoty
+     * už byly načteny v cfgmain_init -> mcp_config_init). Priorita:
+     *
+     *   default <- INI [MCP] <- CLI flags
+     *
+     * Auto-start TCP serveru se spustí pokud:
+     *   - uživatel zadal --mcp-tcp-port=N (zpětně kompatibilní s V0.A.5),
+     *   - NEBO g_mcp_config.auto_start_tcp == true (= INI persist V0.B.4).
+     *
+     * Server se startuje před emu thread spawnem, aby případný klient
+     * mohl zachytit i první instrukce po reset. Pro GUI manual Start
+     * cestu zůstává g_mcp_tcp_server NULL až do prvního kliknutí v
+     * Tools menu.
+     */
+
+    /* CLI override: --mcp-tcp-port=N */
+    if (sdlapp_option_present("--mcp-tcp-port"))
+    {
+        const char *port_str = sdlapp_option_value("--mcp-tcp-port");
+        gint64 port_val = (port_str) ? g_ascii_strtoll(port_str, NULL, 10) : 0;
+        if (port_str && port_val >= 1024 && port_val <= 65535)
+        {
+            g_mcp_config.tcp_port = (int)port_val;
+        }
+        else
+        {
+            fprintf(stderr,
+                "[MCP] --mcp-tcp-port requires an integer in 1024..65535 (got: %s) - ignoring\n",
+                port_str ? port_str : "<none>");
+        }
+    }
+
+    /* CLI override: --mcp-bind=127.0.0.1|0.0.0.0 */
+    if (sdlapp_option_present("--mcp-bind"))
+    {
+        const char *bind_str = sdlapp_option_value("--mcp-bind");
+        g_mcp_config.bind_addr = mcp_config_bind_addr_from_str(bind_str);
+    }
+
+    /* CLI override: --mcp-profile=wild|confined|sandboxed|observer */
+    if (sdlapp_option_present("--mcp-profile"))
+    {
+        const char *prof_str = sdlapp_option_value("--mcp-profile");
+        g_mcp_config.profile = mcp_config_profile_from_str(prof_str);
+    }
+
+    /* Auto-start TCP server: implicitně pokud uživatel zadal
+     * --mcp-tcp-port=N (V0.A.5 zpětná kompatibilita), nebo pokud
+     * INI [MCP] auto_start_tcp=true. */
+    bool mcp_should_auto_start =
+        sdlapp_option_present("--mcp-tcp-port") ||
+        g_mcp_config.auto_start_tcp;
+
+    if (mcp_should_auto_start)
+    {
+        g_mcp_tcp_server = mcp_tcp_server_create();
+        if (g_mcp_tcp_server)
+        {
+            const char *bind = mcp_config_bind_addr_str(g_mcp_config.bind_addr);
+            en_MCP_TCP_START_RESULT r = mcp_tcp_server_start(
+                g_mcp_tcp_server, g_mcp_config.tcp_port, bind);
+            if (r != MCP_TCP_START_OK)
+            {
+                fprintf(stderr,
+                    "[MCP] auto-start of TCP server on %s:%d failed (rc=%d)\n",
+                    bind, g_mcp_config.tcp_port, (int)r);
+            }
+        }
+    }
+#endif
+
     // nastartujeme emulator
     GThread *emu_thread = g_thread_new("mz-800-emulator", emulator_thread, NULL);
     if (!emu_thread)
@@ -279,6 +436,15 @@ int main(int argc, char *argv[])
     int emuretval = (emuret) ? *(int *)emuret : EXIT_FAILURE;
 
     // az po ukonceni emulatoroveho vlakna muzeme uklidit
+#ifdef MZ800EMU_CFG_MCP_TCP_ENABLED
+    /* V0.A.5: shutdown TCP listeneru. Musí být před iface_exit / SDL_Quit,
+     * aby případné aktivní per-conn vlákno mělo platný emu state pro
+     * poslední dispatch + clean close. mcp_tcp_server_shutdown_global je
+     * idempotentní (NULL guard) - bezpečné volat i bez explicitního Start.
+     */
+    mcp_tcp_server_shutdown_global();
+#endif
+
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
     /* Odregistrace dispatcheru - po této funkci se MSGy zahodí. */
     dbgapi_dispatcher_shutdown();

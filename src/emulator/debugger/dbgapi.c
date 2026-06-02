@@ -29,23 +29,37 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 #include <glib.h>
+#include <glib/gstdio.h>
 #include "app/app_thread.h"
 #include "dbgapi_cmdrq.h"
 #include "dbgapi_msg.h"
 #include "dbgapi_emu.h"
 #include "dbgapi_ui.h"
+#include "dbgapi_regions.h"
 #include "debugger.h"
 #include "emulator.h"
+#include "customspeed.h"
 #include "bptmap.h"
 #include "breakpoints.h"
 #include "stack_regions.h"
 #include "stack_history.h"
 #include "callstack.h"
 #include "profiler.h"
+#include "watch.h"
+#include "watch_emu_cache.h"  /* V1.D.2.C: dispatch-side mirror lookup */
+#include "bp_vars.h"
+#include "bookmarks/bookmarks.h"
+#include "bp_expr.h"
+#include "mhmap.h"
+#include "png_encode.h"
 #include "trace/eventlog.h"
+#include "snapshot/snapshot.h"
+#include "symbols/sym_db.h"
 #include "mzarch/mzarch.h"
+#include "mzarch/mzarch_platform.h"
 #include "mzarch/mzarch_platform_functions.h"
 #include "libs/dasm-z80/z80_dasm.h"
 #include "gdg/video.h"
@@ -60,13 +74,64 @@
 #if HAVE_PIOZ80
 #include "hw-generic/pioz80/pioz80.h"
 #endif
+#include "hw-generic/pio8255/pio8255.h"
+#include "hw-generic/ctc8253/ctc8253.h"
+#if HAVE_PSG >= 1
+#include "hw-generic/psg/psg.h"
+#endif
 #if MZARCH == 800
 #include "mzarch/mz800/mz800_main.h"
+#include "mzarch/mz800/mz800_iorq.h"
 #elif MZARCH == 1500
 #include "mzarch/mz1500/mz1500_main.h"
+#include "mzarch/mz1500/mz1500_iorq.h"
 #elif MZARCH == 700
 #include "mzarch/mz700/mz700_main.h"
+#include "mzarch/mz700/mz700_iorq.h"
 #endif
+#include "libs/cpu-z80/z80.h"
+
+/* V1.B.1 - Media Tools (mcp-server mutant). Handler v switchi pro
+ * DBGAPI_CMD_MEDIA_* dispatchuje na jednotlivé hw-generic API. Periferie
+ * jsou per-arch volitelné přes CFG_HWEXT_HAVE_* makra v mzarch_config.h. */
+#include "hw-generic/cmt/cmt.h"
+#include "hw-generic/cmt/cmthack.h"
+/* fix mzdos 0008: media_load_mzf zrcadlí bootstrap.c plný load (header +
+ * post-header mapping + body). Potřebujeme post_header per-arch + MZF
+ * header strukturu. */
+#include "mzarch/bootstrap.h"
+#include "libs/mzf/mzf.h"
+#if CFG_HWEXT_HAVE_FDC
+#include "hw-generic/fdc/fdc.h"
+#endif
+#if CFG_HWEXT_HAVE_QDISK
+#include "hw-generic/qdisk/qdisk.h"
+#endif
+#if CFG_HWEXT_HAVE_IDE8
+#include "hw-generic/ide8/ide8.h"
+#endif
+
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+#include <json-glib/json-glib.h>
+#include "mcp/event_bus.h"
+/* V1.C.1 - HID Tools: VKBD matrix press/release + joystick state. */
+#include "mcp/hid_keymap.h"
+/* V1.D.1 - Core + CPU extras Resources: čte memext + memory + z80 state. */
+#include "hw-generic/memory/memext.h"
+/* V1.D.4 - Input + Frame Resources: joystick, framebuffer, VRAM read. */
+#if HAVE_JOY
+#include "hw-generic/joy/joy.h"
+#endif
+#include "iface/iface_video.h"
+#include "hw-generic/gdg/framebuffer.h"
+#endif
+
+/* V1.B.2 - cfgmain INI handle pro Settings + Periph attach handlery. */
+#include "cfgmain.h"
+#include "libs/cfgfile/cfgroot.h"
+#include "libs/cfgfile/cfgmodule.h"
+#include "libs/cfgfile/cfgelement.h"
+#include "libs/cfgfile/cfgcommon.h"
 
 
 /* ============================================================================
@@ -105,6 +170,99 @@ static void *s_msg_dispatcher_user_data = NULL;
 
 
 /* ============================================================================
+ * LAST USER ACTION TRACKER (V1.D.1)
+ *
+ * Eviduje poslední CMDRQ s cmd_origin == DBGAPI_CMD_ORIGIN_USER.
+ * Slouží AI klientovi (přes emulator://state Resource) ke zjištění, co
+ * naposledy user v GUI udělal - umožní AI lépe spolupracovat s uživatelem
+ * (= "user právě klikl Run, počkám než se zastaví").
+ *
+ * Thread-safety: nastavuje se z UI vlákna v dbgapi_ui_submit_cmd_sync_with_origin
+ * po vložení slotu (= mimo emu thread). Čte se z emu vlákna v handleru
+ * get_state. Pro V1.D.1 použijeme jednoduchý GLib mutex - příště lze
+ * převést na atomic load/store struct (= per-field race-free, ale není
+ * to kritické, last action je informativní).
+ * ============================================================================ */
+
+typedef struct st_DBGAPI_LAST_USER_ACTION
+{
+    bool          valid;        /**< false = ještě žádná USER akce nebyla. */
+    en_DBGAPI_CMD cmd;          /**< Poslední USER CMD. */
+    uint64_t      timestamp_us; /**< g_get_monotonic_time() v okamžiku submit. */
+} st_DBGAPI_LAST_USER_ACTION;
+
+static st_DBGAPI_LAST_USER_ACTION s_last_user_action = {
+    .valid = false,
+    .cmd = DBGAPI_CMD_NONE,
+    .timestamp_us = 0,
+};
+static GMutex s_last_user_action_mutex;
+static bool   s_last_user_action_mutex_inited = false;
+
+
+/**
+ * @brief Inicializuje mutex pro last_user_action tracker (volat z dbgapi_init).
+ */
+static void dbgapi_last_user_action_init_mutex ( void )
+{
+    if ( !s_last_user_action_mutex_inited )
+    {
+        g_mutex_init ( &s_last_user_action_mutex );
+        s_last_user_action_mutex_inited = true;
+    };
+}
+
+
+/**
+ * @brief Zaznamená nové USER CMD do trackeru.
+ *
+ * Volá se z dbgapi_ui_submit_cmd_sync_with_origin pro origin == USER.
+ *
+ * @param cmd Zaznamenávaný DBGAPI_CMD.
+ */
+static void dbgapi_track_last_user_action ( en_DBGAPI_CMD cmd )
+{
+    if ( !s_last_user_action_mutex_inited )
+    {
+        /* Defense in depth - kdyby někdo zavolal submit dřív než init.
+         * V praxi by k tomu nemělo dojít, ale chceme failsafe. */
+        return;
+    };
+    g_mutex_lock ( &s_last_user_action_mutex );
+    s_last_user_action.valid        = true;
+    s_last_user_action.cmd          = cmd;
+    s_last_user_action.timestamp_us = (uint64_t) g_get_monotonic_time ( );
+    g_mutex_unlock ( &s_last_user_action_mutex );
+}
+
+
+/**
+ * @brief Vrátí kopii posledního USER action záznamu (= safe pro read z emu).
+ *
+ * @param[out] out_cmd          Poslední CMD (validní jen pokud return true).
+ * @param[out] out_timestamp_us Timestamp v mikrosekundách (od g_get_monotonic_time).
+ * @return true pokud byla zaznamenána aspoň jedna USER akce.
+ */
+bool dbgapi_get_last_user_action ( en_DBGAPI_CMD *out_cmd,
+                                    uint64_t *out_timestamp_us )
+{
+    if ( !s_last_user_action_mutex_inited )
+    {
+        if ( out_cmd ) *out_cmd = DBGAPI_CMD_NONE;
+        if ( out_timestamp_us ) *out_timestamp_us = 0;
+        return false;
+    };
+    g_mutex_lock ( &s_last_user_action_mutex );
+    bool valid = s_last_user_action.valid;
+    if ( out_cmd ) *out_cmd = s_last_user_action.cmd;
+    if ( out_timestamp_us )
+        *out_timestamp_us = s_last_user_action.timestamp_us;
+    g_mutex_unlock ( &s_last_user_action_mutex );
+    return valid;
+}
+
+
+/* ============================================================================
  * INICIALIZACE A DESTRUKCE
  * ============================================================================ */
 
@@ -139,6 +297,9 @@ void dbgapi_init(st_DBGAPI_CMDRQ_QUEUE *queue)
     s_msg_callback_user_data = NULL;
     s_msg_dispatcher = NULL;
     s_msg_dispatcher_user_data = NULL;
+
+    /* V1.D.1 - inicializace last_user_action tracker mutex. */
+    dbgapi_last_user_action_init_mutex ( );
 }
 
 void dbgapi_destroy(st_DBGAPI_CMDRQ_QUEUE *queue)
@@ -476,6 +637,290 @@ static bool dbgapi_emu_bp_apply_update ( st_DBGAPI_BP_UPDATE_PARAM *p, bool allo
 }
 
 
+/* ============================================================================
+ * CMD -> STRING HELPER (pro MCP_ACTION description, logy, debug)
+ *
+ * Převede en_DBGAPI_CMD na lidsky čitelný název ve formátu short token
+ * (= bez prefixu DBGAPI_CMD_, lowercase). Použit pro
+ * st_DBGAPI_MSG_MCP_ACTION_DATA.description default text - GUI Activity
+ * Log pak smí augmentovat o detaily (adresy, hodnoty) podle msg.cmd.
+ * ============================================================================ */
+
+/**
+ * @brief Převede CMDRQ příkaz na lidsky čitelný název.
+ *
+ * Tabulka enum -> string s short formátem (bez prefixu DBGAPI_CMD_,
+ * lowercase). Vrací statický řetězec - volající ho NESMÍ uvolnit, jen
+ * okamžitě použít nebo zkopírovat. Pro neznámý/budoucí příkaz vrací
+ * "unknown".
+ *
+ * @param cmd  Příkaz bez BLOCKING flagu (= caller maskuje DBGAPI_CMD_MASK).
+ * @return Statický řetězec, nikdy NULL.
+ */
+const char *dbgapi_cmd_to_str(en_DBGAPI_CMD cmd)
+{
+    switch (cmd)
+    {
+        case DBGAPI_CMD_NONE:                     return "none";
+        case DBGAPI_CMD_IS_DEBUGGER_ACTIVE:        return "is_debugger_active";
+        case DBGAPI_CMD_DEBUGGER_ACTIVATE:         return "debugger_activate";
+        case DBGAPI_CMD_DEBUGGER_DEACTIVATE:       return "debugger_deactivate";
+        case DBGAPI_CMD_PAUSE:                     return "pause";
+        case DBGAPI_CMD_FORCE_PAUSE:               return "force_pause";
+        case DBGAPI_CMD_RUN:                       return "run";
+        case DBGAPI_CMD_IS_RUNNING:                return "is_running";
+        case DBGAPI_CMD_STEP_INTO:                 return "step_into";
+        case DBGAPI_CMD_STEP_OVER:                 return "step_over";
+        case DBGAPI_CMD_RUN_TO:                    return "run_to";
+        case DBGAPI_CMD_RESET:                     return "reset";
+        case DBGAPI_CMD_GET_REG:                   return "get_reg";
+        case DBGAPI_CMD_SET_REG:                   return "set_reg";
+        case DBGAPI_CMD_GET_ALL_REGS:              return "get_all_regs";
+        case DBGAPI_CMD_MEM_READ:                  return "mem_read";
+        case DBGAPI_CMD_MEM_WRITE:                 return "mem_write";
+        case DBGAPI_CMD_BP_ADD:                    return "bp_add";
+        case DBGAPI_CMD_BP_REMOVE:                 return "bp_remove";
+        case DBGAPI_CMD_BP_LIST:                   return "bp_list";
+        case DBGAPI_CMD_BP_UPDATE:                 return "bp_update";
+        case DBGAPI_CMD_BP_SET_ENABLED:            return "bp_set_enabled";
+        case DBGAPI_CMD_BP_SET_PARENT:             return "bp_set_parent";
+        case DBGAPI_CMD_BP_CREATE_WITH_INIT:       return "bp_create_with_init";
+        case DBGAPI_CMD_BPGRP_ADD:                 return "bpgrp_add";
+        case DBGAPI_CMD_BPGRP_REMOVE:              return "bpgrp_remove";
+        case DBGAPI_CMD_BPGRP_UPDATE:              return "bpgrp_update";
+        case DBGAPI_CMD_DASM:                      return "dasm";
+        case DBGAPI_CMD_HISTORY_GET:               return "history_get";
+        case DBGAPI_CMD_GET_CPU_FLAGS:             return "get_cpu_flags";
+        case DBGAPI_CMD_SET_CPU_FLAGS:             return "set_cpu_flags";
+        case DBGAPI_CMD_GET_IM2_VECTOR:            return "get_im2_vector";
+        case DBGAPI_CMD_GET_RASTER_POS:            return "get_raster_pos";
+        case DBGAPI_CMD_GET_LAST_INSTR:            return "get_last_instr";
+        case DBGAPI_CMD_GET_CPU_PANEL_BATCH:       return "get_cpu_panel_batch";
+        case DBGAPI_CMD_SET_USER_CYCLE_ORIGIN:     return "set_user_cycle_origin";
+        case DBGAPI_CMD_SET_PIOZ80_INTERRUPT_VECTOR: return "set_pioz80_interrupt_vector";
+        case DBGAPI_CMD_MEM_WRITE_CHECKED:         return "mem_write_checked";
+        case DBGAPI_CMD_STACK_DUMP:                return "stack_dump";
+        case DBGAPI_CMD_STACK_REGIONS_LIST:        return "stack_regions_list";
+        case DBGAPI_CMD_STACK_REGIONS_ADD:         return "stack_regions_add";
+        case DBGAPI_CMD_STACK_REGIONS_REMOVE:      return "stack_regions_remove";
+        case DBGAPI_CMD_STACK_REGIONS_RESET_WATERMARK: return "stack_regions_reset_watermark";
+        case DBGAPI_CMD_STACK_REGIONS_EDIT:        return "stack_regions_edit";
+        case DBGAPI_CMD_STACK_HISTORY_ENABLE:      return "stack_history_enable";
+        case DBGAPI_CMD_STACK_HISTORY_GET:         return "stack_history_get";
+        case DBGAPI_CMD_STACK_HISTORY_RESET:       return "stack_history_reset";
+        case DBGAPI_CMD_EVENTLOG_START:            return "eventlog_start";
+        case DBGAPI_CMD_EVENTLOG_STOP:             return "eventlog_stop";
+        case DBGAPI_CMD_EVENTLOG_CLEAR:            return "eventlog_clear";
+        case DBGAPI_CMD_EVENTLOG_SET_CAPACITY:     return "eventlog_set_capacity";
+        case DBGAPI_CMD_EVENTLOG_SET_MASK:         return "eventlog_set_mask";
+        case DBGAPI_CMD_EVENTLOG_GET_EVENT:        return "eventlog_get_event";
+        case DBGAPI_CMD_GET_CALLSTACK:             return "get_callstack";
+        case DBGAPI_CMD_GET_PROFILER:              return "get_profiler";
+        case DBGAPI_CMD_PROFILER_SET_ACTIVE:       return "profiler_set_active";
+        case DBGAPI_CMD_PROFILER_RESET:            return "profiler_reset";
+        case DBGAPI_CMD_PROFILER_EXPORT:           return "profiler_export";
+        case DBGAPI_CMD_SNAPSHOT_SAVE_FILE:        return "snapshot_save_file";
+        case DBGAPI_CMD_SNAPSHOT_SAVE_BUFFER:      return "snapshot_save_buffer";
+        case DBGAPI_CMD_SNAPSHOT_LOAD_FILE:        return "snapshot_load_file";
+        case DBGAPI_CMD_SNAPSHOT_LOAD_BUFFER:      return "snapshot_load_buffer";
+        case DBGAPI_CMD_SYMBOL_ADD:                return "symbol_add";
+        case DBGAPI_CMD_SYMBOL_REMOVE:             return "symbol_remove";
+        case DBGAPI_CMD_SYMBOL_LOOKUP:             return "symbol_lookup";
+        case DBGAPI_CMD_SYMBOL_LIST:               return "symbol_list";
+        case DBGAPI_CMD_STEP_OUT:                  return "step_out";
+        case DBGAPI_CMD_IO_READ:                   return "io_read";
+        case DBGAPI_CMD_IO_WRITE:                  return "io_write";
+        case DBGAPI_CMD_IRQ_INJECT:                return "irq_inject";
+        case DBGAPI_CMD_NMI_INJECT:                return "nmi_inject";
+        case DBGAPI_CMD_MEM_WRITE_FORCE:           return "mem_write_force";
+        /* V1.A.6 - Watch + CDL Tools */
+        case DBGAPI_CMD_WATCH_ADD:                 return "watch_add";
+        case DBGAPI_CMD_WATCH_REMOVE:              return "watch_remove";
+        case DBGAPI_CMD_WATCH_LIST:                return "watch_list";
+        case DBGAPI_CMD_WATCH_EVAL:                return "watch_eval";
+        case DBGAPI_CMD_CDL_START:                 return "cdl_start";
+        case DBGAPI_CMD_CDL_STOP:                  return "cdl_stop";
+        case DBGAPI_CMD_CDL_RESET:                 return "cdl_reset";
+        case DBGAPI_CMD_CDL_EXPORT:                return "cdl_export";
+        /* V1.B.1 - Media Tools */
+        case DBGAPI_CMD_MEDIA_LOAD_MZF:            return "media_load_mzf";
+        case DBGAPI_CMD_MEDIA_LOAD_BINARY:         return "media_load_binary";
+        case DBGAPI_CMD_MEDIA_INSERT:              return "media_insert";
+        case DBGAPI_CMD_MEDIA_EJECT:               return "media_eject";
+        case DBGAPI_CMD_MEDIA_STATE:               return "media_state";
+        /* V1.B.2 - Platform + Config Tools */
+        case DBGAPI_CMD_SETTINGS_GET:              return "settings_get";
+        case DBGAPI_CMD_SETTINGS_SET:              return "settings_set";
+        case DBGAPI_CMD_PLATFORM_SET:              return "platform_set";
+        case DBGAPI_CMD_PERIPH_ATTACH:             return "periph_attach";
+        case DBGAPI_CMD_PERIPH_DETACH:             return "periph_detach";
+        /* V1.C.1 - HID Tools */
+        case DBGAPI_CMD_INPUT_PRESS_KEY:           return "input_press_key";
+        case DBGAPI_CMD_INPUT_RELEASE_KEY:         return "input_release_key";
+        case DBGAPI_CMD_INPUT_RELEASE_ALL:         return "input_release_all";
+        case DBGAPI_CMD_INPUT_JOY_SET:             return "input_joy_set";
+        case DBGAPI_CMD_INPUT_JOY_CLEAR:           return "input_joy_clear";
+        /* V1.D.1 - Core + CPU extras Resources */
+        case DBGAPI_CMD_GET_CPU_IM2_VECTOR:        return "get_cpu_im2_vector";
+        case DBGAPI_CMD_GET_CPU_INTERRUPT_BUS:     return "get_cpu_interrupt_bus";
+        case DBGAPI_CMD_GET_MEMORY_MAP:            return "get_memory_map";
+        case DBGAPI_CMD_GET_MEMEXT_INFO:           return "get_memext_info";
+        case DBGAPI_CMD_BP_VARS_LIST:              return "bp_vars_list";
+        case DBGAPI_CMD_BOOKMARKS_LIST:            return "bookmarks_list";
+        /* V1.D.3.A - IRQ chip Resources */
+        case DBGAPI_CMD_GET_PERIPH_I8255:          return "get_periph_i8255";
+        case DBGAPI_CMD_GET_PERIPH_I8253:          return "get_periph_i8253";
+        case DBGAPI_CMD_GET_PERIPH_Z80_PIO:        return "get_periph_z80_pio";
+        case DBGAPI_CMD_GET_PERIPH_SN76489:        return "get_periph_sn76489";
+        case DBGAPI_CMD_GET_PERIPH_AY3_8910:       return "get_periph_ay3_8910";
+        case DBGAPI_CMD_GET_PERIPH_BEEPER:         return "get_periph_beeper";
+        /* V1.D.3.C - storage + display Resources */
+        case DBGAPI_CMD_GET_PERIPH_GDG:            return "get_periph_gdg";
+        case DBGAPI_CMD_GET_PERIPH_WD1793:         return "get_periph_wd1793";
+        case DBGAPI_CMD_GET_PERIPH_CMT:            return "get_periph_cmt";
+        case DBGAPI_CMD_GET_PERIPH_QD:             return "get_periph_qd";
+        /* V1.D.4 - input + frame Resources */
+        case DBGAPI_CMD_GET_INPUT_KEYBOARD_STATE:       return "get_input_keyboard_state";
+        case DBGAPI_CMD_GET_INPUT_KEYBOARD_MATRIX_INFO: return "get_input_keyboard_matrix_info";
+        case DBGAPI_CMD_GET_INPUT_JOYSTICK_STATE:       return "get_input_joystick_state";
+        case DBGAPI_CMD_GET_FRAME_FRAMEBUFFER_INFO:     return "get_frame_framebuffer_info";
+        case DBGAPI_CMD_GET_FRAME_SCREENSHOT_RAW:       return "get_frame_screenshot_raw";
+        case DBGAPI_CMD_GET_FRAME_SCREENSHOT_PNG:       return "get_frame_screenshot";
+        case DBGAPI_CMD_GET_VIDEO_TEXT_DUMP:            return "get_video_text_dump";
+        case DBGAPI_CMD_GET_WATCH_SNAPSHOT:             return "get_watch_snapshot";
+        case DBGAPI_CMD_REGIONS_ENUMERATE:              return "regions_enumerate";
+        case DBGAPI_CMD_REGIONS_READ:                   return "regions_read";
+        case DBGAPI_CMD_REGIONS_WRITE:                  return "regions_write";
+        /* BACKLOG D - emulation speed control */
+        case DBGAPI_CMD_GET_SPEED:                      return "get_speed";
+        case DBGAPI_CMD_SET_SPEED:                      return "set_speed";
+        /* BACKLOG B - bookmark write */
+        case DBGAPI_CMD_BOOKMARK_ADD:                   return "bookmark_add";
+        case DBGAPI_CMD_BOOKMARK_REMOVE:                return "bookmark_remove";
+        /* CMT-A - transport + recording + cmthack toggle */
+        case DBGAPI_CMD_CMT_TRANSPORT:                  return "cmt_transport";
+        case DBGAPI_CMD_CMT_RECORD:                     return "cmt_record";
+        case DBGAPI_CMD_CMT_HACK_SET:                   return "cmt_hack_set";
+        case DBGAPI_CMD_CMT_SET_PROPERTY:               return "cmt_set_property";
+        case DBGAPI_CMD_CMT_OPEN:                       return "cmt_open";
+        case DBGAPI_CMD_CMT_TAPE_SEEK:                  return "cmt_tape_seek";
+        case DBGAPI_CMD_CMT_TAPE_BLOCK_SPEED:           return "cmt_tape_block_speed";
+        case DBGAPI_CMD_CMT_TAPE_LIST:                  return "cmt_tape_list";
+    };
+    return "unknown";
+}
+
+
+/**
+ * @brief Sestaví a vyšle DBGAPI_MSG_MCP_ACTION broadcast.
+ *
+ * Volat z dbgapi_emu_dispatch() po úspěšném zpracování příkazu pro
+ * cmd_origin == DBGAPI_CMD_ORIGIN_MCP. Alokuje st_DBGAPI_MSG_DATA na heapu
+ * (g_new0), vyplní cmd / description / timestamp_us a předá vlastnictví
+ * dispatcheru přes dbgapi_emu_send_msg(). Pokud žádný dispatcher není
+ * zaregistrován, data se uvolní v send_msg.
+ *
+ * V1.E.6.A rozšíření: pro entity-tvořící příkazy (BP_*, WATCH_ADD,
+ * SYMBOL_ADD) emit-site z payloadu (rq->data_ptr) extrahuje cílovou
+ * entitu (id nebo addr) a uloží do entity_id + entity_kind, aby
+ * Activity okno mohlo přes dvojklik směrovat focus do příslušného
+ * editoru. Pro ostatní příkazy zůstává entity_kind = NONE.
+ *
+ * Důležité: emit-site běží PO úspěšné dispatch handler větvi, takže
+ * pro WATCH_ADD je out_index v payload struktuře už platný. Lookup
+ * watch_get(out_index)->id pak vrátí stabilní runtime ID watch řádku
+ * (= pole st_WATCH_ROW.id, monotonní counter).
+ *
+ * @param rq  Zpracovaný CMDRQ slot (cmd a cmd_origin už nastaveny).
+ */
+static void dbgapi_emit_mcp_action(st_DBGAPI_CMDRQ *rq)
+{
+    en_DBGAPI_CMD cmd = (en_DBGAPI_CMD)(rq->cmd & DBGAPI_CMD_MASK);
+    st_DBGAPI_MSG_DATA *data = g_new0(st_DBGAPI_MSG_DATA, 1);
+    data->msg_type = DBGAPI_MSG_MCP_ACTION;
+    data->cmd = cmd;
+    data->description = g_strdup(dbgapi_cmd_to_str(cmd));
+    data->timestamp_us = (uint64_t)g_get_monotonic_time();
+
+    /* V1.E.6.A: extrakce cílové entity z payloadu pro Activity routing.
+     * Defaultně NONE; switch níže přepíše pro známé CMD. Pokud rq->data_ptr
+     * je NULL (= caller nezvalidoval), entity_kind zůstane NONE a UI to
+     * tiše ignoruje. */
+    data->entity_kind = DBGAPI_ENTITY_KIND_NONE;
+    data->entity_id   = 0;
+
+    if (rq->data_ptr)
+    {
+        switch (cmd)
+        {
+            /* BP add/remove = st_DBGAPI_BP_PARAM (addr + id). */
+            case DBGAPI_CMD_BP_ADD:
+            case DBGAPI_CMD_BP_REMOVE:
+            {
+                const st_DBGAPI_BP_PARAM *p =
+                    (const st_DBGAPI_BP_PARAM *)rq->data_ptr;
+                data->entity_kind = DBGAPI_ENTITY_KIND_BP;
+                data->entity_id   = (int32_t)p->id;
+                break;
+            }
+
+            /* BP update/create = st_DBGAPI_BP_UPDATE_PARAM (id + ostatní pole).
+             * Pro CREATE_WITH_INIT je vstupní id=-1, handler ho naplní na nový
+             * monotonní BP ID (>= 1). Hodnotu čteme po dispatch větvi, takže
+             * id už platí (= rq->success == true předpoklad caller flow). */
+            case DBGAPI_CMD_BP_UPDATE:
+            case DBGAPI_CMD_BP_CREATE_WITH_INIT:
+            {
+                const st_DBGAPI_BP_UPDATE_PARAM *p =
+                    (const st_DBGAPI_BP_UPDATE_PARAM *)rq->data_ptr;
+                data->entity_kind = DBGAPI_ENTITY_KIND_BP;
+                data->entity_id   = (int32_t)p->id;
+                break;
+            }
+
+            /* Watch add: payload má out_index po dispatch (= validní řádek).
+             * Z indexu získáme st_WATCH_ROW.id (stabilní runtime counter).
+             * Pokud out_index < 0 (= add selhal), kind zůstane NONE. */
+            case DBGAPI_CMD_WATCH_ADD:
+            {
+                const st_DBGAPI_WATCH_ADD_PARAM *p =
+                    (const st_DBGAPI_WATCH_ADD_PARAM *)rq->data_ptr;
+                if (p->out_index >= 0)
+                {
+                    const st_WATCH_ROW *row =
+                        watch_get((size_t)p->out_index);
+                    if (row)
+                    {
+                        data->entity_kind = DBGAPI_ENTITY_KIND_WATCH;
+                        data->entity_id   = (int32_t)row->id;
+                    }
+                }
+                break;
+            }
+
+            /* Symbol add: payload má addr (uint16_t). Entity_id = adresa
+             * cast na int32 (vždy fit). Symbol storage je addr-indexovaný,
+             * lookup ve sym_window přes sym_db_lookup_by_addr(). */
+            case DBGAPI_CMD_SYMBOL_ADD:
+            {
+                const st_DBGAPI_SYMBOL_PARAM *p =
+                    (const st_DBGAPI_SYMBOL_PARAM *)rq->data_ptr;
+                data->entity_kind = DBGAPI_ENTITY_KIND_SYMBOL;
+                data->entity_id   = (int32_t)p->addr;
+                break;
+            }
+
+            default:
+                /* Ostatní CMD nemají cílovou entitu (= step, eventlog_*,
+                 * media_*, atd.). entity_kind = NONE už nastaveno. */
+                break;
+        }
+    }
+
+    dbgapi_emu_send_msg(DBGAPI_MSG_MCP_ACTION, data);
+}
+
+
 void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
 {
     if (!rq)
@@ -539,6 +984,18 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
              * temporary BP. */
             emulator_pause ( true );
             rq->success = true;
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+            /* V1.A.4: MCP EVENT emit "paused" pro klienty na topicu.
+             * Reason rozlišuje BP hit vs manual pause vs fatal -
+             * tady jsme v dbgapi PAUSE handleru, takže reason=manual. */
+            {
+                JsonObject *p = json_object_new ( );
+                json_object_set_string_member ( p, "reason", "manual" );
+                json_object_set_int_member ( p, "pc",
+                                              (int) g_mzarch_main.cpu->pc );
+                event_bus_emit ( "paused", p );
+            }
+#endif
             break;
 
         case DBGAPI_CMD_FORCE_PAUSE:
@@ -696,8 +1153,40 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                     }
                     else
                     {
+                        /* BUG2 fix: zapamatovat PC před zápisem, abychom
+                         * HALT zrušili jen při SKUTEČNÉ změně PC (viz níže). */
+                        uint16_t pc_before = g_mzarch_main.cpu->pc;
                         z80_set_reg ( g_mzarch_main.cpu,
                                       (z80_reg_t)p->reg_id, p->value );
+                        /* BUG2 fix: ruční zápis PC z debuggeru musí
+                         * probudit CPU z HALT. z80_set_reg() nastaví jen
+                         * cpu->pc, halt latch (cpu->halted) nečistí. Bez
+                         * vyčištění narazí následující STEP na early-exit
+                         * pro halted ve z80_execute() (z80.c) a nevykoná
+                         * žádnou instrukci - CPU zůstane "zamčené" v HALT
+                         * dokud nepřijde IRQ/NMI. Latch proto rušíme zde
+                         * (jen pro zápis PC) a ohlásíme HALT_EXIT kvůli
+                         * konzistenci callstack/profiler/eventlog. Interní
+                         * cpu->pc je už nastaven na novou adresu, kterou
+                         * předáme i jako adresu události.
+                         *
+                         * Podmínka pc != pc_before: zápis STEJNÉ hodnoty PC
+                         * (uživatel jen "potvrdil" regPC bez změny) nesmí
+                         * HALT ukončit - CPU má zůstat ve stejném stavu. */
+                        if ( (z80_reg_t)p->reg_id == Z80_REG_PC &&
+                             g_mzarch_main.cpu->halted &&
+                             g_mzarch_main.cpu->pc != pc_before )
+                        {
+                            g_mzarch_main.cpu->halted = false;
+                            if ( g_mzarch_main.cpu->cpu_ctrl_event_cb )
+                            {
+                                g_mzarch_main.cpu->cpu_ctrl_event_cb (
+                                    g_mzarch_main.cpu,
+                                    (uint8_t)Z80_CPU_CTRL_HALT_EXIT,
+                                    g_mzarch_main.cpu->pc,
+                                    g_mzarch_main.cpu->cpu_ctrl_event_data );
+                            };
+                        };
                     };
                     rq->success = true;
                 }
@@ -795,7 +1284,10 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
              * Po návratu je p->id naplněno přiděleným ID (= caller ho
              * potřebuje pro REMOVE). breakpoints_add_auto vrátí -1 při
              * fatální chybě (přetečení ID), jinak vždy přidělí ID a v
-             * případě konfliktu na adrese nastaví enabled=false. */
+             * případě konfliktu na adrese nastaví enabled=false.
+             *
+             * V1.C.3: po úspěšném add propagujeme rq->cmd_origin do
+             * vytvořeného BP (= owner attribution pro GUI badge). */
             if (rq->data_ptr)
             {
                 st_DBGAPI_BP_PARAM *p = (st_DBGAPI_BP_PARAM *)rq->data_ptr;
@@ -803,6 +1295,20 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 if (new_id > 0)
                 {
                     p->id = new_id;
+                    /* Propaguj origin do nově vytvořeného BP. find_by_id()
+                     * je v breakpoints.c static - použijeme lineární scan
+                     * přes breakpoints_get_count() + breakpoints_get_by_index(). */
+                    int total = (int)g_breakpoints.breakpoints->len;
+                    for (int i = 0; i < total; i++)
+                    {
+                        st_BPT *bp = &g_array_index(g_breakpoints.breakpoints,
+                                                     st_BPT, i);
+                        if (bp->id == new_id)
+                        {
+                            bp->cmd_origin = rq->cmd_origin;
+                            break;
+                        }
+                    }
                     rq->success = true;
                 }
                 else
@@ -2283,11 +2789,3653 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             rq->success = true;
             break;
 
+        case DBGAPI_CMD_PROFILER_EXPORT:
+            /* Export agregátoru do souboru (mutant mcp-server V1.A.7).
+             * Delegát na profiler_export_to_file. Funkce je read-only nad
+             * stavem profileru (= snapshot + format-specific writer),
+             * takže nezávisí na paused state. */
+            if ( rq->data_ptr )
+            {
+                st_DBGAPI_PROFILER_EXPORT_PARAM *p =
+                    (st_DBGAPI_PROFILER_EXPORT_PARAM *) rq->data_ptr;
+                int n = 0;
+                int rc = profiler_export_to_file ( p->filepath, p->format, &n );
+                p->result = rc;
+                p->entry_count = n;
+                rq->success = ( rc == 0 );
+            }
+            else
+            {
+                rq->success = false;
+            };
+            break;
+
+        /* --- Snapshot (mutant mcp-server V1.A.1) --- */
+        case DBGAPI_CMD_SNAPSHOT_SAVE_FILE:
+        {
+            /* Uloží snapshot do souboru. Delegát na snapshot_save z
+             * snapshot.h (= V-1.2 API). Snapshot vyžaduje paused emu,
+             * kontroluje sama snapshot vrstva (vrací SNAPSHOT_ERR_NOT_PAUSED). */
+            st_DBGAPI_SNAPSHOT_PARAM *p = (st_DBGAPI_SNAPSHOT_PARAM *)rq->data_ptr;
+            if (!p || !p->filepath)
+            {
+                rq->success = false;
+                break;
+            }
+            en_SNAPSHOT_RESULT r = snapshot_save(p->filepath, p->description);
+            p->result = (int)r;
+            rq->success = (r == SNAPSHOT_OK);
+            break;
+        }
+
+        case DBGAPI_CMD_SNAPSHOT_SAVE_BUFFER:
+        {
+            /* Uloží snapshot do paměťového bufferu (= MCP inline payload).
+             * Handler alokuje p->buffer přes g_malloc-kompatibilní cestu,
+             * volající uvolní g_free. */
+            st_DBGAPI_SNAPSHOT_PARAM *p = (st_DBGAPI_SNAPSHOT_PARAM *)rq->data_ptr;
+            if (!p)
+            {
+                rq->success = false;
+                break;
+            }
+            uint8_t *out_data = NULL;
+            size_t   out_size = 0;
+            en_SNAPSHOT_RESULT r = snapshot_save_to_buffer(p->description,
+                                                            &out_data,
+                                                            &out_size);
+            p->buffer      = out_data;
+            p->buffer_size = out_size;
+            p->result      = (int)r;
+            rq->success    = (r == SNAPSHOT_OK);
+            break;
+        }
+
+        case DBGAPI_CMD_SNAPSHOT_LOAD_FILE:
+        {
+            /* Načte snapshot ze souboru. Po success je nový state aktivní;
+             * MCP klient typicky následně pošle get_state / get_registers. */
+            st_DBGAPI_SNAPSHOT_PARAM *p = (st_DBGAPI_SNAPSHOT_PARAM *)rq->data_ptr;
+            if (!p || !p->filepath)
+            {
+                rq->success = false;
+                break;
+            }
+            en_SNAPSHOT_RESULT r = snapshot_load(p->filepath);
+            p->result   = (int)r;
+            rq->success = (r == SNAPSHOT_OK);
+            break;
+        }
+
+        case DBGAPI_CMD_SNAPSHOT_LOAD_BUFFER:
+        {
+            /* Načte snapshot z paměťového bufferu (= base64 dekódovaná data
+             * z MCP requestu). Po success je nový state aktivní. */
+            st_DBGAPI_SNAPSHOT_PARAM *p = (st_DBGAPI_SNAPSHOT_PARAM *)rq->data_ptr;
+            if (!p || !p->buffer || p->buffer_size == 0)
+            {
+                rq->success = false;
+                break;
+            }
+            en_SNAPSHOT_RESULT r = snapshot_load_from_buffer(p->buffer,
+                                                              p->buffer_size);
+            p->result   = (int)r;
+            rq->success = (r == SNAPSHOT_OK);
+            break;
+        }
+
+        /* --- Symbol DB (mutant mcp-server V1.A.2) ---
+         * Delegace na sym_db API z symbols/sym_db.h. Reálné API podporuje
+         * jen user-defined LBL kind (= source=SYM_SOURCE_LBL); kind parametr
+         * z MCP wire je echo-only a v dbgapi vrstvě se neukládá.
+         *
+         * Threading: handler běží v emu vlákně v safe-pointu (= cmdrq
+         * dispatch). Reálné sym_db API je UI-thread, ale safe-point
+         * garantuje, že UI nepřistupuje současně - bezpečné.
+         */
+        case DBGAPI_CMD_SYMBOL_ADD:
+        {
+            /* Přidá nebo přepíše user-defined symbol (LBL source).
+             *
+             * V1.C.3: po úspěšném add propagujeme rq->cmd_origin do
+             * symbol DB záznamu. Lookup podle jména - sym_db API
+             * podporuje set_cmd_origin by_name. */
+            st_DBGAPI_SYMBOL_PARAM *p = (st_DBGAPI_SYMBOL_PARAM *)rq->data_ptr;
+            if (!p || !p->name || p->name[0] == '\0')
+            {
+                rq->success = false;
+                break;
+            }
+            int r = sym_db_add_user_label((uint32_t)p->addr, p->name, p->comment);
+            p->source   = (uint8_t)SYM_SOURCE_LBL;
+            if (r == 0)
+            {
+                sym_db_set_cmd_origin(p->name, rq->cmd_origin);
+            }
+            rq->success = (r == 0);
+            break;
+        }
+
+        case DBGAPI_CMD_SYMBOL_REMOVE:
+        {
+            /* Odebere symbol podle jména nebo podle adresy. Pokud name
+             * je NULL, najdeme symbol přes lookup_by_addr a remove podle
+             * jeho name (= reálné API podporuje remove jen by_name). */
+            st_DBGAPI_SYMBOL_PARAM *p = (st_DBGAPI_SYMBOL_PARAM *)rq->data_ptr;
+            if (!p)
+            {
+                rq->success = false;
+                break;
+            }
+            int r = -1;
+            if (p->name && p->name[0] != '\0')
+            {
+                r = sym_db_remove_user_label(p->name);
+            }
+            else
+            {
+                /* Remove by addr - dohledat symbol, použít jeho name. */
+                const st_SYMBOL *s = sym_db_lookup_by_addr((uint32_t)p->addr, 0);
+                if (s && s->name)
+                {
+                    r = sym_db_remove_user_label(s->name);
+                }
+            }
+            rq->success = (r == 0);
+            break;
+        }
+
+        case DBGAPI_CMD_SYMBOL_LOOKUP:
+        {
+            /* Vrátí 0 nebo 1 záznam do out_entries (out_max musí být >=1).
+             * Hex vs name detekce dělá vyšší MCP vrstva - sem dorazí
+             * buď name (string) nebo addr (uint16_t). */
+            st_DBGAPI_SYMBOL_PARAM *p = (st_DBGAPI_SYMBOL_PARAM *)rq->data_ptr;
+            if (!p || !p->out_entries || p->out_max == 0)
+            {
+                if (p) p->out_count = 0;
+                rq->success = false;
+                break;
+            }
+            const st_SYMBOL *s = NULL;
+            if (p->name && p->name[0] != '\0')
+            {
+                s = sym_db_lookup_by_name(p->name);
+            }
+            else
+            {
+                s = sym_db_lookup_by_addr((uint32_t)p->addr, 0);
+            }
+            if (s)
+            {
+                p->out_entries[0].addr    = (uint16_t)s->addr;
+                p->out_entries[0].name    = s->name ? g_strdup(s->name) : NULL;
+                p->out_entries[0].comment = s->comment ? g_strdup(s->comment) : NULL;
+                p->out_entries[0].source  = (uint8_t)s->source;
+                p->out_count = 1;
+            }
+            else
+            {
+                p->out_count = 0;
+            }
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_SYMBOL_LIST:
+        {
+            /* Iteruje sym_db v insertion-order, filtruje prefix, omezuje
+             * na out_max. Heap kopie name/comment - caller uvolní. */
+            st_DBGAPI_SYMBOL_PARAM *p = (st_DBGAPI_SYMBOL_PARAM *)rq->data_ptr;
+            if (!p || !p->out_entries || p->out_max == 0)
+            {
+                if (p) p->out_count = 0;
+                rq->success = false;
+                break;
+            }
+            size_t written = 0;
+            size_t prefix_len = (p->prefix && p->prefix[0]) ? strlen(p->prefix) : 0;
+            st_SYM_DB_ITER it;
+            sym_db_iter_init(&it);
+            const st_SYMBOL *s;
+            while ((s = sym_db_iter_next(&it)) != NULL && written < p->out_max)
+            {
+                if (!s->name) continue;
+                if (prefix_len > 0 &&
+                    strncmp(s->name, p->prefix, prefix_len) != 0)
+                {
+                    continue;
+                }
+                p->out_entries[written].addr    = (uint16_t)s->addr;
+                p->out_entries[written].name    = g_strdup(s->name);
+                p->out_entries[written].comment =
+                    s->comment ? g_strdup(s->comment) : NULL;
+                p->out_entries[written].source  = (uint8_t)s->source;
+                written++;
+            }
+            p->out_count = written;
+            rq->success  = true;
+            break;
+        }
+
+        case DBGAPI_CMD_STEP_OUT:
+        {
+            /* Step Out (V1.A.3 mcp-server): vyhledá top frame v shadow
+             * callstacku, nastaví temporary breakpoint na return_addr a
+             * volá run_to_temporary_breakpoint. Asynchronní - emu po
+             * úspěšném submit běží, klient pollí get_state.
+             *
+             * Předpoklady:
+             *  - Callstack tracking aktivní (g_callstack_active == 1)
+             *  - current_depth > 0 (= jsme v subroutine)
+             *  - emu paused (= jinak return UX jako STEP_OVER/RUN_TO)
+             *
+             * Diagnostické status kódy do payload->status (viz
+             * st_DBGAPI_STEP_OUT_PARAM v dbgapi_cmdrq.h):
+             *  0 = OK, 1 = callstack inactive, 2 = empty stack,
+             *  3 = emu running, 4 = snapshot alloc error.
+             */
+            st_DBGAPI_STEP_OUT_PARAM *p =
+                (st_DBGAPI_STEP_OUT_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            p->return_addr = 0;
+            p->status      = 0;
+
+            if ( !g_callstack_active )
+            {
+                p->status   = 1;
+                rq->success = false;
+                break;
+            };
+
+            /* Pokud emu běží, vrátíme se po pause (= konzistentní UX
+             * s STEP_OVER / RUN_TO). Klient musí znovu volat step_out. */
+            if ( !EMULATOR_TEST_PAUSED )
+            {
+                emulator_pause ( true );
+                p->status   = 3;
+                rq->success = false;
+                break;
+            };
+
+            /* Snapshot callstacku - nás zajímá jen top frame, ale API
+             * vrací celé pole; uvolníme po vytažení return_addr. */
+            st_CALLSTACK_ENTRY *entries = NULL;
+            int count = 0;
+            int rc = callstack_snapshot_get ( &entries, &count );
+            if ( rc != 0 )
+            {
+                p->status   = 4;
+                rq->success = false;
+                break;
+            };
+            if ( count <= 0 )
+            {
+                callstack_snapshot_free ( entries );
+                p->status   = 2;
+                rq->success = false;
+                break;
+            };
+
+            /* Top frame = entries[count-1] (= naposledy pushnutý
+             * volaný frame; jeho return_addr je kam se RET vrátí). */
+            uint16_t target = entries[ count - 1 ].return_addr;
+            callstack_snapshot_free ( entries );
+
+            p->return_addr = target;
+            bptmap_set_temporary_event ( target );
+            debugger_step_call ( 0 );
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+            mzarch_run_to_temporary_breakpoint ( );
+#endif
+            (void) p->max_cycles; /* informativní; ne-enforced v V1.A.3 */
+            p->status   = 0;
+            rq->success = true;
+            break;
+        }
+
+        /* ====================================================================
+         * Mutant mcp-server V1.A.5: chip-level Tools (= fault injection)
+         * ==================================================================== */
+
+        case DBGAPI_CMD_IO_READ:
+        {
+            /* Z80 IN side-effect čtení portu - volá port_read_cb stejně
+             * jak by ho zavolala instrukce Z80 IN. Side effecty na chipech
+             * (PSG, FDC status flag clear, GDG DMD strobe) probíhají
+             * normálně. Klient by si měl být vědom destruktivního
+             * dopadu - viz tool description.
+             *
+             * Pozn.: NEpoužíváme port_read_no_se_cb (= side-effect-free
+             * probe), protože MCP klient typicky chce reálné čtení s
+             * efektem. Probe varianta je v scope V1.A.5b. */
+            st_DBGAPI_IO_PARAM *p = (st_DBGAPI_IO_PARAM *) rq->data_ptr;
+            if ( !p || !g_mzarch_main.cpu )
+            {
+                rq->success = false;
+                break;
+            };
+            p->value = port_read_cb ( g_mzarch_main.cpu, p->port, NULL );
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_IO_WRITE:
+        {
+            /* Z80 OUT side-effect zápis - volá port_write_cb stejně jako
+             * Z80 OUT instrukce. Chipy reagují (PSG latch, FDC command
+             * latch, GDG mode, PIO output). Pokud má event_bus
+             * subscribery na "io_write", port_write_with_logging_cb
+             * (= aktivovaný při běhu debuggeru) emituje event sám. */
+            st_DBGAPI_IO_PARAM *p = (st_DBGAPI_IO_PARAM *) rq->data_ptr;
+            if ( !p || !g_mzarch_main.cpu )
+            {
+                rq->success = false;
+                break;
+            };
+            port_write_cb ( g_mzarch_main.cpu, p->port, p->value, NULL );
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_IRQ_INJECT:
+        {
+            /* Force maskable IRQ. Pokud vector_valid != 0, použij
+             * explicit vektor (= z80_irq). Jinak default cestou s
+             * intread_cb (= z80_int). Skutečné přijetí IRQ závisí na
+             * IFF1 (= EI stav) - pokud disabled, IRQ se zapamatuje do
+             * cpu->int_pending a vykoná se po nejbližším EI. */
+            st_DBGAPI_IRQ_INJECT_PARAM *p =
+                (st_DBGAPI_IRQ_INJECT_PARAM *) rq->data_ptr;
+            if ( !p || !g_mzarch_main.cpu )
+            {
+                rq->success = false;
+                break;
+            };
+            if ( p->vector_valid )
+            {
+                z80_irq ( g_mzarch_main.cpu, p->vector );
+            }
+            else
+            {
+                z80_int ( g_mzarch_main.cpu );
+            };
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_NMI_INJECT:
+        {
+            /* Force NMI. NMI je nemaskovatelné - vždy se přijme po
+             * dokončení aktuální instrukce, skočí na 0x0066, uloží
+             * IFF1 do IFF2 a vynuluje IFF1. */
+            if ( !g_mzarch_main.cpu )
+            {
+                rq->success = false;
+                break;
+            };
+            z80_nmi ( g_mzarch_main.cpu );
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_MEM_WRITE_FORCE:
+        {
+            /* Raw memory write bez region checku - duplikuje chování
+             * DBGAPI_CMD_MEM_WRITE (= banking-aware přes
+             * debugger_memory_write_byte), ale je explicit oddělené v
+             * MCP layeru pro audit (= klient výslovně volí destruktivní
+             * variantu, která dovolí přepis ROM oblastí, pokud je
+             * v daném banking namapovaná RAM, nebo přímo do RAM
+             * stínu pod ROM).
+             *
+             * Pozn.: skutečný ROM override (= zápis pod read-only
+             * ROM mapping) by vyžadoval bypass debugger_memory_write_byte
+             * na nižší úroveň (RAM array). To je destruktivní krok mimo
+             * scope V1.A.5 - zatím poskytujeme alespoň MCP entry point
+             * který kopíruje semantiku MEM_WRITE bez region check, takže
+             * klient nemusí volat ne-validační variantu jiným cmd. */
+            if ( !rq->data_ptr )
+            {
+                rq->success = false;
+                break;
+            };
+            st_DBGAPI_MEM_PARAM *p = (st_DBGAPI_MEM_PARAM *) rq->data_ptr;
+            if ( !p->buf )
+            {
+                rq->success = false;
+                break;
+            };
+            for ( uint32_t i = 0; i < p->len; i++ )
+            {
+                debugger_memory_write_byte (
+                    (uint16_t) ( p->addr + i ), p->buf[ i ] );
+            };
+            rq->success = true;
+            break;
+        }
+
+        /* === V1.A.6 - Watch + CDL Tools handlery ================== */
+
+        case DBGAPI_CMD_WATCH_ADD:
+        {
+            /* Přidat watch řádek do watch storage (= UI-vlákno owned, ale
+             * v sync handleru je EMU vlákno blokované a UI vlákno čeká na
+             * odpověď, takže storage je v tu chvíli klidná). Mode ADDRESS
+             * volá watch_add(), mode EXPR_* volá watch_add_expr().
+             *
+             * V1.C.3: po úspěšném add propagujeme rq->cmd_origin do
+             * vytvořeného řádku. */
+            st_DBGAPI_WATCH_ADD_PARAM *p =
+                (st_DBGAPI_WATCH_ADD_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            int idx = -1;
+            if ( p->mode == DBGAPI_WATCH_MODE_ADDRESS )
+            {
+                idx = watch_add ( p->name, p->addr, -1 );
+                if ( idx >= 0 )
+                {
+                    watch_set_type ( idx, (en_WATCH_TYPE) p->type );
+                };
+            }
+            else
+            {
+                en_WATCH_MODE m = ( p->mode == DBGAPI_WATCH_MODE_EXPR_DEREF )
+                    ? WATCH_MODE_EXPR_DEREF
+                    : WATCH_MODE_EXPR_SCALAR;
+                idx = watch_add_expr ( p->name, p->expr_text, m,
+                                        (en_WATCH_TYPE) p->type );
+            };
+            if ( idx >= 0 )
+            {
+                watch_set_cmd_origin ( idx, rq->cmd_origin );
+            };
+            p->out_index = idx;
+            rq->success = ( idx >= 0 );
+            break;
+        }
+
+        case DBGAPI_CMD_WATCH_REMOVE:
+        {
+            /* Odstraní watch řádek. Hledání podle name = lineární scan
+             * watch_count() / watch_get(). Pokud name == NULL, použije se
+             * index přímo. */
+            st_DBGAPI_WATCH_REMOVE_PARAM *p =
+                (st_DBGAPI_WATCH_REMOVE_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            int idx = p->index;
+            if ( p->name && p->name[0] != '\0' )
+            {
+                idx = -1;
+                size_t cnt = watch_count();
+                for ( size_t i = 0; i < cnt; i++ )
+                {
+                    const st_WATCH_ROW *row = watch_get ( i );
+                    if ( row && row->name &&
+                         strcmp ( row->name, p->name ) == 0 )
+                    {
+                        idx = (int) i;
+                        break;
+                    };
+                };
+            };
+            if ( idx < 0 || (size_t) idx >= watch_count() )
+            {
+                p->out_removed = 0;
+                p->index = -1;
+                rq->success = false;
+                break;
+            };
+            watch_remove ( idx );
+            p->index = idx;
+            p->out_removed = 1;
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_WATCH_LIST:
+        {
+            /* Naplní out_entries[] z watch storage. Pro každý řádek
+             * přečte aktuální hodnotu (watch_read_int / watch_read_bytes)
+             * a zformátuje ji do value_str. Stringy g_strdup, caller
+             * uvolňuje. */
+            st_DBGAPI_WATCH_LIST_PARAM *p =
+                (st_DBGAPI_WATCH_LIST_PARAM *) rq->data_ptr;
+            if ( !p || !p->out_entries || p->out_max <= 0 )
+            {
+                if ( p ) p->out_count = 0;
+                rq->success = false;
+                break;
+            };
+            size_t cnt = watch_count();
+            int max = p->out_max;
+            int n = ( (int) cnt < max ) ? (int) cnt : max;
+            for ( int i = 0; i < n; i++ )
+            {
+                const st_WATCH_ROW *row = watch_get ( (size_t) i );
+                st_DBGAPI_WATCH_LIST_ENTRY *e = &p->out_entries[ i ];
+                e->index = i;
+                e->name = ( row && row->name ) ? g_strdup ( row->name ) : NULL;
+                e->mode = (en_DBGAPI_WATCH_MODE) ( row ? row->mode : 0 );
+                e->type = (en_DBGAPI_WATCH_TYPE) ( row ? row->type : 0 );
+                e->addr = row ? row->addr : 0;
+                e->expr_text = ( row && row->expr_text )
+                    ? g_strdup ( row->expr_text ) : NULL;
+                char buf[ 96 ];
+                buf[ 0 ] = '\0';
+                if ( row )
+                {
+                    if ( watch_type_has_length ( row->type ) )
+                    {
+                        uint8_t tmp[ WATCH_LENGTH_MAX_BYTES ];
+                        size_t out_len = 0;
+                        watch_read_bytes ( row, tmp, sizeof ( tmp ), &out_len );
+                        if ( row->type == WATCH_TYPE_BYTES )
+                        {
+                            watch_format_bytes ( tmp, out_len, buf,
+                                                  sizeof ( buf ), 16 );
+                        }
+                        else
+                        {
+                            watch_format_ascii ( tmp, out_len, buf,
+                                                  sizeof ( buf ),
+                                                  row->type == WATCH_TYPE_MZASCII );
+                        };
+                    }
+                    else
+                    {
+                        uint64_t v = watch_read_int ( row );
+                        watch_format_int ( row, v, buf, sizeof ( buf ) );
+                    };
+                };
+                e->value_str = g_strdup ( buf );
+            };
+            p->out_count = n;
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_WATCH_EVAL:
+        {
+            /* Eval existující watch nebo ad-hoc výraz. Pro ad-hoc parsuje
+             * bp_expr_parse + bp_expr_eval s kontextem aktuálního cpu stavu.
+             * Stringy out_value_str + out_error jsou g_strdup, caller
+             * uvolňuje. */
+            st_DBGAPI_WATCH_EVAL_PARAM *p =
+                (st_DBGAPI_WATCH_EVAL_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            p->out_value_str = NULL;
+            p->out_error = NULL;
+            p->out_value_int = 0;
+
+            if ( p->expr_text && p->expr_text[0] != '\0' )
+            {
+                /* Ad-hoc eval bez perzistence. */
+                char errbuf[ 128 ];
+                errbuf[ 0 ] = '\0';
+                bp_expr_t *ast = bp_expr_parse ( p->expr_text,
+                                                  errbuf, sizeof ( errbuf ) );
+                if ( !ast )
+                {
+                    p->out_error = g_strdup ( errbuf );
+                    p->out_value_str = g_strdup ( "" );
+                    rq->success = false;
+                    break;
+                };
+                bp_expr_ctx_t ctx;
+                bp_expr_ctx_zero ( &ctx );
+                ctx.cpu = g_mzarch_main.cpu;
+                int32_t v = bp_expr_eval ( ast, &ctx );
+                bp_expr_free ( ast );
+                p->out_value_int = v;
+                char buf[ 32 ];
+                g_snprintf ( buf, sizeof ( buf ), "%d", (int) v );
+                p->out_value_str = g_strdup ( buf );
+                rq->success = true;
+                break;
+            };
+
+            /* Eval existujícího watche. */
+            int idx = p->index;
+            if ( p->name && p->name[0] != '\0' )
+            {
+                idx = -1;
+                size_t cnt = watch_count();
+                for ( size_t i = 0; i < cnt; i++ )
+                {
+                    const st_WATCH_ROW *row = watch_get ( i );
+                    if ( row && row->name &&
+                         strcmp ( row->name, p->name ) == 0 )
+                    {
+                        idx = (int) i;
+                        break;
+                    };
+                };
+            };
+            if ( idx < 0 || (size_t) idx >= watch_count() )
+            {
+                p->out_error = g_strdup ( "watch not found" );
+                p->out_value_str = g_strdup ( "" );
+                rq->success = false;
+                break;
+            };
+            const st_WATCH_ROW *row = watch_get ( (size_t) idx );
+            char buf[ 96 ];
+            buf[ 0 ] = '\0';
+            if ( watch_type_has_length ( row->type ) )
+            {
+                uint8_t tmp[ WATCH_LENGTH_MAX_BYTES ];
+                size_t out_len = 0;
+                watch_read_bytes ( row, tmp, sizeof ( tmp ), &out_len );
+                if ( row->type == WATCH_TYPE_BYTES )
+                {
+                    watch_format_bytes ( tmp, out_len, buf,
+                                          sizeof ( buf ), 16 );
+                }
+                else
+                {
+                    watch_format_ascii ( tmp, out_len, buf,
+                                          sizeof ( buf ),
+                                          row->type == WATCH_TYPE_MZASCII );
+                };
+                p->out_value_int = 0;
+            }
+            else
+            {
+                uint64_t v = watch_read_int ( row );
+                watch_format_int ( row, v, buf, sizeof ( buf ) );
+                p->out_value_int = (int32_t) v;
+            };
+            p->out_value_str = g_strdup ( buf );
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_CDL_START:
+        {
+            /* Spustit CDL recording (= Memory Heatmap v ALWAYS módu).
+             * mhmap_set_mode triggeruje swap CPU callbacků - hot path
+             * přejde na _with_logging variantu. */
+            mhmap_set_mode ( DEBUGGER_MHMAP_MODE_ALWAYS );
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_CDL_STOP:
+        {
+            /* Zastavit CDL recording (= mhmap_mode = OFF). Data zůstávají
+             * zachovaná - user musí Reset zavolat explicit pro vynulování. */
+            mhmap_set_mode ( DEBUGGER_MHMAP_MODE_OFF );
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_CDL_RESET:
+        {
+            /* Vynulovat všechny CDL countery (mhmap_reset). Nezasahuje
+             * mode - pokud byl ON, zůstane ON a recording pokračuje. */
+            mhmap_reset();
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_CDL_EXPORT:
+        {
+            /* Export CDL dat do souborů. mhmap_export(meta_path) vyrobí
+             * meta JSON + per-region binární soubory (*_bus.cdl, *_ram.cdl,
+             * atd.) v parent adresáři meta cesty. */
+            st_DBGAPI_CDL_EXPORT_PARAM *p =
+                (st_DBGAPI_CDL_EXPORT_PARAM *) rq->data_ptr;
+            if ( !p || !p->meta_path || p->meta_path[0] == '\0' )
+            {
+                if ( p )
+                {
+                    p->out_result = -1;
+                    p->out_region_count = 0;
+                };
+                rq->success = false;
+                break;
+            };
+            int rc = mhmap_export ( p->meta_path );
+            p->out_result = rc;
+            size_t reg_count = 0;
+            mhmap_get_export_regions ( &reg_count );
+            p->out_region_count = (int) reg_count;
+            rq->success = ( rc == 0 );
+            break;
+        }
+
+        /* --- Media Tools (mutant mcp-server V1.B.1) --- */
+        case DBGAPI_CMD_MEDIA_LOAD_MZF:
+        {
+            /* Plný CMT hack load (fix mzdos 0008): header + post-header
+             * mapping + body. Zrcadlí kanonickou sekvenci z
+             * mzarch_bootstrap_run_mzf() (bootstrap.c:61-98), ALE:
+             *
+             *   - NEvolá mzarch_bootstrap_init() (= destruktivní reset
+             *     8255/CTC/PIO). media_load_mzf je load mid-session, ne boot.
+             *   - NEnastaví SP (= bootstrap to dělá jako run-prep, my jsme
+             *     load-only).
+             *   - NEnastaví PC (= práce composite emu_media_run_mzf / caller).
+             *
+             * Mapping: na MZ-800 je po resetu header buffer 0x10F0 mapovaný
+             * na CG-ROM (= ROM_1000), takže nejdřív uložíme g_memory.map a
+             * nastavíme load-time map přes mzarch_platform_bootstrap_apply_load_map()
+             * (= RAM na 0x10F0). Pro tělo s fstrt < 0x1000 navíc odmapujeme
+             * dolní ROM přes mzarch_platform_load_prepare_body_map() (= jen
+             * Bod 1 z post_header, BEZ mz800 GDG/DMD video přepnutí, aby
+             * media_load_mzf nezměnil video mód běžícího programu). Na konci
+             * g_memory.map obnovíme = load-only primitiv bez banking side
+             * efektu.
+             *
+             * CPU scratch registry HL/BC/AF uložíme a obnovíme kolem load
+             * sekvence (load mechanismus je klobruje - HL=adresa, BC=size,
+             * AF=CARRY z cmthack_result), aby media_load_mzf neměl vedlejší
+             * efekt na CPU stav.
+             *
+             * Detekce selhání: cmthack funkce nevrací status, ale nastavují
+             * CARRY flag v AF (cmthack_result, cmthack.c:131). Fázi 1
+             * navíc poznáme přes g_cmthack.mzf_handler.status READY bit
+             * (= při selhání cmthack handler zavře). Fázi 2 přes CARRY z AF
+             * čtený PŘED restorem. */
+            st_DBGAPI_MEDIA_PARAM *p =
+                (st_DBGAPI_MEDIA_PARAM *) rq->data_ptr;
+            if ( !p || !p->filepath || p->filepath[0] == '\0' )
+            {
+                if ( p )
+                {
+                    p->out_result = -1;
+                    p->out_size = 0;
+                };
+                rq->success = false;
+                break;
+            };
+
+            /* Uložit CPU scratch registry pro pozdější restore. */
+            uint16_t saved_af = z80_get_reg ( g_mzarch_main.cpu, Z80_REG_AF );
+            uint16_t saved_hl = z80_get_reg ( g_mzarch_main.cpu, Z80_REG_HL );
+            uint16_t saved_bc = z80_get_reg ( g_mzarch_main.cpu, Z80_REG_BC );
+
+            /* Uložit aktuální memory map a nastavit kanonickou load-time map.
+             * Bez toho je mid-session na MZ-800 header buffer 0x10F0 mapovaný
+             * na CG-ROM (= ROM_1000) a cmthack MAPED zápis hlavičky se ztratí
+             * (header garbage -> body load selže). bootstrap.c tento problém
+             * nemá, protože mu předchází mzarch_bootstrap_init() s touto mapou.
+             * Mapu obnovíme na konci (load-only primitiv = bez trvalého
+             * banking side efektu). */
+            unsigned saved_map = g_memory.map;
+            mzarch_platform_bootstrap_apply_load_map ();
+
+            /* --- Fáze 1: hlavička do RAM 0x10f0 ----------------------- */
+            z80_set_reg ( g_mzarch_main.cpu, Z80_REG_HL, 0x10f0 );
+            cmthack_load_mzf_filename ( p->filepath );
+
+            if ( !( g_cmthack.mzf_handler.status & HANDLER_STATUS_READY ) )
+            {
+                /* Soubor nešel otevřít nebo vadná hlavička - cmthack handler
+                 * zavřel. Obnovit map + registry a vrátit chybu. */
+                g_memory.map = saved_map;
+                z80_set_reg ( g_mzarch_main.cpu, Z80_REG_AF, saved_af );
+                z80_set_reg ( g_mzarch_main.cpu, Z80_REG_HL, saved_hl );
+                z80_set_reg ( g_mzarch_main.cpu, Z80_REG_BC, saved_bc );
+                p->out_result = -2;
+                p->out_size = 0;
+                rq->success = false;
+                break;
+            };
+
+            /* Přečíst 128B hlavičku zpět z RAM 0x10f0 (DEBUGGER větev jako
+             * bootstrap.c:67-71). MCP build má debugger enabled. */
+            st_MZF_HEADER mzf_header;
+            for ( size_t i = 0; i < sizeof ( st_MZF_HEADER ); i++ )
+            {
+                uint8_t *hp = (uint8_t *) &mzf_header + i;
+                *hp = debugger_memory_read_byte ( (uint16_t) ( 0x10f0 + i ) );
+            };
+
+            /* --- Body mapping (PŘED body) ----------------------------- */
+            /* Jen odmapování dolní ROM pro fstrt < 0x1000 (= "Bod 1" z
+             * post_header), BEZ mz800 GDG/DMD video přepnutí - to je
+             * boot-prep, ne mid-session load. */
+            mzarch_platform_load_prepare_body_map ( mzf_header.fstrt );
+
+            /* --- Fáze 2: tělo do RAM na fstrt ------------------------- */
+            z80_set_reg ( g_mzarch_main.cpu, Z80_REG_HL, mzf_header.fstrt );
+            z80_set_reg ( g_mzarch_main.cpu, Z80_REG_BC, mzf_header.fsize );
+            cmthack_read_mzf_body ();
+
+            /* CARRY flag (bit 0 AF) = signál selhání fáze 2 (cmthack_result
+             * LOADRET_ERROR/BREAK). Číst PŘED restorem AF. */
+            uint16_t af_after = z80_get_reg ( g_mzarch_main.cpu, Z80_REG_AF );
+            bool body_failed = ( af_after & 0x01 ) != 0;
+
+            /* Obnovit memory map + CPU scratch registry (load primitiv bez
+             * trvalého banking/CPU side efektu). Body už je v RAM. */
+            g_memory.map = saved_map;
+            z80_set_reg ( g_mzarch_main.cpu, Z80_REG_AF, saved_af );
+            z80_set_reg ( g_mzarch_main.cpu, Z80_REG_HL, saved_hl );
+            z80_set_reg ( g_mzarch_main.cpu, Z80_REG_BC, saved_bc );
+
+            p->out_load_addr = mzf_header.fstrt;
+            p->out_exec_addr = mzf_header.fexec;
+            p->out_size = mzf_header.fsize;
+
+            if ( body_failed )
+            {
+                p->out_result = -3;
+                rq->success = false;
+                break;
+            };
+
+            p->out_result = 0;
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_MEDIA_LOAD_BINARY:
+        {
+            /* Raw binary load do Z80 paměti. Otevře soubor přes stdio,
+             * zapíše bajt po bajtu přes debugger_memory_write_byte
+             * (banking-aware, ale bez region checks). Velikost je dáná
+             * souborem; kontrolujeme jen že se vejde do 0..65535 od
+             * load_addr. */
+            st_DBGAPI_MEDIA_PARAM *p =
+                (st_DBGAPI_MEDIA_PARAM *) rq->data_ptr;
+            if ( !p || !p->filepath || p->filepath[0] == '\0' )
+            {
+                if ( p ) p->out_result = -1;
+                rq->success = false;
+                break;
+            };
+            FILE *fp = g_fopen ( p->filepath, "rb" );
+            if ( !fp )
+            {
+                p->out_result = -2;
+                rq->success = false;
+                break;
+            };
+            uint32_t addr = p->load_addr;
+            uint32_t written = 0;
+            int ch;
+            while ( ( ch = fgetc ( fp ) ) != EOF )
+            {
+                if ( addr > 0xFFFF )
+                {
+                    /* Přetečení 64 KB - skončíme s warning, ale zatím
+                     * úspěch nad částí, která se vešla. */
+                    break;
+                };
+                debugger_memory_write_byte ( (uint16_t) addr, (uint8_t) ch );
+                addr++;
+                written++;
+            };
+            fclose ( fp );
+            p->out_size = written;
+            p->out_result = 0;
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_MEDIA_INSERT:
+        {
+            /* Insert image do slotu. Dispatch podle slot enum. Path musí
+             * být non-empty (= "" znamená eject; pro to existuje EJECT
+             * CMD samostatně). */
+            st_DBGAPI_MEDIA_PARAM *p =
+                (st_DBGAPI_MEDIA_PARAM *) rq->data_ptr;
+            if ( !p || !p->filepath || p->filepath[0] == '\0' )
+            {
+                if ( p ) p->out_result = -1;
+                rq->success = false;
+                break;
+            };
+            int rc = -1;
+            switch ( p->slot )
+            {
+                case DBGAPI_MEDIA_SLOT_CMT:
+                {
+                    /* cmt_open_file_by_extension nemodifikuje argument,
+                     * ale signatura ho deklaruje jako (char*) - cast. */
+                    rc = cmt_open_file_by_extension ( (char *) p->filepath );
+                    /* cmt API vrací 0=OK, nenula=error (interpretace
+                     * závisí na implementaci). */
+                    break;
+                };
+#if CFG_HWEXT_HAVE_FDC
+                case DBGAPI_MEDIA_SLOT_FDC0:
+                {
+                    fdc_mount_dskfile ( 0, (char *) p->filepath );
+                    rc = FDC_TEST_DRIVE_ID_MOUNTED ( 0 ) ? 0 : -3;
+                    break;
+                };
+                case DBGAPI_MEDIA_SLOT_FDC1:
+                {
+                    fdc_mount_dskfile ( 1, (char *) p->filepath );
+                    rc = FDC_TEST_DRIVE_ID_MOUNTED ( 1 ) ? 0 : -3;
+                    break;
+                };
+#else
+                case DBGAPI_MEDIA_SLOT_FDC0:
+                case DBGAPI_MEDIA_SLOT_FDC1:
+                    rc = -10; /* FDC není v této arch sestavě */
+                    break;
+#endif
+#if CFG_HWEXT_HAVE_QDISK
+                case DBGAPI_MEDIA_SLOT_QD:
+                {
+                    /* qdisk_open čte cestu z CFGELM (g_elm_qd_path) -
+                     * V1.B.1 podporujeme jen runtime ekvivalent insert
+                     * skrz cfgelement API. Pro V1.B.1 vrátíme -11
+                     * (= "není implementováno", path setting jde přes
+                     * V1.B.2 settings_set). */
+                    (void) p;
+                    rc = -11;
+                    break;
+                };
+#else
+                case DBGAPI_MEDIA_SLOT_QD:
+                    rc = -10;
+                    break;
+#endif
+#if CFG_HWEXT_HAVE_IDE8
+                case DBGAPI_MEDIA_SLOT_IDE8:
+                {
+                    rc = ide8_drive_open_image ( &g_ide8.drive[ 0 ],
+                                                  (char *) p->filepath );
+                    /* ide8 vrací 0 = OK. */
+                    break;
+                };
+#else
+                case DBGAPI_MEDIA_SLOT_IDE8:
+                    rc = -10;
+                    break;
+#endif
+                default:
+                    rc = -1;
+                    break;
+            };
+            p->out_result = rc;
+            rq->success = ( rc == 0 );
+            break;
+        }
+
+        case DBGAPI_CMD_MEDIA_EJECT:
+        {
+            st_DBGAPI_MEDIA_PARAM *p =
+                (st_DBGAPI_MEDIA_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            int rc = -1;
+            switch ( p->slot )
+            {
+                case DBGAPI_MEDIA_SLOT_CMT:
+                    cmt_eject ( );
+                    rc = 0;
+                    break;
+#if CFG_HWEXT_HAVE_FDC
+                case DBGAPI_MEDIA_SLOT_FDC0:
+                    fdc_umount ( 0 );
+                    rc = 0;
+                    break;
+                case DBGAPI_MEDIA_SLOT_FDC1:
+                    fdc_umount ( 1 );
+                    rc = 0;
+                    break;
+#else
+                case DBGAPI_MEDIA_SLOT_FDC0:
+                case DBGAPI_MEDIA_SLOT_FDC1:
+                    rc = -10;
+                    break;
+#endif
+#if CFG_HWEXT_HAVE_QDISK
+                case DBGAPI_MEDIA_SLOT_QD:
+                    qdisk_umount ( );
+                    rc = 0;
+                    break;
+#else
+                case DBGAPI_MEDIA_SLOT_QD:
+                    rc = -10;
+                    break;
+#endif
+#if CFG_HWEXT_HAVE_IDE8
+                case DBGAPI_MEDIA_SLOT_IDE8:
+                    ide8_drive_close_image ( &g_ide8.drive[ 0 ] );
+                    rc = 0;
+                    break;
+#else
+                case DBGAPI_MEDIA_SLOT_IDE8:
+                    rc = -10;
+                    break;
+#endif
+                default:
+                    rc = -1;
+                    break;
+            };
+            p->out_result = rc;
+            rq->success = ( rc == 0 );
+            break;
+        }
+
+        case DBGAPI_CMD_MEDIA_STATE:
+        {
+            /* Snapshot stavu všech slotů. Pořadí: CMT, FDC0, FDC1, QD, IDE8.
+             * Pro nemountnuté / nepřítomné periferie inserted=0, filepath="". */
+            st_DBGAPI_MEDIA_STATE_PARAM *p =
+                (st_DBGAPI_MEDIA_STATE_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+            int idx = 0;
+
+            /* CMT - g_cmt.ui_base_filename obsahuje aktuální cestu pokud
+             * nahráno přes UI; cmt_get_ui_base_filename() vrací string. */
+            p->slots[ idx ].slot = DBGAPI_MEDIA_SLOT_CMT;
+            p->slots[ idx ].inserted = CMT_TEST_FILLED ? 1 : 0;
+            p->slots[ idx ].read_only = 0;
+            {
+                const char *fn = cmt_get_ui_base_filename ( );
+                if ( fn && fn[ 0 ] )
+                {
+                    strncpy ( p->slots[ idx ].filepath, fn,
+                              sizeof ( p->slots[ idx ].filepath ) - 1 );
+                };
+            };
+            idx++;
+
+#if CFG_HWEXT_HAVE_FDC
+            for ( unsigned d = 0; d < 2; d++ )
+            {
+                p->slots[ idx ].slot = ( d == 0 )
+                    ? DBGAPI_MEDIA_SLOT_FDC0
+                    : DBGAPI_MEDIA_SLOT_FDC1;
+                int mounted = fdc_test_drive_id_mounted ( d );
+                p->slots[ idx ].inserted = mounted ? 1 : 0;
+                p->slots[ idx ].read_only = 0;
+                if ( mounted && g_fdc.drive[ d ].filename[ 0 ] )
+                {
+                    strncpy ( p->slots[ idx ].filepath,
+                              g_fdc.drive[ d ].filename,
+                              sizeof ( p->slots[ idx ].filepath ) - 1 );
+                };
+                idx++;
+            };
+#else
+            p->slots[ idx ].slot = DBGAPI_MEDIA_SLOT_FDC0;
+            idx++;
+            p->slots[ idx ].slot = DBGAPI_MEDIA_SLOT_FDC1;
+            idx++;
+#endif
+
+#if CFG_HWEXT_HAVE_QDISK
+            p->slots[ idx ].slot = DBGAPI_MEDIA_SLOT_QD;
+            p->slots[ idx ].inserted = ( g_qdisk.filename[ 0 ] != '\0' ) ? 1 : 0;
+            p->slots[ idx ].read_only = qdisc_get_write_protected ( ) ? 1 : 0;
+            if ( g_qdisk.filename[ 0 ] )
+            {
+                strncpy ( p->slots[ idx ].filepath, g_qdisk.filename,
+                          sizeof ( p->slots[ idx ].filepath ) - 1 );
+            };
+            idx++;
+#else
+            p->slots[ idx ].slot = DBGAPI_MEDIA_SLOT_QD;
+            idx++;
+#endif
+
+#if CFG_HWEXT_HAVE_IDE8
+            p->slots[ idx ].slot = DBGAPI_MEDIA_SLOT_IDE8;
+            p->slots[ idx ].inserted =
+                IDE8_TEST_MASTER_CONNECTED ? 1 : 0;
+            p->slots[ idx ].read_only = 0;
+            {
+                const char *fn = ide8_drive_get_filepath ( 0 );
+                if ( fn && fn[ 0 ] )
+                {
+                    strncpy ( p->slots[ idx ].filepath, fn,
+                              sizeof ( p->slots[ idx ].filepath ) - 1 );
+                };
+            };
+            idx++;
+#else
+            p->slots[ idx ].slot = DBGAPI_MEDIA_SLOT_IDE8;
+            idx++;
+#endif
+
+            p->count = idx;
+            rq->success = true;
+            break;
+        }
+
+        /* --- Platform + Config Tools (mutant mcp-server V1.B.2) --- */
+        case DBGAPI_CMD_SETTINGS_GET:
+        {
+            /* Čte INI element. Pomocí cfgroot_get_module_by_name +
+             * cfgmodule_get_element_by_name najde element a podle
+             * jeho typu naplní out_value (heap-alokovaný g_strdup) a
+             * out_type. Caller (MCP dispatch) uvolňuje out_value
+             * přes g_free. */
+            st_DBGAPI_SETTINGS_PARAM *p =
+                (st_DBGAPI_SETTINGS_PARAM *) rq->data_ptr;
+            if ( !p || !p->module || !p->element )
+            {
+                if ( p ) p->out_result = -1;
+                rq->success = false;
+                break;
+            };
+            p->out_value = NULL;
+            p->out_type = DBGAPI_SETTINGS_TYPE_UNKNOWN;
+            CFGMOD *mod =
+                cfgroot_get_module_by_name ( g_cfgmain, (char *) p->module );
+            if ( !mod )
+            {
+                p->out_result = -2;
+                rq->success = false;
+                break;
+            };
+            st_CFGELEMENT *elm =
+                cfgmodule_get_element_by_name ( mod, (char *) p->element );
+            if ( !elm )
+            {
+                p->out_result = -3;
+                rq->success = false;
+                break;
+            };
+            switch ( elm->type )
+            {
+                case CFGENTYPE_UNSIGNED:
+                {
+                    unsigned v = cfgelement_get_unsigned_value ( elm );
+                    p->out_value = g_strdup_printf ( "%u", v );
+                    p->out_type  = DBGAPI_SETTINGS_TYPE_UNSIGNED;
+                    break;
+                };
+                case CFGENTYPE_BOOL:
+                {
+                    int v = cfgelement_get_bool_value ( elm );
+                    p->out_value = g_strdup ( v ? "true" : "false" );
+                    p->out_type  = DBGAPI_SETTINGS_TYPE_BOOL;
+                    break;
+                };
+                case CFGENTYPE_TEXT:
+                {
+                    char *v = cfgelement_get_text_value ( elm );
+                    p->out_value = g_strdup ( v ? v : "" );
+                    p->out_type  = DBGAPI_SETTINGS_TYPE_TEXT;
+                    break;
+                };
+                case CFGENTYPE_KEYWORD:
+                {
+                    char *kw = cfgelement_get_keyword_by_value ( elm );
+                    p->out_value = g_strdup ( kw ? kw : "" );
+                    p->out_type  = DBGAPI_SETTINGS_TYPE_KEYWORD;
+                    break;
+                };
+                case CFGENTYPE_FLOAT:
+                {
+                    float v = cfgelement_get_float_value ( elm );
+                    p->out_value = g_strdup_printf ( "%g", (double) v );
+                    p->out_type  = DBGAPI_SETTINGS_TYPE_FLOAT;
+                    break;
+                };
+                default:
+                    p->out_result = -3;
+                    rq->success = false;
+                    break;
+            };
+            if ( p->out_value )
+            {
+                p->out_result = 0;
+                rq->success = true;
+            };
+            break;
+        }
+
+        case DBGAPI_CMD_SETTINGS_SET:
+        {
+            /* Zápis INI elementu. Před zápisem zachytí aktuální hodnotu
+             * do out_value (audit / rollback). Pokud type-coerce
+             * stringu selže, vrátí -4. Whitelist live-settable klíčů
+             * NENÍ řešen zde (= delegováno na MCP vrstvu, která má
+             * jednotný seznam). */
+            st_DBGAPI_SETTINGS_PARAM *p =
+                (st_DBGAPI_SETTINGS_PARAM *) rq->data_ptr;
+            if ( !p || !p->module || !p->element || !p->new_value )
+            {
+                if ( p ) p->out_result = -1;
+                rq->success = false;
+                break;
+            };
+            p->out_value = NULL;
+            p->out_type = DBGAPI_SETTINGS_TYPE_UNKNOWN;
+            CFGMOD *mod =
+                cfgroot_get_module_by_name ( g_cfgmain, (char *) p->module );
+            if ( !mod )
+            {
+                p->out_result = -2;
+                rq->success = false;
+                break;
+            };
+            st_CFGELEMENT *elm =
+                cfgmodule_get_element_by_name ( mod, (char *) p->element );
+            if ( !elm )
+            {
+                p->out_result = -3;
+                rq->success = false;
+                break;
+            };
+            switch ( elm->type )
+            {
+                case CFGENTYPE_UNSIGNED:
+                {
+                    unsigned prev = cfgelement_get_unsigned_value ( elm );
+                    p->out_value = g_strdup_printf ( "%u", prev );
+                    p->out_type  = DBGAPI_SETTINGS_TYPE_UNSIGNED;
+                    char *endp = NULL;
+                    unsigned long v =
+                        strtoul ( p->new_value, &endp, 0 );
+                    if ( !endp || *endp != '\0' )
+                    {
+                        p->out_result = -4;
+                        rq->success = false;
+                        break;
+                    };
+                    cfgelement_set_unsigned_value ( elm, (unsigned) v );
+                    p->out_result = 0;
+                    rq->success = true;
+                    break;
+                };
+                case CFGENTYPE_BOOL:
+                {
+                    int prev = cfgelement_get_bool_value ( elm );
+                    p->out_value = g_strdup ( prev ? "true" : "false" );
+                    p->out_type  = DBGAPI_SETTINGS_TYPE_BOOL;
+                    int bv = -1;
+                    if ( !g_ascii_strcasecmp ( p->new_value, "true" )
+                         || !strcmp ( p->new_value, "1" ) )
+                    {
+                        bv = 1;
+                    }
+                    else if ( !g_ascii_strcasecmp ( p->new_value, "false" )
+                              || !strcmp ( p->new_value, "0" ) )
+                    {
+                        bv = 0;
+                    };
+                    if ( bv < 0 )
+                    {
+                        p->out_result = -4;
+                        rq->success = false;
+                        break;
+                    };
+                    cfgelement_set_bool_value ( elm, bv );
+                    p->out_result = 0;
+                    rq->success = true;
+                    break;
+                };
+                case CFGENTYPE_TEXT:
+                {
+                    char *prev = cfgelement_get_text_value ( elm );
+                    p->out_value = g_strdup ( prev ? prev : "" );
+                    p->out_type  = DBGAPI_SETTINGS_TYPE_TEXT;
+                    cfgelement_set_text_value ( elm, p->new_value );
+                    p->out_result = 0;
+                    rq->success = true;
+                    break;
+                };
+                case CFGENTYPE_FLOAT:
+                {
+                    float prev = cfgelement_get_float_value ( elm );
+                    p->out_value = g_strdup_printf ( "%g", (double) prev );
+                    p->out_type  = DBGAPI_SETTINGS_TYPE_FLOAT;
+                    char *endp = NULL;
+                    float v = (float) g_ascii_strtod ( p->new_value, &endp );
+                    if ( !endp || *endp != '\0' )
+                    {
+                        p->out_result = -4;
+                        rq->success = false;
+                        break;
+                    };
+                    cfgelement_set_float_value ( elm, v );
+                    p->out_result = 0;
+                    rq->success = true;
+                    break;
+                };
+                case CFGENTYPE_KEYWORD:
+                default:
+                    /* KEYWORD vyžaduje znalost mapování keyword<->int,
+                     * což V1.B.2 neexponuje. Whitelist v MCP vrstvě
+                     * KEYWORD klíče zatím neobsahuje, takže by sem
+                     * neměl dojít. Defense in depth = vrátit -4. */
+                    {
+                        char *kw = cfgelement_get_keyword_by_value ( elm );
+                        p->out_value = g_strdup ( kw ? kw : "" );
+                        p->out_type  = DBGAPI_SETTINGS_TYPE_KEYWORD;
+                    };
+                    p->out_result = -4;
+                    rq->success = false;
+                    break;
+            };
+            break;
+        }
+
+        case DBGAPI_CMD_PLATFORM_SET:
+        {
+            /* Runtime platform switch NENÍ podporován - mz800/mz700/
+             * mz1500 jsou separátní binárky (= compile-time MZARCH).
+             * Handler vrací out_active_kind a out_result = -10 vždy
+             * kromě target == active (= no-op, out_result = 0). */
+            st_DBGAPI_PLATFORM_PARAM *p =
+                (st_DBGAPI_PLATFORM_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            /* Mapování compile-time MZARCH na enum: 700->1, 800->2, 1500->3. */
+            int active = 0;
+            switch ( g_mzarch_platform_numeric )
+            {
+                case 700:  active = 1; break;
+                case 800:  active = 2; break;
+                case 1500: active = 3; break;
+                default:   active = 0; break;
+            };
+            p->out_active_kind = active;
+            if ( p->target_kind == active )
+            {
+                /* No-op - cílová platforma je už aktivní. */
+                p->out_result = 0;
+                rq->success = true;
+            }
+            else
+            {
+                p->out_result = -10;
+                rq->success = false;
+            };
+            break;
+        }
+
+        case DBGAPI_CMD_PERIPH_ATTACH:
+        case DBGAPI_CMD_PERIPH_DETACH:
+        {
+            /* Attach/detach periferie. V1.B.2 minimal implementation -
+             * zapíše cfgmain INI flag a vrátí out_requires_restart=1
+             * (= aplikace plně až po restartu emulátoru). Hot-swap
+             * (live re-init) je out of scope V1.B.2.
+             *
+             * INI mapování:
+             *   memext -> CFGMOD "MEMEXT", element "type" (TEXT)
+             *           pro attach + "active" (BOOL) flag.
+             *   fdc    -> CFGMOD "FDC",    element "active" (BOOL)
+             *   qd     -> CFGMOD "QDISK",  element "active" (BOOL)
+             *   ide8   -> CFGMOD "IDE8",   element "active" (BOOL)
+             *   gal5   -> CFGMOD "GAL5",   element "active" (BOOL)
+             *
+             * Pokud cfgmodule nebo element neexistuje (= periferie
+             * není v této arch sestavě nebo zatím nepodporuje INI
+             * active flag), handler vrátí -10 / -11. */
+            st_DBGAPI_PERIPH_PARAM *p =
+                (st_DBGAPI_PERIPH_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            p->out_requires_restart = 0;
+            const char *mod_name = NULL;
+            switch ( p->kind )
+            {
+                case DBGAPI_PERIPH_KIND_MEMEXT: mod_name = "MEMEXT"; break;
+                case DBGAPI_PERIPH_KIND_FDC:    mod_name = "FDC";    break;
+                case DBGAPI_PERIPH_KIND_QD:     mod_name = "QDISK";  break;
+                case DBGAPI_PERIPH_KIND_IDE8:   mod_name = "IDE8";   break;
+                case DBGAPI_PERIPH_KIND_GAL5:   mod_name = "GAL5";   break;
+                default:
+                    p->out_result = -1;
+                    rq->success = false;
+                    break;
+            };
+            if ( !mod_name )
+            {
+                /* default: case už nastavil out_result. */
+                break;
+            };
+            CFGMOD *mod =
+                cfgroot_get_module_by_name ( g_cfgmain, (char *) mod_name );
+            if ( !mod )
+            {
+                /* Periferie není v této arch sestavě (= modul se
+                 * vůbec neregistroval). */
+                p->out_result = -10;
+                rq->success = false;
+                break;
+            };
+            /* "active" BOOL flag - musí existovat v modulu. Pokud
+             * konkrétní modul tento flag nemá, periferie nepodporuje
+             * runtime attach/detach. */
+            st_CFGELEMENT *active_elm =
+                cfgmodule_get_element_by_name ( mod, "active" );
+            if ( !active_elm || active_elm->type != CFGENTYPE_BOOL )
+            {
+                p->out_result = -11;
+                rq->success = false;
+                break;
+            };
+            int new_state = ( cmd == DBGAPI_CMD_PERIPH_ATTACH ) ? 1 : 0;
+            cfgelement_set_bool_value ( active_elm, new_state );
+            /* Pro memext attach option_value (= type variant) zapíšeme
+             * do "type" TEXT elementu pokud je předán. */
+            if ( cmd == DBGAPI_CMD_PERIPH_ATTACH
+                 && p->kind == DBGAPI_PERIPH_KIND_MEMEXT
+                 && p->option_value && p->option_value[ 0 ] )
+            {
+                st_CFGELEMENT *type_elm =
+                    cfgmodule_get_element_by_name ( mod, "type" );
+                if ( type_elm && type_elm->type == CFGENTYPE_TEXT )
+                {
+                    cfgelement_set_text_value ( type_elm, p->option_value );
+                };
+            };
+            p->out_requires_restart = 1;
+            p->out_result = 0;
+            rq->success = true;
+            break;
+        }
+
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+        case DBGAPI_CMD_INPUT_PRESS_KEY:
+        {
+            /* Press klávesy v PIO8255 vkbd_matrix. Caller (= MCP
+             * dispatch handler) už resolvoval key name nebo ASCII
+             * znak na (col, bit, needs_shift). */
+            st_DBGAPI_HID_KEY_PARAM *p =
+                (st_DBGAPI_HID_KEY_PARAM *) rq->data_ptr;
+            if ( !p || p->col < 0 || p->col > 9
+                 || p->bit < 0 || p->bit > 7 )
+            {
+                rq->success = false;
+                break;
+            };
+            hid_keymap_press ( p->col, p->bit, p->needs_shift );
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_INPUT_RELEASE_KEY:
+        {
+            /* Release klávesy ve vkbd_matrix. SHIFT release závisí
+             * na needs_shift flagu (caller rozhoduje). */
+            st_DBGAPI_HID_KEY_PARAM *p =
+                (st_DBGAPI_HID_KEY_PARAM *) rq->data_ptr;
+            if ( !p || p->col < 0 || p->col > 9
+                 || p->bit < 0 || p->bit > 7 )
+            {
+                rq->success = false;
+                break;
+            };
+            hid_keymap_release ( p->col, p->bit, p->needs_shift );
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_INPUT_RELEASE_ALL:
+        {
+            /* Vyplní celou vkbd_matrix 0xff (= všechny klávesy
+             * uvolněné). Bez paramu. */
+            hid_keymap_release_all();
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_INPUT_JOY_SET:
+        {
+            /* Nastaví g_joy.dev[port].state z user-friendly active-HIGH
+             * masky (bit 0=UP / 1=DOWN / 2=LEFT / 3=RIGHT / 4=FIRE1 /
+             * 5=FIRE2). hid_keymap_joystick_set provede konverzi na
+             * active-LOW byte. */
+            st_DBGAPI_HID_JOY_PARAM *p =
+                (st_DBGAPI_HID_JOY_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            rq->success = hid_keymap_joystick_set ( p->port, p->mcp_mask );
+            break;
+        }
+
+        case DBGAPI_CMD_INPUT_JOY_CLEAR:
+        {
+            /* Uvolní všechny joystick bity (= state byte 0xff). */
+            st_DBGAPI_HID_JOY_PARAM *p =
+                (st_DBGAPI_HID_JOY_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            rq->success = hid_keymap_joystick_clear ( p->port );
+            break;
+        }
+
+        /* --- V1.D.1: Core + CPU extras Resources -------------------- */
+
+        case DBGAPI_CMD_GET_CPU_IM2_VECTOR:
+        {
+            /* Snapshot Z80 IM2 stavu - I register, IM, poslední ACK vector.
+             * Pro IM != 2 vyplníme available=0 a ostatní jsou platná, ale
+             * isr_addr/isr_target ztrácí význam (= klient si přečte
+             * available=0 a ignoruje je). */
+            st_DBGAPI_CPU_IM2_VECTOR_PARAM *p =
+                (st_DBGAPI_CPU_IM2_VECTOR_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+            z80_t *cpu = g_mzarch_main.cpu;
+            p->im       = cpu->im;
+            p->i_reg    = cpu->i;
+            p->last_vec = cpu->int_vector;
+            if ( cpu->im == 2 )
+            {
+                p->available = 1;
+                p->isr_addr  =
+                    (uint16_t) ( ( (uint16_t) cpu->i << 8 )
+                                 | (uint16_t) cpu->int_vector );
+                /* Čteme cílovou adresu vektoru z paměti (= 2 bajty LE).
+                 * Použijeme debugger_memory_read_byte - bez side effects. */
+                uint8_t lo = debugger_memory_read_byte ( p->isr_addr );
+                uint8_t hi = debugger_memory_read_byte (
+                    (uint16_t) ( p->isr_addr + 1 ) );
+                p->isr_target =
+                    (uint16_t) ( (uint16_t) lo | ( (uint16_t) hi << 8 ) );
+            }
+            else
+            {
+                p->available  = 0;
+                p->isr_addr   = 0;
+                p->isr_target = 0;
+            };
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_CPU_INTERRUPT_BUS:
+        {
+            /* Snapshot IRQ subsystému - Z80 core flags + per-platform note
+             * + placeholder pro per-chip detail. V1.D.1 vystavuje pouze
+             * Z80 core (vždy dostupné); daisy chain / non-chain / NMI
+             * sources jsou available=0 + reason text. V1.D.2 (rozbor 5.1)
+             * doplní per-chip data. */
+            st_DBGAPI_CPU_IRQ_BUS_PARAM *p =
+                (st_DBGAPI_CPU_IRQ_BUS_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+            z80_t *cpu = g_mzarch_main.cpu;
+            p->iff1       = cpu->iff1 ? 1 : 0;
+            p->iff2       = cpu->iff2 ? 1 : 0;
+            p->im         = cpu->im;
+            p->halted     = cpu->halted ? 1 : 0;
+            p->int_line   = cpu->int_pending ? 1 : 0;
+            p->nmi_line   = cpu->nmi_pending ? 1 : 0;
+            p->i_reg      = cpu->i;
+            p->ei_pending = cpu->ei_delay ? 1 : 0;
+
+            /* Per-platform note - statický popis IRQ topologie. */
+            switch ( g_mzarch_platform_numeric )
+            {
+                case 700:
+                    g_strlcpy ( p->platform_note,
+                        "MZ-700: CTC 8253 + 8255 PPI (no Z80 PIO daisy chain).",
+                        sizeof ( p->platform_note ) );
+                    break;
+                case 800:
+                    g_strlcpy ( p->platform_note,
+                        "MZ-800: GDG raster + CTC + Z80 PIO + non-chain non-mask sources.",
+                        sizeof ( p->platform_note ) );
+                    break;
+                case 1500:
+                    g_strlcpy ( p->platform_note,
+                        "MZ-1500: GDG + CTC + Z80 PIO + PSG side IRQ.",
+                        sizeof ( p->platform_note ) );
+                    break;
+                default:
+                    g_strlcpy ( p->platform_note, "unknown platform",
+                        sizeof ( p->platform_note ) );
+                    break;
+            };
+
+            /* Per-chip detail - V1.D.1 placeholder, V1.D.2 implementace. */
+            p->daisy_chain_available = 0;
+            g_strlcpy ( p->daisy_chain_reason,
+                "per-chip Z80 PIO daisy chain snapshot deferred to V1.D.2",
+                sizeof ( p->daisy_chain_reason ) );
+
+            p->non_chain_available = 0;
+            g_strlcpy ( p->non_chain_reason,
+                "per-source non-chain IRQ snapshot deferred to V1.D.2",
+                sizeof ( p->non_chain_reason ) );
+
+            p->nmi_sources_available = 0;
+            g_strlcpy ( p->nmi_sources_reason,
+                "per-source NMI snapshot deferred to V1.D.2 (memext PEHU etc.)",
+                sizeof ( p->nmi_sources_reason ) );
+
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_MEMORY_MAP:
+        {
+            /* Per-platform snapshot 16 slotů × 4 KB. V1.D.1 minimální
+             * implementace: pro každý slot rozliší zda jde o MEMEXT
+             * (přes memext_get_ram_offset_from_pointer) a vyplní
+             * source/offset. Pro non-memext slot označí jako "unknown"
+             * (= rozsáhlá per-platform banking detekce je out of scope
+             * V1.D.1; klient si přečte addr_range a další detail z
+             * dalších Resources). */
+            st_DBGAPI_MEMORY_MAP_PARAM *p =
+                (st_DBGAPI_MEMORY_MAP_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+
+            const char *plat = "unknown";
+            switch ( g_mzarch_platform_numeric )
+            {
+                case 700:  plat = "mz700"; break;
+                case 800:  plat = "mz800"; break;
+                case 1500: plat = "mz1500"; break;
+                default:   plat = "unknown"; break;
+            };
+            g_strlcpy ( p->platform, plat, sizeof ( p->platform ) );
+            g_strlcpy ( p->mode_note,
+                "16 slotov 4KB; banking + memext aware (V1.D.1 minimal).",
+                sizeof ( p->mode_note ) );
+
+            for ( int i = 0; i < 16; i++ )
+            {
+                p->slots[ i ].addr_start  = (uint16_t) ( i * 0x1000 );
+                p->slots[ i ].addr_end    =
+                    (uint16_t) ( i * 0x1000 + 0x0FFF );
+                p->slots[ i ].source      = 0; /* unknown */
+                p->slots[ i ].ro_rw       = 0;
+                p->slots[ i ].slot_offset = 0;
+
+                /* MEMEXT detekce - vyžaduje connected memext, jinak skip. */
+                if ( MEMEXT_TEST_CONNECTED )
+                {
+                    /* g_memext.map[i] = raw bank index. Pro Luftner:
+                     * 0..0x7F = RAM, 0x80..0xFF = FLASH. Pro PEHU jen
+                     * 0..0x3F (RAM only). */
+                    uint32_t rb = g_memext.map[ i ];
+                    if ( MEMEXT_TEST_TYPE_LUFTNER )
+                    {
+                        if ( rb < MEMEXT_LUFTNER_BANKS )
+                        {
+                            p->slots[ i ].source = 5; /* MEMEXT_RAM */
+                            p->slots[ i ].ro_rw  = 1;
+                            p->slots[ i ].slot_offset =
+                                rb * MEMEXT_RAW_BANK_SIZE;
+                        }
+                        else
+                        {
+                            p->slots[ i ].source = 6; /* MEMEXT_FLASH */
+                            p->slots[ i ].ro_rw  = 0;
+                            p->slots[ i ].slot_offset =
+                                ( rb - MEMEXT_LUFTNER_BANKS )
+                                * MEMEXT_RAW_BANK_SIZE;
+                        };
+                    }
+                    else if ( MEMEXT_TEST_TYPE_PEHU )
+                    {
+                        if ( rb < MEMEXT_PEHU_BANKS * 2 )
+                        {
+                            p->slots[ i ].source = 5; /* MEMEXT_RAM */
+                            p->slots[ i ].ro_rw  = 1;
+                            p->slots[ i ].slot_offset =
+                                rb * MEMEXT_RAW_BANK_SIZE;
+                        };
+                    };
+                };
+            };
+            p->slot_count = 16;
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_MEMEXT_INFO:
+        {
+            /* Snapshot Memory expansion adaptéru. Pokud memext odpojen
+             * (= g_memext.connection == NO), vrátí type="none" +
+             * connected=0; ostatní pole jsou 0. */
+            st_DBGAPI_MEMEXT_INFO_PARAM *p =
+                (st_DBGAPI_MEMEXT_INFO_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+
+            if ( !MEMEXT_TEST_CONNECTED )
+            {
+                g_strlcpy ( p->type, "none", sizeof ( p->type ) );
+                p->connected     = 0;
+                p->map_available = 0;
+                rq->success      = true;
+                break;
+            };
+
+            p->connected     = 1;
+            p->map_available = 1;
+            for ( int i = 0; i < 16; i++ )
+            {
+                p->current_map[ i ] = g_memext.map[ i ];
+            };
+
+            if ( MEMEXT_TEST_TYPE_LUFTNER )
+            {
+                g_strlcpy ( p->type, "luftner", sizeof ( p->type ) );
+                p->ram_banks       = MEMEXT_LUFTNER_BANKS;
+                p->ram_bank_size   = MEMEXT_RAW_BANK_SIZE;
+                p->flash_banks     = MEMEXT_LUFTNER_BANKS;
+                p->flash_bank_size = MEMEXT_RAW_BANK_SIZE;
+            }
+            else if ( MEMEXT_TEST_TYPE_PEHU )
+            {
+                g_strlcpy ( p->type, "pehu", sizeof ( p->type ) );
+                p->ram_banks       = MEMEXT_PEHU_BANKS;
+                p->ram_bank_size   = MEMEXT_PEHU_BANK_SIZE;
+                p->flash_banks     = 0;
+                p->flash_bank_size = 0;
+            }
+            else
+            {
+                g_strlcpy ( p->type, "unknown", sizeof ( p->type ) );
+            };
+            rq->success = true;
+            break;
+        }
+        case DBGAPI_CMD_BP_VARS_LIST:
+        {
+            /* V1.D.2.B - Snapshot bp_vars storage. Caller alokuje
+             * entries[] o velikosti capacity, handler vyplní first
+             * out_count záznamů + truncated flag. bp_vars storage je
+             * EMU-thread writeable (per bp_vars.h:14-17 nemá read
+             * protection); CMD běží na EMU thread per submit pattern,
+             * takže read je consistent. */
+            st_DBGAPI_BP_VARS_LIST_PARAM *p =
+                (st_DBGAPI_BP_VARS_LIST_PARAM *) rq->data_ptr;
+            if ( !p || !p->entries || p->capacity == 0 )
+            {
+                if ( p ) p->out_count = 0;
+                rq->success = false;
+                break;
+            };
+            size_t total = bp_vars_count ( );
+            size_t n     = ( total > p->capacity ) ? p->capacity : total;
+            for ( size_t i = 0; i < n; i++ )
+            {
+                const bp_var_t *v = bp_vars_get_by_index ( i );
+                st_DBGAPI_BP_VAR_ENTRY *e = &p->entries[ i ];
+                memset ( e, 0, sizeof ( *e ) );
+                if ( v && v->name )
+                {
+                    g_strlcpy ( e->name, v->name, sizeof ( e->name ) );
+                };
+                e->value = v ? v->value : 0;
+                if ( v && v->comment && v->comment[ 0 ] != '\0' )
+                {
+                    g_strlcpy ( e->comment, v->comment,
+                                sizeof ( e->comment ) );
+                    e->has_comment = 1;
+                };
+                e->persist_value = ( v && v->persist_value ) ? 1 : 0;
+            };
+            p->out_count = n;
+            p->truncated = ( total > p->capacity ) ? 1 : 0;
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_BOOKMARKS_LIST:
+        {
+            /* V1.D.2.B - Snapshot bookmarks storage. Backend
+             * bookmarks_snapshot() interně serializuje pod GMutexem,
+             * takže read je bezpečný i z MCP I/O threadu. Kopírujeme
+             * z bookmark_t do fixed-size st_DBGAPI_BOOKMARK_ENTRY a
+             * inline resolve-ujeme adresu přes bookmarks_resolve_addr. */
+            st_DBGAPI_BOOKMARKS_LIST_PARAM *p =
+                (st_DBGAPI_BOOKMARKS_LIST_PARAM *) rq->data_ptr;
+            if ( !p || !p->entries || p->capacity == 0 )
+            {
+                if ( p ) p->out_count = 0;
+                rq->success = false;
+                break;
+            };
+            /* Lokálně alokujeme bookmark_t kopie pole o capacity záznamech,
+             * bookmarks_snapshot() je naplní a vrátí out_count + truncated.
+             * Pole je heap kvůli neznámé velikosti capacity (V1.5+ může
+             * být velké). */
+            bookmark_t *tmp = g_new0 ( bookmark_t, p->capacity );
+            size_t n        = 0;
+            bool   trunc    = false;
+            bookmarks_snapshot ( tmp, p->capacity, &n, &trunc );
+            for ( size_t i = 0; i < n; i++ )
+            {
+                const bookmark_t *b = &tmp[ i ];
+                st_DBGAPI_BOOKMARK_ENTRY *e = &p->entries[ i ];
+                memset ( e, 0, sizeof ( *e ) );
+                e->id = b->id;
+                if ( b->user_input )
+                {
+                    g_strlcpy ( e->user_input, b->user_input,
+                                sizeof ( e->user_input ) );
+                };
+                if ( b->comment && b->comment[ 0 ] != '\0' )
+                {
+                    g_strlcpy ( e->comment, b->comment,
+                                sizeof ( e->comment ) );
+                    e->has_comment = 1;
+                };
+                uint16_t resolved = 0;
+                if ( bookmarks_resolve_addr ( b->user_input, &resolved ) )
+                {
+                    e->addr          = resolved;
+                    e->addr_resolved = 1;
+                };
+                e->cmd_origin = b->cmd_origin;
+            };
+            /* tmp drží jen shallow kopie char pointerů ze storage - NEFREE
+             * stringy uvnitř (vlastní storage). Jen samotné pole. */
+            g_free ( tmp );
+            p->out_count = n;
+            p->truncated = trunc ? 1 : 0;
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_BOOKMARK_ADD:
+        {
+            /* BACKLOG B - přidá novou bookmark přes MCP. Po úspěšném
+             * bookmarks_add propagujeme rq->cmd_origin do storage (= MCP),
+             * stejný pattern jako SYMBOL_ADD. bookmarks_add interně
+             * serializuje pod GMutexem; běžíme tu na EMU vlákně v safe-
+             * pointu, takže ani UI vlákno nekoliduje. Po úspěchu resolve-
+             * neme adresu pro echo (informativní, neukládá se). */
+            st_DBGAPI_BOOKMARK_WRITE_PARAM *p =
+                (st_DBGAPI_BOOKMARK_WRITE_PARAM *) rq->data_ptr;
+            if ( !p || !p->user_input || p->user_input[ 0 ] == '\0' )
+            {
+                rq->success = false;
+                break;
+            };
+            uint32_t id = bookmarks_add ( p->user_input, p->comment );
+            if ( id == 0 )
+            {
+                rq->success = false;
+                break;
+            };
+            bookmarks_set_cmd_origin ( id, rq->cmd_origin );
+            p->out_id = id;
+            uint16_t resolved = 0;
+            if ( bookmarks_resolve_addr ( p->user_input, &resolved ) )
+            {
+                p->out_addr          = resolved;
+                p->out_addr_resolved = 1;
+            }
+            else
+            {
+                p->out_addr          = 0;
+                p->out_addr_resolved = 0;
+            };
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_BOOKMARK_REMOVE:
+        {
+            /* BACKLOG B - smaže bookmark podle ID. bookmarks_remove vrací
+             * true jen pokud záznam existoval. out_id je echo remove_id. */
+            st_DBGAPI_BOOKMARK_WRITE_PARAM *p =
+                (st_DBGAPI_BOOKMARK_WRITE_PARAM *) rq->data_ptr;
+            if ( !p || p->remove_id == 0 )
+            {
+                rq->success = false;
+                break;
+            };
+            p->out_id   = p->remove_id;
+            rq->success = bookmarks_remove ( p->remove_id );
+            break;
+        }
+
+        case DBGAPI_CMD_GET_PERIPH_I8255:
+        {
+            /* V1.D.3.A - Snapshot Intel 8255 PPI. Kopíruje fields z
+             * globálu g_pio8255. CMD běží na EMU vlákně (= submit pattern),
+             * takže snapshot je consistent vůči klávesnicovému scanu
+             * a CMT/PSG signalingu. Mode skupiny + directions dekódujeme
+             * z mirror last_cw_byte podle 8255 datasheetu.
+             *
+             * 8255 Control Word Mode Set layout (bit 7 = 1):
+             *   bit 7 = 1            (Mode Set flag)
+             *   bits 6-5 = Mode A    (00=0, 01=1, 1x=2)
+             *   bit 4    = PA dir    (1=in, 0=out)
+             *   bit 3    = PC upper dir (1=in, 0=out)
+             *   bit 2    = Mode B    (0=0, 1=1)
+             *   bit 1    = PB dir    (1=in, 0=out)
+             *   bit 0    = PC lower dir (1=in, 0=out)
+             *
+             * Když bit 7 = 0, CW je Bit Set/Reset operace na PC - shadow
+             * Mode Set bytu emu nedrží, takže cw_decoded zůstává 0 a
+             * mode_group/dir fields nesmí klient interpretovat. */
+            st_DBGAPI_PERIPH_I8255_PARAM *p =
+                (st_DBGAPI_PERIPH_I8255_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+            p->port_a              = (uint8_t)( g_pio8255.signal_PA & 0xFF );
+            p->port_b              = 0; /* MZ HW nemá samostatný PB read */
+            p->port_c              = (uint8_t)( g_pio8255.signal_PC & 0xFF );
+            p->control_word        = g_pio8255.last_cw_byte;
+            if ( g_pio8255.last_cw_byte & 0x80 )
+            {
+                p->cw_decoded   = 1;
+                uint8_t cw      = g_pio8255.last_cw_byte;
+                uint8_t mode_a  = (uint8_t)( ( cw >> 5 ) & 0x03 );
+                if ( mode_a > 2 ) mode_a = 2;
+                p->mode_group_a = mode_a;
+                p->mode_group_b = (uint8_t)( ( cw >> 2 ) & 0x01 );
+                p->pa_dir       = (uint8_t)( ( cw >> 4 ) & 0x01 );
+                p->pc_upper_dir = (uint8_t)( ( cw >> 3 ) & 0x01 );
+                p->pb_dir       = (uint8_t)( ( cw >> 1 ) & 0x01 );
+                p->pc_lower_dir = (uint8_t)( cw & 0x01 );
+            };
+            p->signal_pc00         = (uint8_t)( g_pio8255.signal_pc00 & 0x01 );
+            p->signal_pc01         = (uint8_t)( g_pio8255.signal_pc01 & 0x01 );
+            p->signal_pc02         = (uint8_t)( g_pio8255.signal_pc02 & 0x01 );
+            p->signal_pc03         = (uint8_t)( g_pio8255.signal_pc03 & 0x01 );
+            p->signal_pc04         = (uint8_t)( g_pio8255.signal_pc04 & 0x01 );
+            p->pa_keyboard_column  =
+                (uint8_t)( g_pio8255.signal_PA_keybord_column & 0x0F );
+            p->pa_joy1_enabled     =
+                (uint8_t)( g_pio8255.signal_PA_joy1_enabled & 0x01 );
+            p->pa_joy2_enabled     =
+                (uint8_t)( g_pio8255.signal_PA_joy2_enabled & 0x01 );
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_PERIPH_I8253:
+        {
+            /* V1.D.3.A - Snapshot Intel 8253 CTC (3 časovače). Kopíruje
+             * fields z g_ctc8253[0..2] do fixed-size st_DBGAPI_PERIPH_I8253_CHANNEL.
+             * 8253 hardware Control Word neumí přečíst, mirror drží
+             * g_ctc8253_last_cw_byte. */
+            st_DBGAPI_PERIPH_I8253_PARAM *p =
+                (st_DBGAPI_PERIPH_I8253_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+            for ( int i = 0; i < 3; i++ )
+            {
+                const st_CTC8253 *c        = &g_ctc8253[ i ];
+                st_DBGAPI_PERIPH_I8253_CHANNEL *out = &p->ch[ i ];
+                out->value        = (uint16_t)( c->value & 0xFFFF );
+                out->preset_value = (uint16_t)( c->preset_value & 0xFFFF );
+                out->preset_latch = (uint16_t)( c->preset_latch & 0xFFFF );
+                out->read_latch   = (uint16_t)( c->read_latch & 0xFFFF );
+                out->out          = (uint8_t)( c->out & 0x01 );
+                out->gate         = (uint8_t)( c->gate & 0x01 );
+                out->mode         = (uint8_t)( c->mode );
+                out->bcd          = (uint8_t)( c->bcd & 0x01 );
+                out->rlf          = (uint8_t)( c->rlf );
+                out->state        = (uint8_t)( c->state );
+                out->load_done    = (uint8_t)( c->load_done & 0x01 );
+                out->latch_op     = (uint8_t)( c->latch_op & 0x01 );
+                out->rl_byte      = (uint8_t)( c->rl_byte & 0xFF );
+            };
+            p->last_cw_byte = g_ctc8253_last_cw_byte;
+            rq->success     = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_PERIPH_Z80_PIO:
+        {
+            /* V1.D.3.A - Snapshot Z80 PIO. Na MZ-700 (HAVE_PIOZ80 == 0)
+             * chip není přítomen; handler vyplní available = 0 a vrátí
+             * success=true, aby klient dostal validní "není k dispozici"
+             * JSON odpověď (= žádný error path). */
+            st_DBGAPI_PERIPH_Z80_PIO_PARAM *p =
+                (st_DBGAPI_PERIPH_Z80_PIO_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+#if HAVE_PIOZ80
+            p->available         = 1;
+            p->interrupt         = (uint8_t)( g_pioz80.interrupt & 0xFF );
+            if ( g_pioz80.interrupt_port_id == PIOZ80_PORT_A
+                 || g_pioz80.interrupt_port_id == PIOZ80_PORT_B )
+            {
+                p->interrupt_port_id =
+                    (uint8_t)( g_pioz80.interrupt_port_id & 0x01 );
+            }
+            else
+            {
+                p->interrupt_port_id = 0xFF;
+            };
+            for ( int i = 0; i < 2; i++ )
+            {
+                const st_PIOZ80_PORT *src = &g_pioz80.port[ i ];
+                st_DBGAPI_PERIPH_Z80_PIO_PORT *out =
+                    ( i == 0 ) ? &p->port_a : &p->port_b;
+                out->data_output    = src->data_output;
+                out->masked_input   = src->masked_input;
+                out->io_mask        = src->io_mask;
+                out->mode           = (uint8_t)( src->mode );
+                out->int_vec        = src->interrupt_vector;
+                out->icmask         = src->icmask;
+                out->icena          = (uint8_t)( src->icena );
+                out->icfnc          = (uint8_t)( src->icfnc );
+                out->iclvl          = (uint8_t)( src->iclvl );
+                out->port_int       = (uint8_t)( src->port_int );
+                out->last_ctrl_byte = ( i == 0 )
+                    ? g_pioz80_port_a_last_ctrl_byte
+                    : g_pioz80_port_b_last_ctrl_byte;
+            };
+#else
+            p->available         = 0;
+            p->interrupt_port_id = 0xFF;
+#endif
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_PERIPH_SN76489:
+        {
+            /* V1.D.3.B - Snapshot SN76489 PSG. Handler používá výhradně
+             * `psg_mirror_*()` getter API - žádný přímý přístup do
+             * `g_psg_module.psg[i].channel[ch]` (= mirror funkce
+             * garantují side-effect free čtení z EMU vlákna).
+             *
+             * Per platforma:
+             *   - MZ-700 (HAVE_PSG=0): available=0, psg_count=0.
+             *   - MZ-800 (HAVE_PSG=2): available=1, runtime stereo flag
+             *     rozhoduje o psg_count (1 nebo 2).
+             *   - MZ-1500 (HAVE_PSG=2, stereo nativně): available=1,
+             *     psg_count=2.
+             */
+            st_DBGAPI_PERIPH_SN76489_PARAM *p =
+                (st_DBGAPI_PERIPH_SN76489_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+#if HAVE_PSG >= 1
+            p->available = 1;
+            p->stereo    = (uint8_t)( g_psg_module.stereo ? 1 : 0 );
+            p->psg_count = (uint8_t)( g_psg_module.stereo ? 2 : 1 );
+
+            /* PSG0 (mono nebo levý) - vždy snapshot pokud available. */
+            const st_PSG *psg0       = &g_psg_module.psg[ 0 ];
+            p->psg0_latch_cs         = (uint8_t)( psg_mirror_latch_cs ( psg0 ) & 0x03 );
+            p->psg0_latch_attn       = (uint8_t)( psg_mirror_latch_attn ( psg0 ) ? 1 : 0 );
+            for ( unsigned ch = 0; ch < 4; ch++ )
+            {
+                st_DBGAPI_PERIPH_SN76489_CHANNEL *out = &p->psg0_ch[ ch ];
+                out->type           = (uint8_t)( psg_mirror_channel_type ( psg0, ch ) );
+                out->attenuation    = (uint8_t)( psg_mirror_channel_attn ( psg0, ch ) & 0x0F );
+                out->tone_divider   = (uint16_t)( psg_mirror_channel_tone_divider ( psg0, ch ) & 0x03FFu );
+                out->noise_div_type = (uint8_t)( psg_mirror_channel_noise_div_type ( psg0, ch ) );
+                out->noise_type     = (uint8_t)( psg_mirror_channel_noise_type ( psg0, ch ) );
+            };
+
+            /* PSG1 (pravý) - jen pokud stereo. */
+            if ( p->psg_count >= 2 )
+            {
+                const st_PSG *psg1   = &g_psg_module.psg[ 1 ];
+                p->psg1_latch_cs     = (uint8_t)( psg_mirror_latch_cs ( psg1 ) & 0x03 );
+                p->psg1_latch_attn   = (uint8_t)( psg_mirror_latch_attn ( psg1 ) ? 1 : 0 );
+                for ( unsigned ch = 0; ch < 4; ch++ )
+                {
+                    st_DBGAPI_PERIPH_SN76489_CHANNEL *out = &p->psg1_ch[ ch ];
+                    out->type           = (uint8_t)( psg_mirror_channel_type ( psg1, ch ) );
+                    out->attenuation    = (uint8_t)( psg_mirror_channel_attn ( psg1, ch ) & 0x0F );
+                    out->tone_divider   = (uint16_t)( psg_mirror_channel_tone_divider ( psg1, ch ) & 0x03FFu );
+                    out->noise_div_type = (uint8_t)( psg_mirror_channel_noise_div_type ( psg1, ch ) );
+                    out->noise_type     = (uint8_t)( psg_mirror_channel_noise_type ( psg1, ch ) );
+                };
+            };
+#else
+            /* HAVE_PSG == 0 (= MZ-700): chip není přítomen. */
+            p->available = 0;
+            p->psg_count = 0;
+#endif
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_PERIPH_AY3_8910:
+        {
+            /* V1.D.3.B - Placeholder Resource. AY-3-8910 NENÍ
+             * implementován v aktuální verzi emulátoru (= žádný symbol
+             * v src/emulator/hw-generic/). Handler vrátí available=0
+             * napříč platformami; pole zůstávají nulová. Klient musí
+             * check `available` před interpretací.
+             *
+             * Struktura je zachována pro forward compat - pokud někdo
+             * v budoucnu chip přidá (= nějaká MZ-1500 expanze nebo
+             * podobně), layout rozšíříme bez wire protocol breaking
+             * změny. */
+            st_DBGAPI_PERIPH_AY3_8910_PARAM *p =
+                (st_DBGAPI_PERIPH_AY3_8910_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+            p->available = 0;
+            rq->success  = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_PERIPH_BEEPER:
+        {
+            /* V1.D.3.B - Snapshot "beeperu". Sharp MZ NEMÁ dedikovaný
+             * 1-bit beeper jako ZX Spectrum; audio cesta z CTC0 OUT
+             * prochází přes AND hradla GATE0 a PC0 (= bit 0 portu C
+             * 8255). Slyšitelná úroveň `level = ctc0_out & gate0 & pc0`.
+             *
+             * GATE0 zdroj:
+             *   - MZ-800 v 800 módu: GATE0 trvale 1 (HW; přístupné jen
+             *     v 700 módu mirror přes regct53g7).
+             *   - MZ-700 / MZ-1500 / MZ-800 v 700 módu: GATE0 =
+             *     `g_gdg.regct53g7` bit 0 (zápis na 0xE008 bit 0).
+             *
+             * Implementačně zde čteme raw `g_gdg.regct53g7` napříč
+             * platformami; pro MZ-800 v 800 módu klient výslednou hodnotu
+             * `audible` musí brát z `level` (= handler dopočte; pokud
+             * `g_pio8255.signal_pc00` zapnuto a CTC0 OUT pulzuje, slyšet
+             * je). Důležité: emulátor v MZ-800 800 módu nedrží regct53g7
+             * vždy = 1; je to jen MZ-700 module state. Reference:
+             * mz-800-knowledge/hw/06-ctc-8253.md (sekce CTC0 OUT). */
+            st_DBGAPI_PERIPH_BEEPER_PARAM *p =
+                (st_DBGAPI_PERIPH_BEEPER_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+            p->available = 1;
+            p->ctc0_out  = (uint8_t)( g_ctc8253[ 0 ].out & 0x01 );
+            p->pc0       = (uint8_t)( g_pio8255.signal_pc00 & 0x01 );
+            p->gate0     = (uint8_t)( gdg_get_regct53g7() & 0x01 );
+            p->level     = (uint8_t)( p->ctc0_out & p->gate0 & p->pc0 );
+            /* Source identifikátor pro debug log: "PC0" + NUL = 4 bajty,
+             * source pole má 3 bajty (= bez NUL terminátoru, klient
+             * dekóduje jako pevný array). */
+            p->source[ 0 ] = 'P';
+            p->source[ 1 ] = 'C';
+            p->source[ 2 ] = '0';
+            rq->success    = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_PERIPH_GDG:
+        {
+            /* V1.D.3.C - Snapshot GDG custom video LSI. Per-platforma
+             * MZ-800 vs MZ-700 vs MZ-1500 mají různé `st_GDG` členy
+             * (palette layout, regBOR/regPALGRP existence).
+             *
+             * Společná pole se kopírují bezpodmínečně, per-platforma
+             * fields s `MZARCH` ifdef blocks. Handler nikdy nevolá
+             * pomocné funkce s vedlejším efektem (= side-effect free
+             * pro spolehlivé polling z MCP klienta).
+             */
+            st_DBGAPI_PERIPH_GDG_PARAM *p =
+                (st_DBGAPI_PERIPH_GDG_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+            p->available     = 1;
+            /* Společné fields - existují u všech tří platforem. */
+            p->regDMD        = (uint8_t)( g_gdg.regDMD & 0xFFu );
+            p->regct53g7     = (uint8_t)( g_gdg.regct53g7 & 0xFFu );
+            p->beam_row      = (uint32_t)g_gdg.beam_row;
+            p->total_screens = (uint32_t)g_gdg.total_elapsed.screens;
+            p->total_ticks   = (uint32_t)g_gdg.total_elapsed.ticks;
+            p->sts_vsync     = (uint8_t)( g_gdg.sts_vsync & 0x01u );
+            p->sts_hsync     = (uint8_t)( g_gdg.sts_hsync & 0x01u );
+            p->hbln          = (uint8_t)( g_gdg.hbln & 0x01u );
+            p->vbln          = (uint8_t)( g_gdg.vbln & 0x01u );
+            p->tempo         = (uint32_t)g_gdg.tempo;
+            p->tempo_divider = (uint32_t)g_gdg.tempo_divider;
+
+#if MZARCH == 800
+            /* MZ-800: 16-color palette přes regPALGRP + regPAL0..3,
+             * border port + cksw + vram hot phase. */
+            p->palette_count = 16;
+            p->has_border_reg = 1;
+            p->has_pal_group  = 1;
+            p->has_cksw       = 1;
+            p->regBOR    = (uint8_t)( g_gdg.regBOR & 0xFFu );
+            p->regPALGRP = (uint8_t)( g_gdg.regPALGRP & 0xFFu );
+            p->cksw      = (uint8_t)( g_gdg.cksw & 0x01u );
+            /* Paleta: regPAL0..3 obsahuje 4 nibble-pair (per registr 2x4
+             * bity = 4 entries po 4-bit). Pro klienta vyplníme 16 položek
+             * podle pořadí ve kterém GDG resolvuje plane bits. Bezpečné je
+             * vrátit raw bytes regPAL0..3 v lower bytes + zbytek 0 - klient
+             * si zkonstruuje plnou paletu z regPAL bytes plus regPALGRP.
+             * Pro názornost vyplníme entries 0..3 jako regPAL0..3 a entries
+             * 4..15 jako 0 (= klient si reálnou 16-color tabulku spočítá
+             * sám podle palette group bity). */
+            p->palette[ 0 ] = (uint8_t)( g_gdg.regPAL0 & 0xFFu );
+            p->palette[ 1 ] = (uint8_t)( g_gdg.regPAL1 & 0xFFu );
+            p->palette[ 2 ] = (uint8_t)( g_gdg.regPAL2 & 0xFFu );
+            p->palette[ 3 ] = (uint8_t)( g_gdg.regPAL3 & 0xFFu );
+            /* entries 4..15 zůstávají 0 (placeholder; klient si dopočítá
+             * podle regPAL0..3 + regPALGRP - viz hw/09-video-mz800-modes.md). */
+            memcpy ( p->platform, "mz800", 6 );
+#elif MZARCH == 1500
+            /* MZ-1500: 8-entry palette `mode1500_color[8]`, žádný regBOR
+             * ani regPALGRP, žádný cksw. */
+            p->palette_count  = 8;
+            p->has_border_reg = 0;
+            p->has_pal_group  = 0;
+            p->has_cksw       = 0;
+            for ( unsigned i = 0; i < 8; i++ )
+            {
+                p->palette[ i ] = (uint8_t)( g_gdg.mode1500_color[ i ] & 0xFFu );
+            };
+            memcpy ( p->platform, "mz1500", 7 );
+#elif MZARCH == 700
+            /* MZ-700: 8-entry palette `mode700_color[8]`, žádný regBOR
+             * ani regPALGRP, žádný cksw. */
+            p->palette_count  = 8;
+            p->has_border_reg = 0;
+            p->has_pal_group  = 0;
+            p->has_cksw       = 0;
+            for ( unsigned i = 0; i < 8; i++ )
+            {
+                p->palette[ i ] = (uint8_t)( g_gdg.mode700_color[ i ] & 0xFFu );
+            };
+            memcpy ( p->platform, "mz700", 6 );
+#else
+#error "Unknown MZARCH for GDG handler"
+#endif
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_PERIPH_WD1793:
+        {
+            /* V1.D.3.C - Snapshot WD279x FDC chipu + 4 drives.
+             *
+             * Pokud build neměl CFG_HWEXT_HAVE_FDC, vrátíme available=0.
+             * Pokud FDC compiled ale runtime detached (= connected != 1),
+             * také available=0. Při available=1 kopírujeme registry
+             * z g_fdc.wd279x + mount metadata z g_fdc.drive[4].
+             *
+             * Image_basename je jen filename (= basename z full path),
+             * security per V1.D.1 precedent.
+             */
+            st_DBGAPI_PERIPH_WD1793_PARAM *p =
+                (st_DBGAPI_PERIPH_WD1793_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+#if CFG_HWEXT_HAVE_FDC
+            if ( g_fdc.connected != FDC_CONNECTED )
+            {
+                p->available = 0;
+                rq->success  = true;
+                break;
+            };
+            p->available        = 1;
+            p->bus_xlate_invert = (uint8_t)( g_fdc.bus_xlate == FDC_BUS_XLATE_INVERT ? 1 : 0 );
+            p->hd_patch         = (uint8_t)( g_fdc.hd_patch ? 1 : 0 );
+            p->reg_status       = g_fdc.wd279x.regSTATUS;
+            p->reg_command      = g_fdc.wd279x.regCOMMAND;
+            p->reg_track        = g_fdc.wd279x.regTRACK;
+            p->reg_sector       = g_fdc.wd279x.regSECTOR;
+            p->reg_data         = g_fdc.wd279x.regDATA;
+            p->motor            = g_fdc.wd279x.MOTOR;
+            p->side             = g_fdc.wd279x.SIDE;
+            p->density          = g_fdc.wd279x.DENSITY;
+            p->multiblock_rw    = g_fdc.wd279x.multiblock_rw;
+            p->direction_latch  = g_fdc.wd279x.direction_latch;
+            p->intrq_active     = g_fdc.wd279x.intrq_active;
+            p->positioned_track = g_fdc.wd279x.positioned_track;
+            p->positioned_sector = g_fdc.wd279x.positioned_sector;
+            p->positioned_side  = g_fdc.wd279x.positioned_side;
+            p->status_mode      = (uint8_t)g_fdc.wd279x.status_mode;
+            p->buffer_pos       = g_fdc.wd279x.buffer_pos;
+            p->data_counter     = g_fdc.wd279x.data_counter;
+            p->current_sector_size = g_fdc.wd279x.current_sector_size;
+            for ( unsigned d = 0; d < 4; d++ )
+            {
+                st_DBGAPI_PERIPH_FDC_DRIVE *out  = &p->drives[ d ];
+                const st_FDDrive          *src  = &g_fdc.drive[ d ];
+                out->present        = (uint8_t)( src->mounted ? 1 : 0 );
+                out->readonly       = (uint8_t)( src->readonly ? 1 : 0 );
+                out->user_readonly  = (uint8_t)( src->user_readonly ? 1 : 0 );
+                out->fs_readonly    = (uint8_t)( src->fs_readonly ? 1 : 0 );
+                out->storage_mode   = (uint8_t)src->storage_mode;
+                out->geometry_valid = (uint8_t)( src->geometry_valid ? 1 : 0 );
+                if ( src->geometry_valid )
+                {
+                    out->tracks           = (uint16_t)src->geometry.tracks;
+                    out->sides            = (uint16_t)src->geometry.sides;
+                    out->total_data_bytes = (uint32_t)src->geometry.total_data_bytes;
+                };
+                /* Extrahuj basename - hledej poslední '/' nebo '\\' v full path. */
+                const char *fn = src->filename;
+                const char *base = fn;
+                for ( const char *q = fn; *q; q++ )
+                {
+                    if ( *q == '/' || *q == '\\' ) base = q + 1;
+                };
+                /* Bezpečné zkopírování max 63 bajtů + NUL. */
+                size_t blen = strlen ( base );
+                if ( blen > sizeof ( out->image_basename ) - 1 )
+                    blen = sizeof ( out->image_basename ) - 1;
+                memcpy ( out->image_basename, base, blen );
+                out->image_basename[ blen ] = '\0';
+            };
+#else
+            p->available = 0;
+#endif
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_PERIPH_CMT:
+        {
+            /* V1.D.3.C - Snapshot CMT modulu. CMT je u všech tří
+             * platforem (= cassette interface je standard Sharp HW),
+             * available je tedy vždy 1. Kopírujeme state, motor,
+             * polarity, image basename.
+             *
+             * Image_basename z g_cmt.ui_base_filename (= UI base
+             * filename, ne full path); pro V1.D.1 security to už je
+             * basename, nicméně defenzivně basename z poslední cesty
+             * stejně extrahujeme.
+             */
+            st_DBGAPI_PERIPH_CMT_PARAM *p =
+                (st_DBGAPI_PERIPH_CMT_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+            p->available         = 1;
+            p->state             = (uint8_t)g_cmt.state;
+            p->paused            = (uint8_t)( g_cmt.paused ? 1 : 0 );
+            p->filled            = (uint8_t)( g_cmt.ext ? 1 : 0 );
+            p->polarity_inverted = (uint8_t)( g_cmt.polarity == CMT_STREAM_POLARITY_INVERTED ? 1 : 0 );
+            p->cmtspeed          = (uint8_t)g_cmt.mz_cmtspeed;
+            p->cpu_boost         = (uint8_t)( g_cmt.cpu_boost == CMT_CPU_BOOST_ENABLED ? 1 : 0 );
+            p->mzfsize_check     = (uint8_t)( g_cmt.mzfsize_check == CMT_MZFSIZE_CHECK_ENABLED ? 1 : 0 );
+            p->output            = (uint8_t)( g_cmt.output & 0x01u );
+            p->playsts           = (uint8_t)g_cmt.playsts;
+            p->cmthack_enabled   = (uint8_t)( CMTHACK_TEST_IS_INSTALLED ? 1 : 0 );
+            p->start_time        = (uint64_t)g_cmt.start_time;
+            p->paused_time       = (uint64_t)g_cmt.paused_time;
+            /* Image basename: prefer ui_base_filename, jinak last_filename. */
+            const char *src = NULL;
+            if ( g_cmt.ui_base_filename && g_cmt.ui_base_filename[ 0 ] )
+                src = g_cmt.ui_base_filename;
+            else if ( g_cmt.last_filename && g_cmt.last_filename[ 0 ] )
+                src = g_cmt.last_filename;
+            if ( src )
+            {
+                const char *base = src;
+                for ( const char *q = src; *q; q++ )
+                {
+                    if ( *q == '/' || *q == '\\' ) base = q + 1;
+                };
+                size_t blen = strlen ( base );
+                if ( blen > sizeof ( p->image_basename ) - 1 )
+                    blen = sizeof ( p->image_basename ) - 1;
+                memcpy ( p->image_basename, base, blen );
+                p->image_basename[ blen ] = '\0';
+            };
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_PERIPH_QD:
+        {
+            /* V1.D.3.C - Snapshot Quick Disk (MZ-1F11) modulu.
+             *
+             * Pokud build neměl CFG_HWEXT_HAVE_QDISK, available=0.
+             * Pokud QD compiled ale runtime detached, také available=0.
+             * Při available=1 kopírujeme connected/status/type, R/O
+             * příznaky, head position a per-mode meta (VIRTUAL counts,
+             * IMAGE basename).
+             */
+            st_DBGAPI_PERIPH_QD_PARAM *p =
+                (st_DBGAPI_PERIPH_QD_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+#if CFG_HWEXT_HAVE_QDISK
+            if ( g_qdisk.connected != QDISK_CONNECTED )
+            {
+                p->available = 0;
+                rq->success  = true;
+                break;
+            };
+            p->available         = 1;
+            p->type              = (uint8_t)( g_qdisk.type & 0xFFu );
+            p->status            = (uint8_t)( g_qdisk.status & 0xFFu );
+            p->readonly          = (uint8_t)( g_qdisk.readonly ? 1 : 0 );
+            p->user_readonly     = (uint8_t)( g_qdisk.user_readonly ? 1 : 0 );
+            p->fs_readonly       = (uint8_t)( g_qdisk.fs_readonly ? 1 : 0 );
+            p->storage_mode      = (uint8_t)g_qdisk.storage_mode;
+            p->vrtsts            = (uint8_t)g_qdisk.virt_status;
+            p->image_position    = (uint32_t)g_qdisk.image_position;
+            p->virt_files_count  = (uint32_t)g_qdisk.virt_files_count;
+            p->virt_file_num     = (uint32_t)g_qdisk.virt_file_num;
+            p->virt_mzfbody_size = (uint16_t)g_qdisk.virt_mzfbody_size;
+            p->out_crc16         = (uint16_t)g_qdisk.out_crc16;
+            /* Image basename: pro IMAGE/UNICARD mode bereme filename;
+             * pro VIRTUAL mode pole zůstane prázdné. */
+            if ( g_qdisk.type != QDISK_TYPE_VIRTUAL && g_qdisk.filename[ 0 ] )
+            {
+                const char *src = g_qdisk.filename;
+                const char *base = src;
+                for ( const char *q = src; *q; q++ )
+                {
+                    if ( *q == '/' || *q == '\\' ) base = q + 1;
+                };
+                size_t blen = strlen ( base );
+                if ( blen > sizeof ( p->image_basename ) - 1 )
+                    blen = sizeof ( p->image_basename ) - 1;
+                memcpy ( p->image_basename, base, blen );
+                p->image_basename[ blen ] = '\0';
+            };
+#else
+            p->available = 0;
+#endif
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_INPUT_KEYBOARD_STATE:
+        {
+            /* V1.D.4 - Snapshot klávesnice. Kopíruje keyboard_matrix +
+             * vkbd_matrix z g_pio8255 a dopočítá effective (= AND obou,
+             * == co CPU efektivně vidí při PORTB read). Decode aktivní
+             * bity (= clear bity, Sharp matrix konvence) do pressed_keys
+             * s reverse lookup jmen přes hid_keymap.
+             *
+             * Klávesová matice je shodná napříč MZ-700/MZ-800/MZ-1500
+             * (= layout v iface_keyboard.c je sjednocený), proto bez
+             * per-MZARCH větvení.
+             */
+            st_DBGAPI_INPUT_KBD_STATE_PARAM *p =
+                (st_DBGAPI_INPUT_KBD_STATE_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+            for ( unsigned c = 0; c < 10; c++ )
+            {
+                p->real_matrix[ c ]    = g_pio8255.keyboard_matrix[ c ];
+                p->virtual_matrix[ c ] = g_pio8255.vkbd_matrix[ c ];
+                p->effective[ c ]      = (uint8_t)( p->real_matrix[ c ] & p->virtual_matrix[ c ] );
+            };
+            uint32_t pcount = 0;
+            const uint32_t cap = (uint32_t)( sizeof ( p->pressed_keys ) / sizeof ( p->pressed_keys[ 0 ] ) );
+            for ( unsigned c = 0; c < 10; c++ )
+            {
+                for ( unsigned b = 0; b < 8; b++ )
+                {
+                    /* Aktivní = bit clear (Sharp matrix konvence). */
+                    if ( ( p->effective[ c ] & ( 1u << b ) ) == 0 )
+                    {
+                        pcount++;
+                        if ( p->pressed_count < cap )
+                        {
+                            uint32_t idx = p->pressed_count;
+                            p->pressed_keys[ idx ].col = (uint8_t)c;
+                            p->pressed_keys[ idx ].bit = (uint8_t)b;
+                            const char *nm = hid_keymap_reverse_lookup ( (int)c, (int)b );
+                            if ( nm )
+                            {
+                                size_t nlen = strlen ( nm );
+                                if ( nlen >= sizeof ( p->pressed_keys[ idx ].name ) )
+                                    nlen = sizeof ( p->pressed_keys[ idx ].name ) - 1;
+                                memcpy ( p->pressed_keys[ idx ].name, nm, nlen );
+                                p->pressed_keys[ idx ].name[ nlen ] = '\0';
+                            };
+                            p->pressed_count++;
+                        };
+                    };
+                };
+            };
+            if ( pcount > cap )
+                p->pressed_truncated = 1;
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_INPUT_KEYBOARD_MATRIX_INFO:
+        {
+            /* V1.D.4 - Statická popisná tabulka klávesnice. Sjednocená
+             * napříč MZ-700/MZ-800/MZ-1500 v hid_keymap modulu. Pole
+             * platform pro klient label, key_count + keys[] iterací.
+             */
+            st_DBGAPI_INPUT_KBD_MATRIX_INFO_PARAM *p =
+                (st_DBGAPI_INPUT_KBD_MATRIX_INFO_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+#if MZARCH == 800
+            memcpy ( p->platform, "mz800", 6 );
+#elif MZARCH == 1500
+            memcpy ( p->platform, "mz1500", 7 );
+#elif MZARCH == 700
+            memcpy ( p->platform, "mz700", 6 );
+#endif
+            const uint32_t cap = (uint32_t)( sizeof ( p->keys ) / sizeof ( p->keys[ 0 ] ) );
+            int idx = 0;
+            const char *nm = NULL;
+            int col = 0, bit = 0;
+            bool needs_shift = false;
+            while ( idx < (int)cap
+                    && hid_keymap_get_entry ( idx, &nm, &col, &bit, &needs_shift ) )
+            {
+                p->keys[ idx ].col          = (uint8_t)col;
+                p->keys[ idx ].bit          = (uint8_t)bit;
+                p->keys[ idx ].needs_shift  = (uint8_t)( needs_shift ? 1 : 0 );
+                if ( nm )
+                {
+                    size_t nlen = strlen ( nm );
+                    if ( nlen >= sizeof ( p->keys[ idx ].name ) )
+                        nlen = sizeof ( p->keys[ idx ].name ) - 1;
+                    memcpy ( p->keys[ idx ].name, nm, nlen );
+                    p->keys[ idx ].name[ nlen ] = '\0';
+                };
+                idx++;
+            };
+            p->key_count = (uint32_t)idx;
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_INPUT_JOYSTICK_STATE:
+        {
+            /* V1.D.4 - Snapshot joystick portů 0 a 1.
+             *
+             * Native g_joy.dev[].state je active-LOW (0 = bit stisknut);
+             * MCP wire data jsou active-HIGH (= klient logičtější).
+             * Decode podle JOY_STATEBIT_* enum.
+             *
+             * MZ-700 build: HAVE_JOY je obvykle 0 (= joystick HW není
+             * standardní); handler vrátí oba porty connected=0. MZ-800
+             * a MZ-1500: HAVE_JOY=1, runtime config rozhodne type.
+             */
+            st_DBGAPI_INPUT_JOY_STATE_PARAM *p =
+                (st_DBGAPI_INPUT_JOY_STATE_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+#if HAVE_JOY
+            for ( unsigned i = 0; i < 2; i++ )
+            {
+                st_DBGAPI_INPUT_JOY_PORT *port = &p->port[ i ];
+                en_JOY_TYPE typ = g_joy.dev[ i ].type;
+                uint8_t native = g_joy.dev[ i ].state;
+                port->native_state = native;
+                if ( typ == JOY_TYPE_NONE )
+                {
+                    port->connected = 0;
+                    memcpy ( port->device_name, "none", 5 );
+                }
+                else
+                {
+                    port->connected = 1;
+                    /* Decode active-LOW -> active-HIGH bitmask. */
+                    uint8_t bits = 0;
+                    if ( !( native & ( 1u << JOY_STATEBIT_UP ) ) )    bits |= ( 1u << 0 );
+                    if ( !( native & ( 1u << JOY_STATEBIT_DOWN ) ) )  bits |= ( 1u << 1 );
+                    if ( !( native & ( 1u << JOY_STATEBIT_LEFT ) ) )  bits |= ( 1u << 2 );
+                    if ( !( native & ( 1u << JOY_STATEBIT_RIGHT ) ) ) bits |= ( 1u << 3 );
+                    if ( !( native & ( 1u << JOY_STATEBIT_TRIG1 ) ) ) bits |= ( 1u << 4 );
+                    if ( !( native & ( 1u << JOY_STATEBIT_TRIG2 ) ) ) bits |= ( 1u << 5 );
+                    port->state_bits = bits;
+                    if ( typ == JOY_TYPE_NUM_KEYPAD )
+                        memcpy ( port->device_name, "num_keypad", 11 );
+                    else if ( typ == JOY_TYPE_JOYSTICK )
+                        memcpy ( port->device_name, "joystick", 9 );
+                    else
+                        memcpy ( port->device_name, "unknown", 8 );
+                };
+            };
+#else
+            /* HAVE_JOY=0: oba porty connected=0, idle native_state=0xFF. */
+            for ( unsigned i = 0; i < 2; i++ )
+            {
+                p->port[ i ].connected    = 0;
+                p->port[ i ].native_state = 0xFF;
+                memcpy ( p->port[ i ].device_name, "none", 5 );
+            };
+#endif
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_FRAME_FRAMEBUFFER_INFO:
+        {
+            /* V1.D.4 - Shape metadata aktuálního framebufferu.
+             *
+             * width / height jsou compile-time konstanty per MZARCH
+             * (VIDEO_DISPLAY_WIDTH/HEIGHT z gdg headeru). pixel_format=0
+             * znamená INDEX8 (= MZ nativní). dirty flag odráží
+             * fbsnapshot_framebuffer_state != FB_STATE_NOT_CHANGED.
+             *
+             * Palette vrátí 16-entry Sharp MZ tabulku 0x00RRGGBB
+             * (= DISPLAY_MZCOLORS, INDEX8 nativní 4-bit barvy maskované
+             * 0x0F). Klient potřebuje pro decode raw bufferu. Pokud
+             * paleta není inicializovaná, vrátí 0 entries (palette_size=0).
+             */
+            st_DBGAPI_FRAME_FB_INFO_PARAM *p =
+                (st_DBGAPI_FRAME_FB_INFO_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+            p->width           = (uint32_t)VIDEO_DISPLAY_WIDTH;
+            p->height          = (uint32_t)VIDEO_DISPLAY_HEIGHT;
+            p->bytes_per_pixel = 1;
+            p->pixel_format    = 0; /* INDEX8 */
+            p->has_palette     = 1;
+            APP_MUTEX_LOCK ( g_iface_video->fbsnapshot_pixels_mutex );
+            p->last_screen_id      = g_iface_video->fbsnapshot_screen_id;
+            p->framebuffer_state   = (uint8_t)g_iface_video->fbsnapshot_framebuffer_state;
+            APP_MUTEX_UNLOCK ( g_iface_video->fbsnapshot_pixels_mutex );
+            p->dirty = (uint8_t)( p->framebuffer_state != FB_STATE_NOT_CHANGED ? 1 : 0 );
+            /* Palette: Sharp MZ má 16-entry colormap (DISPLAY_MZCOLORS).
+             * Hodnoty jsou 0x00RRGGBB. Pokud display modul ještě nebyl
+             * inicializován (= display_get_default_color_schema vrátí NULL),
+             * vyplníme nuly. */
+            uint32_t *g_video_colormap = display_get_default_color_schema();
+            if ( g_video_colormap )
+            {
+                for ( unsigned i = 0; i < 16; i++ )
+                {
+                    p->palette[ i ] = g_video_colormap[ i ];
+                };
+                p->palette_size = 16;
+            }
+            else
+            {
+                p->palette_size = 0;
+            };
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_FRAME_SCREENSHOT_RAW:
+        {
+            /* V1.D.4 + V1.E.6.C headless fallback - kopie framebuffer
+             * pixelů jako RGBA8888.
+             *
+             * Primary source: INDEX8 buffer g_iface_video->fbsnapshot_pixels
+             * (= GUI cesta, SDL render thread publish/consume). Pokud
+             * NULL (= headless mode bez SDL render loopu, nebo race mezi
+             * publish a consume), fallback na GDG live buffer
+             * g_framebuffer.pixels (= staticky alokovaný BSS, vždy
+             * dostupný po framebuffer_init).
+             *
+             * Expand na RGBA děláme přes g_video_colormap[] paletu.
+             * downscale_factor (1/2/4) bere každý N-tý pixel v obou osách.
+             *
+             * Velikost: width*height*4 / (factor*factor). Default 928x288x4
+             * = ~1 MB. Při capacity menší než vypočítaná, handler factor
+             * sám zvýší aby vešel; vrácená hodnota factor odráží použitou.
+             *
+             * Threading:
+             *   - SDL source: lock fbsnapshot_pixels_mutex (= writer
+             *     thread to teoreticky může mezi snapshoty přepsat).
+             *   - GDG fallback: bez locku - handler běží v emu thread
+             *     dispatch context (mzarch.c per-frame drain), GDG
+             *     raster fill funkce taky v emu thread. Single-threaded
+             *     executor = read race-free.
+             *
+             * Klient rozezná zdroj podle p->fallback_source
+             * (SCREENSHOT_SRC_SDL_SNAPSHOT / SCREENSHOT_SRC_GDG_LIVE).
+             */
+            st_DBGAPI_FRAME_SCREENSHOT_RAW_PARAM *p =
+                (st_DBGAPI_FRAME_SCREENSHOT_RAW_PARAM *) rq->data_ptr;
+            if ( !p || !p->buffer || p->buffer_capacity == 0 )
+            {
+                rq->success = false;
+                break;
+            };
+            p->available       = 0;
+            p->pixel_format    = 0; /* RGBA8888 */
+            p->fallback_source = (uint8_t)SCREENSHOT_SRC_SDL_SNAPSHOT;
+            if ( p->downscale_factor != 1
+                    && p->downscale_factor != 2
+                    && p->downscale_factor != 4 )
+            {
+                p->downscale_factor = 1;
+            };
+            /* Auto-zvýšení faktoru aby vešel do bufferu. */
+            uint32_t needed;
+            for ( ;; )
+            {
+                uint32_t w = (uint32_t)VIDEO_DISPLAY_WIDTH / p->downscale_factor;
+                uint32_t h = (uint32_t)VIDEO_DISPLAY_HEIGHT / p->downscale_factor;
+                needed = w * h * 4;
+                if ( needed <= p->buffer_capacity ) break;
+                if ( p->downscale_factor == 1 )      p->downscale_factor = 2;
+                else if ( p->downscale_factor == 2 ) p->downscale_factor = 4;
+                else { rq->success = false; break; };
+            };
+            if ( !rq->success && p->downscale_factor > 4 )
+            {
+                break;
+            };
+            uint32_t w = (uint32_t)VIDEO_DISPLAY_WIDTH / p->downscale_factor;
+            uint32_t h = (uint32_t)VIDEO_DISPLAY_HEIGHT / p->downscale_factor;
+            uint32_t *g_video_colormap = display_get_default_color_schema();
+            if ( !g_video_colormap )
+            {
+                /* Display modul ještě neinicializován - vrátíme available=0. */
+                p->available = 0;
+                p->width = 0;
+                p->height = 0;
+                rq->success = true;
+                break;
+            };
+            /* Pokus o SDL snapshot path. Lock držíme jen krátce -
+             * čteme pointer + screen_id, pokud NULL pak fallback bez
+             * locku (= GDG live).
+             *
+             * Pozn.: V GUI mode může být fbsnapshot_pixels NULL i
+             * tehdy, kdy framebuffer byl už emitnut (= SDL render
+             * thread mezitím konzumoval, viz iface_video_sdl3.c:220).
+             * V tom případě fallback na GDG live vrátí *stejný* obsah
+             * jako poslední publikovaný frame (= g_framebuffer.pixels
+             * po frame_done memcpy předchozího slotu, viz
+             * mz*_framebuffer_done.h).
+             */
+            const uint8_t *src = NULL;
+            uint32_t src_screen_id = 0;
+            bool sdl_locked = false;
+
+            APP_MUTEX_LOCK ( g_iface_video->fbsnapshot_pixels_mutex );
+            sdl_locked = true;
+            if ( g_iface_video->fbsnapshot_pixels != NULL )
+            {
+                src                = g_iface_video->fbsnapshot_pixels;
+                src_screen_id      = g_iface_video->fbsnapshot_screen_id;
+                p->fallback_source = (uint8_t)SCREENSHOT_SRC_SDL_SNAPSHOT;
+            }
+            else
+            {
+                /* SDL snapshot prázdný - přepneme na GDG live buffer.
+                 * Lock už nepotřebujeme (čteme jen g_framebuffer.pixels
+                 * a screen_id, viz threading komentář výše). */
+                src_screen_id = g_iface_video->fbsnapshot_screen_id;
+                APP_MUTEX_UNLOCK ( g_iface_video->fbsnapshot_pixels_mutex );
+                sdl_locked = false;
+                src                = g_framebuffer.pixels;
+                p->fallback_source = (uint8_t)SCREENSHOT_SRC_GDG_LIVE;
+            };
+            if ( !src )
+            {
+                /* Defensive - g_framebuffer.pixels by mělo být vždy
+                 * non-NULL po framebuffer_init (statická BSS alokace).
+                 * Pokud sem dojdeme, něco je vážně rozbité. */
+                if ( sdl_locked )
+                {
+                    APP_MUTEX_UNLOCK ( g_iface_video->fbsnapshot_pixels_mutex );
+                };
+                p->available = 0;
+                p->width = 0;
+                p->height = 0;
+                rq->success = true;
+                break;
+            };
+            uint8_t *dst = p->buffer;
+            for ( uint32_t y = 0; y < h; y++ )
+            {
+                uint32_t sy = y * p->downscale_factor;
+                if ( sy >= (uint32_t)VIDEO_DISPLAY_HEIGHT ) sy = (uint32_t)VIDEO_DISPLAY_HEIGHT - 1;
+                const uint8_t *src_row = src + sy * (uint32_t)VIDEO_DISPLAY_WIDTH;
+                for ( uint32_t x = 0; x < w; x++ )
+                {
+                    uint32_t sx = x * p->downscale_factor;
+                    if ( sx >= (uint32_t)VIDEO_DISPLAY_WIDTH ) sx = (uint32_t)VIDEO_DISPLAY_WIDTH - 1;
+                    /* Sharp MZ INDEX8 buffer používá nízkých 4 bitů
+                     * jako paletní index (DISPLAY_MZCOLORS=16). Vyšší
+                     * bity mohou nést status (= bordová cesta, blink),
+                     * mask je nutný aby g_video_colormap nezasáhl mimo. */
+                    uint8_t pix_idx = src_row[ sx ] & 0x0Fu;
+                    uint32_t rgb = g_video_colormap[ pix_idx ];
+                    dst[ 0 ] = (uint8_t)( ( rgb >> 16 ) & 0xFFu ); /* R */
+                    dst[ 1 ] = (uint8_t)( ( rgb >> 8 ) & 0xFFu );  /* G */
+                    dst[ 2 ] = (uint8_t)( rgb & 0xFFu );           /* B */
+                    dst[ 3 ] = 0xFF;                                /* A */
+                    dst += 4;
+                };
+            };
+            if ( sdl_locked )
+            {
+                APP_MUTEX_UNLOCK ( g_iface_video->fbsnapshot_pixels_mutex );
+            };
+            p->width            = w;
+            p->height           = h;
+            p->bytes_per_pixel  = 4;
+            p->source_screen_id = src_screen_id;
+            p->buffer_size      = needed;
+            p->available        = 1;
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_FRAME_SCREENSHOT_PNG:
+        {
+            /* PNG screenshot - enkód plného framebufferu přes
+             * stb_image_write.h (viz png_encode.{c,h}).
+             *
+             * Pixel acquisition je IDENTICKÁ jako GET_FRAME_SCREENSHOT_RAW
+             * (= konzistence obrazu): INDEX8 buffer
+             * g_iface_video->fbsnapshot_pixels (GUI cesta, pod
+             * fbsnapshot_pixels_mutex), fallback na g_framebuffer.pixels
+             * (GDG live, headless). Expand na RGBA8888 přes paletu
+             * display_get_default_color_schema(), index = pixel & 0x0F.
+             *
+             * Na rozdíl od raw nepoužíváme downscale - PNG je vždy plný
+             * frame (VIDEO_DISPLAY_WIDTH x VIDEO_DISPLAY_HEIGHT). Threading
+             * shodný s raw handlerem (krátký lock SDL path, GDG fallback
+             * bez locku v emu thread executoru).
+             *
+             * Buffer ownership: handler alokuje PNG stream (p->buffer)
+             * přes glib, dispatch ho po base64 uvolní g_free.
+             */
+            st_DBGAPI_FRAME_SCREENSHOT_PNG_PARAM *p =
+                (st_DBGAPI_FRAME_SCREENSHOT_PNG_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+
+            uint32_t w = (uint32_t) VIDEO_DISPLAY_WIDTH;
+            uint32_t h = (uint32_t) VIDEO_DISPLAY_HEIGHT;
+            uint32_t *g_video_colormap = display_get_default_color_schema();
+            if ( !g_video_colormap )
+            {
+                /* Display modul ještě neinicializován. */
+                p->available = 0;
+                strcpy ( p->reason, "Display not initialized" );
+                rq->success = true;
+                break;
+            };
+
+            /* Výběr zdroje pixelů - viz raw handler pro threading detaily. */
+            const uint8_t *src = NULL;
+            bool sdl_locked = false;
+            APP_MUTEX_LOCK ( g_iface_video->fbsnapshot_pixels_mutex );
+            sdl_locked = true;
+            if ( g_iface_video->fbsnapshot_pixels != NULL )
+            {
+                src = g_iface_video->fbsnapshot_pixels;
+            }
+            else
+            {
+                APP_MUTEX_UNLOCK ( g_iface_video->fbsnapshot_pixels_mutex );
+                sdl_locked = false;
+                src = g_framebuffer.pixels;
+            };
+            if ( !src )
+            {
+                if ( sdl_locked )
+                {
+                    APP_MUTEX_UNLOCK ( g_iface_video->fbsnapshot_pixels_mutex );
+                };
+                p->available = 0;
+                strcpy ( p->reason, "Framebuffer not yet rendered" );
+                rq->success = true;
+                break;
+            };
+
+            /* RGBA8888 scratch buffer - expand INDEX8 -> RGBA. */
+            uint8_t *rgba = (uint8_t *) g_malloc ( (gsize) w * h * 4 );
+            uint8_t *dst = rgba;
+            for ( uint32_t y = 0; y < h; y++ )
+            {
+                const uint8_t *src_row = src + (size_t) y * w;
+                for ( uint32_t x = 0; x < w; x++ )
+                {
+                    uint8_t pix_idx = src_row[ x ] & 0x0Fu;
+                    uint32_t rgb = g_video_colormap[ pix_idx ];
+                    dst[ 0 ] = (uint8_t) ( ( rgb >> 16 ) & 0xFFu ); /* R */
+                    dst[ 1 ] = (uint8_t) ( ( rgb >> 8 ) & 0xFFu );  /* G */
+                    dst[ 2 ] = (uint8_t) ( rgb & 0xFFu );           /* B */
+                    dst[ 3 ] = 0xFF;                                /* A */
+                    dst += 4;
+                };
+            };
+            if ( sdl_locked )
+            {
+                APP_MUTEX_UNLOCK ( g_iface_video->fbsnapshot_pixels_mutex );
+            };
+
+            /* Enkód do PNG streamu (glib alokovaný buffer). */
+            size_t png_len = 0;
+            uint8_t *png = png_encode_rgba ( rgba, w, h, &png_len );
+            g_free ( rgba );
+            if ( !png || png_len == 0 )
+            {
+                g_free ( png );
+                p->available = 0;
+                strcpy ( p->reason, "PNG encode failed" );
+                rq->success = true;
+                break;
+            };
+
+            p->buffer      = png;
+            p->buffer_size = png_len;
+            p->width       = w;
+            p->height      = h;
+            p->available   = 1;
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_VIDEO_TEXT_DUMP:
+        {
+            /* V1.D.4 - Text VRAM dump pro MZ-700 mode.
+             *
+             * MZ-700 a MZ-1500: 40x25 text mode, chars na D000-D3FF
+             * (g_memory.VRAM[0x000..0x3FF]), atributy na D800-DBFF
+             * (g_memory.VRAM[0x800..0xBFF]).
+             *
+             * MZ-800 v 700 mode (DMD bit MZ700 = 1): stejný layout.
+             * MZ-800 v 800 mode: GDG grafický mode (různé rozlišení), bez
+             * 40x25 textové struktury -> available=0.
+             */
+            st_DBGAPI_VIDEO_TEXT_DUMP_PARAM *p =
+                (st_DBGAPI_VIDEO_TEXT_DUMP_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+#if MZARCH == 800
+            memcpy ( p->platform, "mz800", 6 );
+            if ( !GDG_MZ800_DMD_TEST_MZ700 )
+            {
+                p->available = 0;
+                strcpy ( p->reason, "MZ-800 in 800 graphics mode (not text)" );
+                rq->success = true;
+                break;
+            };
+#elif MZARCH == 1500
+            memcpy ( p->platform, "mz1500", 7 );
+#elif MZARCH == 700
+            memcpy ( p->platform, "mz700", 6 );
+#endif
+            p->cols = 40;
+            p->rows = 25;
+            p->cell_count = p->cols * p->rows;
+            if ( p->cell_count > sizeof ( p->chars ) )
+                p->cell_count = sizeof ( p->chars );
+            for ( uint32_t i = 0; i < p->cell_count; i++ )
+            {
+                p->chars[ i ]      = g_memory.VRAM[ i ];
+                p->attributes[ i ] = g_memory.VRAM[ 0x800 + i ];
+            };
+            p->available = 1;
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_GET_WATCH_SNAPSHOT:
+        {
+            /* V1.D.2.C - Per-watch snapshot statistik z dispatch-side
+             * thread-safe mirroru (`watch_emu_cache`).
+             *
+             * Mirror je naplňován UI vláknem jednou per frame z watch
+             * render loop. Tento handler jen kopíruje aktuální mirror
+             * stav po jméně. 1-frame stale akceptováno per scope.
+             *
+             * Pokud řádek se zadaným jménem v mirror není, found=0 a
+             * ostatní fields zůstávají 0. success=true vždy - chybějící
+             * řádek není error.
+             */
+            st_DBGAPI_WATCH_SNAPSHOT_PARAM *p =
+                (st_DBGAPI_WATCH_SNAPSHOT_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+
+            /* Zachovej jméno z requestu (= IN), vynuluj OUT fields. */
+            char name_in[ sizeof ( p->name ) ];
+            memcpy ( name_in, p->name, sizeof ( name_in ) );
+            name_in[ sizeof ( name_in ) - 1 ] = '\0';
+
+            memset ( p, 0, sizeof ( *p ) );
+
+            st_WATCH_EMU_SNAPSHOT snap;
+            if ( watch_emu_cache_get_by_name ( name_in, &snap ) )
+            {
+                p->found           = 1;
+                p->snapshot_active = snap.snapshot_active ? 1 : 0;
+                p->min_max_valid   = snap.min_max_valid ? 1 : 0;
+                p->row_id          = snap.row_id;
+                p->type_snap       = snap.type_snap;
+                p->snap_int        = snap.snap_int;
+                p->cur_int         = snap.cur_int;
+                p->delta_int       = snap.delta_int;
+                p->min_int         = snap.min_int;
+                p->max_int         = snap.max_int;
+                p->change_count    = snap.change_count;
+            };
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_REGIONS_ENUMERATE:
+        {
+            /* mzdos-support 0007 - Direct memory region enumerate.
+             *
+             * Tenký wrapper nad dbgapi_regions_enumerate() (= existující
+             * backend, používaný GUI Memory browser). No-side-effect, safe
+             * z emu vlákna.
+             */
+            st_DBGAPI_REGIONS_ENUM_PARAM *p =
+                (st_DBGAPI_REGIONS_ENUM_PARAM *) rq->data_ptr;
+            if ( !p || !p->out || p->max_count <= 0 )
+            {
+                rq->success = false;
+                break;
+            };
+            p->out_count = dbgapi_regions_enumerate (
+                (st_REGION_DESC *) p->out, p->max_count );
+            rq->success = ( p->out_count >= 0 );
+            break;
+        }
+
+        case DBGAPI_CMD_REGIONS_READ:
+        {
+            /* mzdos-support 0007 - Direct memory region read.
+             *
+             * Tenký wrapper nad dbgapi_regions_read(). No-side-effect:
+             * žádný auto-inc latch, žádný GDG RF dispatch, žádný IRQ
+             * trigger. Caller dostává out_count = skutečně přečtená
+             * délka (= clamp pokud offset+len > size regionu).
+             */
+            st_DBGAPI_REGIONS_READ_PARAM *p =
+                (st_DBGAPI_REGIONS_READ_PARAM *) rq->data_ptr;
+            if ( !p || !p->buf || p->len == 0 )
+            {
+                rq->success = false;
+                break;
+            };
+            p->out_count = dbgapi_regions_read (
+                p->region_id, p->offset, p->buf, p->len );
+            rq->success = ( p->out_count >= 0 );
+            break;
+        }
+
+        case DBGAPI_CMD_REGIONS_WRITE:
+        {
+            /* mzdos-support 0007 extended - Direct memory region write.
+             *
+             * Tenký wrapper nad dbgapi_regions_write(). Pro
+             * REGION_KIND_MEMEXT_FLASH a REGION_KIND_PROHIBITED_SHADOW
+             * backend vrátí -1 (= read-only z pohledu Memory Browseru).
+             * Pro VRAM regiony žádný automatický screen refresh - to je
+             * UI zodpovědnost při edit v pause modu.
+             */
+            st_DBGAPI_REGIONS_WRITE_PARAM *p =
+                (st_DBGAPI_REGIONS_WRITE_PARAM *) rq->data_ptr;
+            if ( !p || !p->data || p->len == 0 )
+            {
+                rq->success = false;
+                break;
+            };
+            p->out_count = dbgapi_regions_write (
+                p->region_id, p->offset, p->data, p->len );
+            rq->success = ( p->out_count >= 0 );
+            break;
+        }
+
+        case DBGAPI_CMD_GET_SPEED:
+        {
+            /* BACKLOG D - read-only snapshot emulační rychlosti.
+             * Pure read z g_customspeed / g_emulator, žádný side effect. */
+            st_DBGAPI_GET_SPEED_PARAM *p =
+                (st_DBGAPI_GET_SPEED_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            memset ( p, 0, sizeof ( *p ) );
+            p->current_percent = (uint32_t) customspeed_get_current_speed ( );
+            p->max_speed = EMULATOR_TEST_MAX_SPEED ? 1 : 0;
+            if ( EMULATOR_TEST_MAX_SPEED )
+                g_strlcpy ( p->mode, "max", sizeof ( p->mode ) );
+            else if ( p->current_percent != 100 )
+                g_strlcpy ( p->mode, "custom", sizeof ( p->mode ) );
+            else
+                g_strlcpy ( p->mode, "normal", sizeof ( p->mode ) );
+            g_strlcpy ( p->status, emulator_get_speed_status_as_text ( ),
+                        sizeof ( p->status ) );
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_SET_SPEED:
+        {
+            /* BACKLOG D - nastavení emulační rychlosti dle mode.
+             * Volá core funkce (emulator_*, customspeed_*) na emu vlákně.
+             * max se zapíná mode=MAX, vypíná přechodem na NORMAL/CUSTOM.
+             * STEP nemění warp flag, jen custom %. */
+            st_DBGAPI_SET_SPEED_PARAM *p =
+                (st_DBGAPI_SET_SPEED_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+
+            switch ( p->mode )
+            {
+                case DBGAPI_SPEED_MODE_NORMAL:
+                    emulator_switch_to_normal_speed ( );
+                    rq->success = true;
+                    break;
+
+                case DBGAPI_SPEED_MODE_CUSTOM:
+                    /* Přesné % - NEpoužíváme switch_to_custom_speed()
+                     * (= ten obnovuje previous jen z 100 %), místo toho
+                     * přímý set_request + vypnutí warpu. */
+                    customspeed_set_request ( p->percent );
+                    emulator_max_speed ( false );
+                    rq->success = true;
+                    break;
+
+                case DBGAPI_SPEED_MODE_MAX:
+                    emulator_max_speed ( true );
+                    rq->success = true;
+                    break;
+
+                case DBGAPI_SPEED_MODE_STEP:
+                    if ( p->step > 0 )
+                        customspeed_step_up_request ( p->step );
+                    else if ( p->step < 0 )
+                        customspeed_step_down_request ( -p->step );
+                    /* step == 0 = no-op, stále success. */
+                    rq->success = true;
+                    break;
+
+                default:
+                    rq->success = false;
+                    break;
+            };
+
+            /* Echo nastaveného stavu po operaci (= klient nemusí volat
+             * GET_SPEED zvlášť).
+             *
+             * POZOR: customspeed má dvě hodnoty - "requested" (co klient
+             * právě nastavil) a "current" (= co je reálně aplikováno).
+             * Current se z requested aktualizuje až při zpracování
+             * MZEVENT_CUSTOM_SPEED_SYNCHRONISATION (= per snímek za běhu
+             * emulace, customspeed_event.c). Pokud je emulace pozastavena,
+             * current se neaktualizuje. Proto echo reportuje REQUESTED
+             * (= deterministické potvrzení požadavku klienta). Pro reálný
+             * aplikovaný stav slouží GET_SPEED (= current). max_speed flag
+             * je aplikován okamžitě (g_emulator.max_speed), takže je v obou
+             * konzistentní. */
+            if ( rq->success )
+            {
+                p->out_current_percent =
+                    (uint32_t) g_customspeed.speed_in_percentage_requested;
+                p->out_max_speed = EMULATOR_TEST_MAX_SPEED ? 1 : 0;
+                if ( EMULATOR_TEST_MAX_SPEED )
+                    g_strlcpy ( p->out_mode, "max", sizeof ( p->out_mode ) );
+                else if ( p->out_current_percent != 100 )
+                    g_strlcpy ( p->out_mode, "custom",
+                                sizeof ( p->out_mode ) );
+                else
+                    g_strlcpy ( p->out_mode, "normal",
+                                sizeof ( p->out_mode ) );
+            };
+            break;
+        }
+
+        case DBGAPI_CMD_CMT_TRANSPORT:
+        {
+            /* CMT-A: ovládání transportu reálné páskové emulace.
+             * Transport funkce (cmt_play/stop/pause/eject) běží na emu
+             * vlákně a samy validují stav (= no-op pokud nelze provést).
+             * Proto out_result = 0 a success = true i pro no-op. */
+            st_DBGAPI_CMT_TRANSPORT_PARAM *p =
+                (st_DBGAPI_CMT_TRANSPORT_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            p->out_result = 0;
+            switch ( p->action )
+            {
+                case DBGAPI_CMT_TRANSPORT_PLAY:
+                    cmt_play ( );
+                    break;
+                case DBGAPI_CMT_TRANSPORT_PLAY_PAUSED:
+                    cmt_play_paused ( );
+                    break;
+                case DBGAPI_CMT_TRANSPORT_STOP:
+                    cmt_stop ( );
+                    break;
+                case DBGAPI_CMT_TRANSPORT_PAUSE:
+                    cmt_pause ( p->pause_value ? 1 : 0 );
+                    break;
+                case DBGAPI_CMT_TRANSPORT_EJECT:
+                    cmt_eject ( );
+                    break;
+                default:
+                    p->out_result = -1;
+                    rq->success = false;
+                    break;
+            };
+            if ( p->out_result == 0 )
+                rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_CMT_RECORD:
+        {
+            /* CMT-A: zahájení WAV nahrávání do souboru bez file dialogu.
+             * cmt_record_to_file vrátí EXIT_SUCCESS/EXIT_FAILURE; chyba
+             * (nezapisovatelná cesta, špatný stav) -> success = false. */
+            st_DBGAPI_CMT_RECORD_PARAM *p =
+                (st_DBGAPI_CMT_RECORD_PARAM *) rq->data_ptr;
+            if ( !p || !p->filepath || p->filepath[ 0 ] == '\0' )
+            {
+                if ( p ) p->out_result = -1;
+                rq->success = false;
+                break;
+            };
+            int rc = cmt_record_to_file ( p->filepath );
+            if ( rc == EXIT_SUCCESS )
+            {
+                p->out_result = 0;
+                rq->success = true;
+            }
+            else
+            {
+                p->out_result = -2;
+                rq->success = false;
+            };
+            break;
+        }
+
+        case DBGAPI_CMD_CMT_HACK_SET:
+        {
+            /* CMT-A: zapnutí/vypnutí cmthack ROM patche (instant load).
+             * mzarch varianta (= general cmthack_load_rom_patch na ni
+             * jen deleguje, viz cmthack.c). out_installed echo reálného
+             * stavu po operaci. */
+            st_DBGAPI_CMT_HACK_SET_PARAM *p =
+                (st_DBGAPI_CMT_HACK_SET_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            cmthack_mzarch_load_rom_patch ( p->enabled ? 1u : 0u );
+            p->out_installed = (uint8_t)( CMTHACK_TEST_IS_INSTALLED ? 1 : 0 );
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_CMT_SET_PROPERTY:
+        {
+            /* CMT-B: nastavení vlastnosti CMT (rychlost/polarita/cpu
+             * boost/mzfsize check). SPEED validuje en_CMTSPEED rozsah
+             * (1..9); ostatní vlastnosti berou boolean (0/1). Neplatná
+             * property nebo hodnota -> out_result = -1, success = false. */
+            st_DBGAPI_CMT_SET_PROPERTY_PARAM *p =
+                (st_DBGAPI_CMT_SET_PROPERTY_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            p->out_result = 0;
+            switch ( p->property )
+            {
+                case DBGAPI_CMT_PROP_SPEED:
+                    if ( !cmtspeed_is_valid ( (en_CMTSPEED) p->value ) )
+                    {
+                        p->out_result = -1;
+                        rq->success = false;
+                    }
+                    else
+                    {
+                        cmt_change_speed ( (en_CMTSPEED) p->value );
+                        rq->success = true;
+                    };
+                    break;
+                case DBGAPI_CMT_PROP_POLARITY:
+                    cmt_rear_dip_switch_cmt_inverted_polarity ( p->value ? 1u : 0u );
+                    rq->success = true;
+                    break;
+                case DBGAPI_CMT_PROP_CPU_BOOST:
+                    cmt_cpu_boost_set ( p->value ? CMT_CPU_BOOST_ENABLED
+                                                 : CMT_CPU_BOOST_DISABLED );
+                    rq->success = true;
+                    break;
+                case DBGAPI_CMT_PROP_MZFSIZE_CHECK:
+                    cmt_mzfsize_check_set ( p->value ? CMT_MZFSIZE_CHECK_ENABLED
+                                                     : CMT_MZFSIZE_CHECK_DISABLED );
+                    rq->success = true;
+                    break;
+                default:
+                    p->out_result = -1;
+                    rq->success = false;
+                    break;
+            };
+            break;
+        }
+
+        case DBGAPI_CMD_CMT_OPEN:
+        {
+            /* CMT-B: otevření CMT souboru (non-UI). cmt_open_file_by_
+             * extension udělá eject + open; při play_immediately handler
+             * navíc zavolá cmt_play (= jako cmt_ui_open_cb). Selhání
+             * openu -> out_result = -2, success = false. */
+            st_DBGAPI_CMT_OPEN_PARAM *p =
+                (st_DBGAPI_CMT_OPEN_PARAM *) rq->data_ptr;
+            if ( !p || !p->filepath || p->filepath[ 0 ] == '\0' )
+            {
+                if ( p ) p->out_result = -1;
+                rq->success = false;
+                break;
+            };
+            /* cmt_open_file_by_extension bere char* (ne const); jen čte. */
+            int rc = cmt_open_file_by_extension ( (char *) p->filepath );
+            if ( rc == EXIT_SUCCESS )
+            {
+                if ( p->play_immediately )
+                    cmt_play ( );
+                p->out_result = 0;
+                rq->success = true;
+            }
+            else
+            {
+                p->out_result = -2;
+                rq->success = false;
+            };
+            break;
+        }
+
+        case DBGAPI_CMD_CMT_TAPE_SEEK:
+        {
+            /* CMT-B: seek na blok pásky přes container->cb_open_block.
+             * Vyžaduje naloženou pásku s containerem. Mimo rozsah nebo
+             * bez pásky -> out_result != 0, success = false. */
+            st_DBGAPI_CMT_TAPE_SEEK_PARAM *p =
+                (st_DBGAPI_CMT_TAPE_SEEK_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            if ( ( !CMT_TEST_FILLED ) || ( !g_cmt.ext ) || ( !g_cmt.ext->container )
+                 || ( !g_cmt.ext->container->cb_open_block ) )
+            {
+                p->out_result = -1;
+                rq->success = false;
+                break;
+            };
+            int rc = g_cmt.ext->container->cb_open_block ( p->block_id );
+            if ( rc == EXIT_SUCCESS )
+            {
+                p->out_result = 0;
+                rq->success = true;
+            }
+            else
+            {
+                p->out_result = -2;
+                rq->success = false;
+            };
+            break;
+        }
+
+        case DBGAPI_CMD_CMT_TAPE_BLOCK_SPEED:
+        {
+            /* CMT-B: per-blok cmt rychlost (= jediný per-blok parametr,
+             * per Michal). Vyžaduje naloženou pásku s containerem a
+             * platnou en_CMTSPEED hodnotu (1..9). */
+            st_DBGAPI_CMT_TAPE_BLOCK_SPEED_PARAM *p =
+                (st_DBGAPI_CMT_TAPE_BLOCK_SPEED_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            if ( ( !CMT_TEST_FILLED ) || ( !g_cmt.ext ) )
+            {
+                p->out_result = -1;
+                rq->success = false;
+                break;
+            };
+            if ( !cmtspeed_is_valid ( (en_CMTSPEED) p->cmtspeed ) )
+            {
+                p->out_result = -2;
+                rq->success = false;
+                break;
+            };
+            st_CMTEXT_CONTAINER *container = cmtext_get_container ( g_cmt.ext );
+            if ( !container )
+            {
+                p->out_result = -1;
+                rq->success = false;
+                break;
+            };
+            /* Per-blok speed má smysl jen pro SIMPLE_TAPE (= má tape
+             * index). SINGLE container nemá per-blok data; set funkce by
+             * dereferencovala NULL container->tape. Také kontrolujeme
+             * rozsah block_id (= set funkce má jen assert). */
+            if ( ( cmtext_container_get_type ( container )
+                   != CMTEXT_CONTAINER_TYPE_SIMPLE_TAPE )
+                 || ( p->block_id < 0 )
+                 || ( p->block_id >= cmtext_container_get_count_blocks ( container ) ) )
+            {
+                p->out_result = -1;
+                rq->success = false;
+                break;
+            };
+            cmtext_container_set_block_cmt_speed ( container, p->block_id,
+                                                   (en_CMTSPEED) p->cmtspeed );
+            p->out_result = 0;
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_CMT_TAPE_LIST:
+        {
+            /* CMT-B: read-only výpis bloků pásky (backing pro resource
+             * emulator://periph/cmt/tape). Pro nenaloženou pásku /
+             * chybějící container available = 0, out_count = 0. Iterujeme
+             * count_blocks, plníme fixní buffery (clamp name). */
+            st_DBGAPI_CMT_TAPE_LIST_PARAM *p =
+                (st_DBGAPI_CMT_TAPE_LIST_PARAM *) rq->data_ptr;
+            if ( !p || !p->entries )
+            {
+                if ( p ) { p->out_count = 0; p->available = 0; }
+                rq->success = false;
+                break;
+            };
+            p->out_count      = 0;
+            p->available      = 0;
+            p->container_type = 0;
+            p->current_block  = -1;
+            if ( ( !CMT_TEST_FILLED ) || ( !g_cmt.ext ) )
+            {
+                rq->success = true; /* read = úspěch, jen available=0 */
+                break;
+            };
+            st_CMTEXT_CONTAINER *container = cmtext_get_container ( g_cmt.ext );
+            if ( !container )
+            {
+                rq->success = true;
+                break;
+            };
+            en_CMTEXT_CONTAINER_TYPE ctype =
+                cmtext_container_get_type ( container );
+            p->available      = 1;
+            p->container_type = (uint8_t) ctype;
+            if ( g_cmt.ext->block )
+                p->current_block = cmtext_block_get_block_id ( g_cmt.ext->block );
+            int playable   = cmtext_is_playable ( g_cmt.ext );
+            int recordable = cmtext_is_recordable ( g_cmt.ext );
+
+            if ( ctype != CMTEXT_CONTAINER_TYPE_SIMPLE_TAPE )
+            {
+                /* SINGLE container nemá tape index (container->tape ==
+                 * NULL); per-blok get_* funkce by dereferencovaly NULL.
+                 * Reprezentujeme jako jeden syntetický blok: název z
+                 * containeru, rychlost z aktuální default cmt speed. */
+                if ( p->capacity >= 1 )
+                {
+                    st_DBGAPI_CMT_TAPE_BLOCK_ENTRY *e = &p->entries[ 0 ];
+                    e->block_id   = 0;
+                    e->cmtspeed   = (int) g_cmt.mz_cmtspeed;
+                    e->type       = (uint8_t) CMTEXT_BLOCK_TYPE_MZF;
+                    e->is_current = (uint8_t)( p->current_block == 0 ? 1 : 0 );
+                    e->playable   = (uint8_t)( playable ? 1 : 0 );
+                    e->recordable = (uint8_t)( recordable ? 1 : 0 );
+                    const char *cname = cmtext_container_get_name ( container );
+                    if ( cname )
+                        g_strlcpy ( e->name, cname, sizeof ( e->name ) );
+                    else
+                        e->name[ 0 ] = '\0';
+                    p->out_count = 1;
+                };
+                rq->success = true;
+                break;
+            };
+
+            /* SIMPLE_TAPE: má tape index, per-blok get_* jsou bezpečné. */
+            int count = cmtext_container_get_count_blocks ( container );
+            for ( int i = 0; i < count; i++ )
+            {
+                if ( p->out_count >= p->capacity )
+                    break;
+                st_DBGAPI_CMT_TAPE_BLOCK_ENTRY *e = &p->entries[ p->out_count ];
+                e->block_id   = i;
+                e->cmtspeed   = (int) cmtext_container_get_block_cmt_speed ( container, i );
+                e->type       = (uint8_t) cmtext_container_get_block_type ( container, i );
+                e->is_current = (uint8_t)( i == p->current_block ? 1 : 0 );
+                e->playable   = (uint8_t)( playable ? 1 : 0 );
+                e->recordable = (uint8_t)( recordable ? 1 : 0 );
+                const char *fname = cmtext_container_get_block_fname ( container, i );
+                if ( fname )
+                    g_strlcpy ( e->name, fname, sizeof ( e->name ) );
+                else
+                    e->name[ 0 ] = '\0';
+                p->out_count++;
+            };
+            rq->success = true;
+            break;
+        }
+#endif /* MZ800EMU_CFG_MCP_SERVER_ENABLED */
+
         default:
             /* Neznámý příkaz */
             g_warning("dbgapi: unknown command %d", cmd);
             rq->success = false;
             break;
+    };
+
+    /* MCP_ACTION broadcast hook - po úspěšném zpracování CMDRQ od MCP
+     * klienta emitujeme notifikaci do UI (= budoucí Activity Log panel
+     * V1.C). Pro chybové průchody (success == false) broadcast neposíláme,
+     * aby Activity Log nezaplevelily failed pokusy. */
+    if (rq->success && rq->cmd_origin == DBGAPI_CMD_ORIGIN_MCP)
+    {
+        dbgapi_emit_mcp_action(rq);
     };
 }
 
@@ -2351,9 +6499,9 @@ void dbgapi_emu_send_msg(en_DBGAPI_MSG msg, st_DBGAPI_MSG_DATA *data)
     {
         /* Žádný dispatcher zaregistrován - zahodit MSG, uvolnit data.
          * Tento stav nastává např. v testovém prostředí bez UI, nebo
-         * při shutdown po dbgapi_destroy(). */
-        if (data)
-            g_free(data);
+         * při shutdown po dbgapi_destroy(). Použít dbgapi_msg_data_free
+         * aby se uvolnil i případný MCP_ACTION description. */
+        dbgapi_msg_data_free(data);
         return;
     };
 
@@ -2367,11 +6515,12 @@ void dbgapi_emu_send_msg(en_DBGAPI_MSG msg, st_DBGAPI_MSG_DATA *data)
  * UI STRANA — ODESÍLÁNÍ CMDRQ (UI → EMU)
  * ============================================================================ */
 
-bool dbgapi_ui_submit_cmd_sync(st_DBGAPI_CMDRQ_QUEUE *queue,
-                                en_DBGAPI_CMD cmd,
-                                void *data_ptr,
-                                void *result_ptr,
-                                int timeout_ms)
+bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
+                                            en_DBGAPI_CMD cmd,
+                                            en_DBGAPI_CMD_ORIGIN origin,
+                                            void *data_ptr,
+                                            void *result_ptr,
+                                            int timeout_ms)
 {
     /* Kontrola: emulátor se neukončuje? */
     APP_MUTEX_LOCK(queue->queue_mutex);
@@ -2405,10 +6554,20 @@ bool dbgapi_ui_submit_cmd_sync(st_DBGAPI_CMDRQ_QUEUE *queue,
     /* Inicializace slotu */
     APP_MUTEX_LOCK(slot->mutex);
     slot->cmd = cmd;
+    slot->cmd_origin = origin;
     slot->cmd_state = DBGAPI_CMDSTATE_PENDING;
     slot->data_ptr = data_ptr;
     slot->result_ptr = result_ptr;
     slot->success = false;
+
+    /* V1.D.1 - track last user action pro emulator://state Resource.
+     * Zaznamenáváme jen origin == USER (= GUI klik / hotkey / menu).
+     * MCP / TEST / INTERNAL origin ignorujeme - AI klient nás zajímá
+     * jen co dělá human user. */
+    if ( origin == DBGAPI_CMD_ORIGIN_USER )
+    {
+        dbgapi_track_last_user_action ( cmd );
+    };
 
     /* Signalizovat emulátoru, že ve frontě je nový příkaz */
     APP_COND_SIGNAL(queue->queue_cond);
@@ -2432,12 +6591,28 @@ bool dbgapi_ui_submit_cmd_sync(st_DBGAPI_CMDRQ_QUEUE *queue,
     /* Uvolnit slot */
     slot->cmd_state = DBGAPI_CMDSTATE_NONE;
     slot->cmd = DBGAPI_CMD_NONE;
+    slot->cmd_origin = DBGAPI_CMD_ORIGIN_USER;
     slot->data_ptr = NULL;
     slot->result_ptr = NULL;
 
     APP_MUTEX_UNLOCK(slot->mutex);
 
     return success;
+}
+
+
+bool dbgapi_ui_submit_cmd_sync(st_DBGAPI_CMDRQ_QUEUE *queue,
+                                en_DBGAPI_CMD cmd,
+                                void *data_ptr,
+                                void *result_ptr,
+                                int timeout_ms)
+{
+    /* Backward compat wrapper - implicit origin USER pro existující GUI
+     * callsites. MCP wrapper a test framework volají _with_origin přímo. */
+    return dbgapi_ui_submit_cmd_sync_with_origin(queue, cmd,
+                                                  DBGAPI_CMD_ORIGIN_USER,
+                                                  data_ptr, result_ptr,
+                                                  timeout_ms);
 }
 
 bool dbgapi_ui_queue_is_full(st_DBGAPI_CMDRQ_QUEUE *queue)
@@ -2478,15 +6653,37 @@ void dbgapi_ui_invoke_msg_callback(en_DBGAPI_MSG msg, st_DBGAPI_MSG_DATA *data)
 {
     if (!s_msg_callback)
     {
-        /* Žádný listener není zaregistrován - data uvolnit a vrátit. */
-        if (data)
-            g_free(data);
+        /* Žádný listener není zaregistrován - data uvolnit a vrátit.
+         * Použijeme dbgapi_msg_data_free aby se korektně uvolnil i
+         * případný description (MCP_ACTION payload). */
+        dbgapi_msg_data_free(data);
         return;
     };
 
     /* Volat registrovaný listener. Listener je zodpovědný za uvolnění
-     * data (per kontrakt dbgapi_msg_callback_t). */
+     * data (per kontrakt dbgapi_msg_callback_t) - doporučená cesta je
+     * dbgapi_msg_data_free, která pokryje i MCP_ACTION description. */
     s_msg_callback(msg, data, s_msg_callback_user_data);
+}
+
+
+/* ============================================================================
+ * UVOLNĚNÍ MSG DAT (vč. MCP_ACTION description)
+ * ============================================================================ */
+
+void dbgapi_msg_data_free(st_DBGAPI_MSG_DATA *data)
+{
+    if (!data)
+        return;
+    /* description je heap-alokovaný (g_strdup) pouze pro MCP_ACTION; pro
+     * ostatní MSG je NULL. g_free(NULL) je bezpečné, ale pro čistotu
+     * podmínku ponecháme. */
+    if (data->description)
+    {
+        g_free(data->description);
+        data->description = NULL;
+    };
+    g_free(data);
 }
 
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */

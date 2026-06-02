@@ -8,6 +8,26 @@
 #include <glib.h>
 #include <stdio.h>
 
+#include "../sdlapp_options.h"
+
+/**
+ * @brief Vrátí TRUE pokud byl emulátor spuštěn s CLI volbou @c --headless.
+ *
+ * Helper pro no-op brány v audio init (a případně dalších bodech, kde
+ * je potřeba úplně vynechat SDL device otevření). Video subsystém musí
+ * být inicializovaný i v headless režimu, protože hlavní smyčka
+ * @ref sdlapp_run() používá @c SDL_PollEvent (= vyžaduje SDL events,
+ * které SDL3 váže na SDL_INIT_VIDEO inicializaci).
+ *
+ * @return TRUE pokud @c --headless je přítomný v argv, jinak FALSE.
+ *
+ * @note Lookup do argv je O(n) - jen volat z init cest, ne z hot path.
+ */
+static gboolean sdl3_backend_is_headless(void)
+{
+    return sdlapp_option_present("--headless") ? TRUE : FALSE;
+}
+
 static gboolean sdl3_main_check_version(void)
 {
     SDL_Log("Compiled SDL version: %d.%d.%d\n", SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_MICRO_VERSION);
@@ -172,6 +192,15 @@ gboolean sdl3_backend_audio_init(void)
         return false;
     };
 
+    /* Headless režim: žádný audio device se neotevírá. Vrátíme TRUE,
+     * aby vyšší vrstvy (iface_audio) pokračovaly v inicializaci svých
+     * interních bufferů a state machine, ale samotný SDL_OpenAudioDeviceStream
+     * je gated v iface-audio/sdl3/sdl3_audio.c::iface_audio_lowlevel_init. */
+    if (sdl3_backend_is_headless())
+    {
+        return TRUE;
+    };
+
     SDL_InitFlags was_init = SDL_InitSubSystem(0);
     if (was_init & SDL_INIT_AUDIO)
     {
@@ -200,6 +229,13 @@ gboolean sdl3_backend_audio_init(void)
 
 void sdl3_backend_audio_quit(void)
 {
+    /* V headless režimu jsme SDL_INIT_AUDIO nikdy nealokovali (viz
+     * @ref sdl3_backend_audio_init), proto není co ukončovat. */
+    if (sdl3_backend_is_headless())
+    {
+        return;
+    };
+
     if (SDL_WasInit(SDL_INIT_AUDIO))
     {
         SDL_QuitSubSystem(SDL_INIT_AUDIO);

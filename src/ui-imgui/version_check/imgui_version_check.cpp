@@ -57,6 +57,10 @@ void imgui_version_check_setup_window(bool *p_open)
     static en_VERSION_CHECK_PROXY selected_proxy = VERSION_CHECK_PROXY_NONE;
     static char proxy_buffer[256] = {0};
 
+    /* Počítadlo framů pro jednorázový OS-level raise okna po jeho zobrazení
+     * (viz blok za Begin). 0 = neaktivní. */
+    static int s_raise_pending_frames = 0;
+
     static bool initialized = false;
     if (!initialized)
     {
@@ -82,14 +86,6 @@ void imgui_version_check_setup_window(bool *p_open)
 
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize;
 
-    /* TopMost viewport flag pro multi-viewport ImGui (= SDL platform
-     * window vždy nahoře v OS Z-orderu, žádný spawn pod main/terminál). */
-    {
-        ImGuiWindowClass wc;
-        wc.ViewportFlagsOverrideSet = ImGuiViewportFlags_TopMost;
-        ImGui::SetNextWindowClass(&wc);
-    }
-
     /* Auto-layout při fresh open - cache _L() do lokální proměnné. */
     const char *vc_setup_title = _L("mz800emu - Version Check Setup");
     auto_layout_first_use_portrait(vc_setup_title, 500.0f, 400.0f);
@@ -99,10 +95,40 @@ void imgui_version_check_setup_window(bool *p_open)
         return;
     };
 
-    /* Při prvním zobrazení okna (Appearing) ho přesuneme do popředí
-     * (= first-run scénář). */
+    /* Při prvním zobrazení okna (Appearing) ho dostaneme do popředí
+     * (= first-run scénář), aby se neotevřelo za main oknem/terminálem.
+     *
+     * Dříve se to řešilo permanentním ImGuiViewportFlags_TopMost na window
+     * class (= SDL_WINDOW_ALWAYS_ON_TOP). To ale rozbíjelo combo roletky:
+     * dropdown, který přesáhne obrys okna, vznikne v multi-viewport ImGui
+     * jako separátní NE-topmost OS viewport a always-on-top rodič ho překryl
+     * (roletka se "otevřela pod oknem"). ImGui popupům TopMost záměrně nedává
+     * (imgui.cpp - auto-TopMost jen pro Tooltip), takže to nešlo obejít přes
+     * window class popupu.
+     *
+     * Místo toho okno jednorázově raisneme na OS úrovni přes
+     * Platform_SetWindowFocus (= SDL_RaiseWindow) - stejný vzor jako Stack
+     * Monitor okno. SetWindowFocus mění jen ImGui-interní z-order, NE OS
+     * window order, proto je nutný ještě platform raise. Platform window
+     * separátního viewportu nemusí existovat hned na prvním Appearing framu,
+     * proto raise zkoušíme po několik framů, dokud se nepovede. */
     if (ImGui::IsWindowAppearing())
+    {
         ImGui::SetWindowFocus();
+        s_raise_pending_frames = 5;
+    };
+    if (s_raise_pending_frames > 0)
+    {
+        s_raise_pending_frames--;
+        ImGuiViewport *vp = ImGui::GetWindowViewport();
+        ImGuiViewport *main_vp = ImGui::GetMainViewport();
+        ImGuiPlatformIO &pio = ImGui::GetPlatformIO();
+        if (vp && (vp != main_vp) && vp->PlatformWindowCreated && pio.Platform_SetWindowFocus)
+        {
+            pio.Platform_SetWindowFocus(vp);
+            s_raise_pending_frames = 0;
+        };
+    };
 
     ImGui::Text("%s", _("Enable online checking the latest version of the mz800emu."));
     ImGui::Text("%s", _("If a new version is found, an information window will be displayed."));

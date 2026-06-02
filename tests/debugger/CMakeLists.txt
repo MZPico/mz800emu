@@ -34,6 +34,12 @@ mz_add_test(bookmarks
     LABELS   "emu;debugger"
 )
 
+mz_add_test(freeze
+    TYPE     EMU
+    SOURCES  test_freeze.c
+    LABELS   "emu;debugger"
+)
+
 mz_add_test(bp_action
     TYPE     EMU
     SOURCES  test_bp_action.c
@@ -94,6 +100,12 @@ mz_add_test(sym_db
 mz_add_test(dbgapi
     TYPE     EMU
     SOURCES  test_dbgapi.c
+    LABELS   "emu;debugger"
+)
+
+mz_add_test(dbgapi_cmd_origin
+    TYPE     EMU
+    SOURCES  test_dbgapi_cmd_origin.c
     LABELS   "emu;debugger"
 )
 

@@ -8,6 +8,7 @@
 
 #include <mz.h>
 #include <mz_strm.h>
+#include <mz_strm_mem.h>
 #include <mz_zip.h>
 #include <mz_zip_rw.h>
 
@@ -20,6 +21,8 @@
 struct snapshot_io_t {
     void *handle;           /* minizip-ng writer nebo reader */
     bool writing;           /* true = zápis, false = čtení */
+    bool is_buffer;         /* true = backed by mem stream, false = file */
+    void *mem_stream;       /* mem stream při buffer módu, jinak NULL */
     int compression_level;  /* kompresní úroveň (jen pro zápis) */
     /* Pro inkrementální výpočet checksumu při zápisu */
     GPtrArray *written_names;  /* seznam názvů zapsaných entries */
@@ -121,7 +124,200 @@ void snapshot_io_close(snapshot_io_t *io)
         mz_zip_reader_delete(&io->handle);
     }
 
+    /* Buffer-backed handle drží navíc vlastní mem stream
+     * (vlastní jak writer-side rostoucí buffer, tak reader-side
+     * read-only view). V obou případech jej uvolníme zde. */
+    if (io->mem_stream) {
+        mz_stream_mem_close(io->mem_stream);
+        mz_stream_mem_delete(&io->mem_stream);
+    }
+
     g_free(io);
+}
+
+
+/* ========================================================================= */
+/*                       Buffer-based open / close                            */
+/* ========================================================================= */
+
+snapshot_io_t *snapshot_io_open_write_buffer(int compression_level)
+{
+    /* 1. Vytvořit prázdný mem stream (rostoucí, bez prealokovaného bufferu) */
+    void *stream = mz_stream_mem_create();
+    if (!stream) return NULL;
+
+    /* Implicitní grow_size minizip-ng je typicky 4 KB; pro snapshot
+     * (desítky až stovky KB) volíme větší krok, aby se snížil počet
+     * realokací. */
+    mz_stream_mem_set_grow_size(stream, 64 * 1024);
+
+    /* 2. Otevřít stream v režimu zápisu (CREATE) */
+    int32_t err = mz_stream_mem_open(stream, NULL,
+                                     MZ_OPEN_MODE_CREATE | MZ_OPEN_MODE_WRITE);
+    if (err != MZ_OK) {
+        SNAP_ERR("io", "mem stream open (write) failed (err=%d)", err);
+        mz_stream_mem_delete(&stream);
+        return NULL;
+    }
+
+    /* 3. Vytvořit ZIP writer nad streamem */
+    void *writer = mz_zip_writer_create();
+    if (!writer) {
+        mz_stream_mem_close(stream);
+        mz_stream_mem_delete(&stream);
+        return NULL;
+    }
+
+    mz_zip_writer_set_compress_method(writer, MZ_COMPRESS_METHOD_DEFLATE);
+    mz_zip_writer_set_compress_level(writer, (int16_t)compression_level);
+
+    err = mz_zip_writer_open(writer, stream, 0);
+    if (err != MZ_OK) {
+        SNAP_ERR("io", "zip writer open over mem stream failed (err=%d)", err);
+        mz_zip_writer_delete(&writer);
+        mz_stream_mem_close(stream);
+        mz_stream_mem_delete(&stream);
+        return NULL;
+    }
+
+    snapshot_io_t *io = g_new0(snapshot_io_t, 1);
+    io->handle = writer;
+    io->writing = true;
+    io->is_buffer = true;
+    io->mem_stream = stream;
+    io->compression_level = compression_level;
+    io->written_names = g_ptr_array_new_with_free_func(g_free);
+    io->written_data = g_ptr_array_new_with_free_func((GDestroyNotify)g_bytes_unref);
+
+    return io;
+}
+
+
+snapshot_io_t *snapshot_io_open_read_buffer(const uint8_t *data, size_t size)
+{
+    if (!data || size == 0) return NULL;
+
+    /* int32_t je interní typ minizip-ng pro velikost streamu */
+    if (size > (size_t)INT32_MAX) {
+        SNAP_ERR("io", "input buffer too large (%zu B)", size);
+        return NULL;
+    }
+
+    /* 1. Vytvořit mem stream nad poskytnutou pamětí (read-only view) */
+    void *stream = mz_stream_mem_create();
+    if (!stream) return NULL;
+
+    /* set_buffer NEkopíruje - vystaví read-only pohled na (data, size).
+     * mz_stream_mem cast-uje void* dovnitř; const odlomíme pouze pro toto
+     * API volání. Naše API kontrakt: read-only používání, žádný write. */
+    mz_stream_mem_set_buffer(stream, (void *)data, (int32_t)size);
+
+    int32_t err = mz_stream_mem_open(stream, NULL, MZ_OPEN_MODE_READ);
+    if (err != MZ_OK) {
+        SNAP_ERR("io", "mem stream open (read) failed (err=%d)", err);
+        mz_stream_mem_delete(&stream);
+        return NULL;
+    }
+
+    /* 2. Vytvořit ZIP reader nad streamem */
+    void *reader = mz_zip_reader_create();
+    if (!reader) {
+        mz_stream_mem_close(stream);
+        mz_stream_mem_delete(&stream);
+        return NULL;
+    }
+
+    err = mz_zip_reader_open(reader, stream);
+    if (err != MZ_OK) {
+        /* Typicky znamená korupci dat nebo to není ZIP */
+        SNAP_ERR("io", "zip reader open over mem stream failed (err=%d)", err);
+        mz_zip_reader_delete(&reader);
+        mz_stream_mem_close(stream);
+        mz_stream_mem_delete(&stream);
+        return NULL;
+    }
+
+    snapshot_io_t *io = g_new0(snapshot_io_t, 1);
+    io->handle = reader;
+    io->writing = false;
+    io->is_buffer = true;
+    io->mem_stream = stream;
+
+    return io;
+}
+
+
+en_SNAPSHOT_RESULT snapshot_io_close_to_buffer(snapshot_io_t *io,
+                                              uint8_t **out_data,
+                                              size_t *out_size)
+{
+    if (out_data) *out_data = NULL;
+    if (out_size) *out_size = 0;
+
+    if (!io || !out_data || !out_size) {
+        /* Pokud handle není NULL, přesto se musí korektně zavřít */
+        if (io) snapshot_io_close(io);
+        return SNAPSHOT_ERR_IO;
+    }
+
+    if (!io->writing || !io->is_buffer || !io->mem_stream) {
+        SNAP_ERR("io", "close_to_buffer called on non-buffer-writer handle");
+        snapshot_io_close(io);
+        return SNAPSHOT_ERR_IO;
+    }
+
+    /* 1. Zavřít ZIP writer - central directory se zapíše do streamu */
+    int32_t err = mz_zip_writer_close(io->handle);
+    if (err != MZ_OK) {
+        SNAP_ERR("io", "zip writer close failed (err=%d)", err);
+        /* Stále uvolnit zbytek (po zápisu central dir chyba bývá vzácná) */
+        snapshot_io_close(io);
+        return SNAPSHOT_ERR_ZIP;
+    }
+
+    /* 2. Vytáhnout pointer a délku z mem streamu */
+    const void *buf = NULL;
+    int32_t len = 0;
+    int32_t rc = mz_stream_mem_get_buffer(io->mem_stream, &buf);
+    if (rc != MZ_OK || !buf) {
+        SNAP_ERR("io", "mem stream get_buffer failed (rc=%d)", rc);
+        snapshot_io_close(io);
+        return SNAPSHOT_ERR_IO;
+    }
+    mz_stream_mem_get_buffer_length(io->mem_stream, &len);
+    if (len <= 0) {
+        SNAP_ERR("io", "mem stream produced empty buffer (len=%d)", len);
+        snapshot_io_close(io);
+        return SNAPSHOT_ERR_IO;
+    }
+
+    /* 3. Zkopírovat data do nově alokovaného bufferu, který přebírá volající.
+     *    Konvence g_malloc/g_free sjednocena s ostatním snapshot API
+     *    (viz snapshot_extract_screenshot). */
+    uint8_t *copy = g_malloc((size_t)len);
+    if (!copy) {
+        snapshot_io_close(io);
+        return SNAPSHOT_ERR_ALLOC;
+    }
+    memcpy(copy, buf, (size_t)len);
+
+    /* 4. Uvolnit handle - writer i mem stream. mz_zip_writer_close uz
+     *    proběhl, takže mz_zip_writer_delete jen uvolní strukturu;
+     *    sentinel uvnitř snapshot_io_close vyhodnotí znovu close (no-op
+     *    pro již zavřený writer u minizip-ng). */
+    mz_zip_writer_delete(&io->handle);
+    /* Zabraň double-close v snapshot_io_close - handle už je NULL po delete. */
+    if (io->written_names) g_ptr_array_free(io->written_names, TRUE);
+    if (io->written_data) g_ptr_array_free(io->written_data, TRUE);
+    io->written_names = NULL;
+    io->written_data = NULL;
+    mz_stream_mem_close(io->mem_stream);
+    mz_stream_mem_delete(&io->mem_stream);
+    g_free(io);
+
+    *out_data = copy;
+    *out_size = (size_t)len;
+    return SNAPSHOT_OK;
 }
 
 

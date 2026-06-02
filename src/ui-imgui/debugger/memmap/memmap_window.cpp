@@ -63,10 +63,32 @@ struct st_MEMMAP_WINDOW g_memmap_window = {};
  * shodný se stack_history_window. */
 static bool s_focus_pending = false;
 
+/* V2: highlight pending pro cross-window navigaci s konkrétní adresou.
+ * Nastaveno přes memmap_window_request_focus_at(addr). Aplikuje se v
+ * render path - daný řádek (page = addr>>12) dostane pulse highlight,
+ * který vyprchá ~1.5 s (frame counter). -1 = žádný highlight active. */
+static int s_focus_highlight_page = -1;          /**< 0..15 nebo -1. */
+static double s_focus_highlight_until = 0.0;     /**< ImGui::GetTime() limit. */
+#define MEMMAP_FOCUS_HIGHLIGHT_SEC 1.5
+
 
 extern "C" void memmap_window_request_focus ( void )
 {
     s_focus_pending = true;
+}
+
+
+extern "C" void memmap_window_request_focus_at ( unsigned addr )
+{
+    s_focus_pending = true;
+    if ( addr <= 0xFFFFu ) {
+        s_focus_highlight_page = ( int ) ( addr >> 12 );
+        /* Time se aplikuje v render path (po Begin), ne tady - tady
+         * jen flag že "highlight on" - render path nastaví "until" hodnotu
+         * při prvním viditelném framu po request. Pro idempotentní volání
+         * v rámci framu (= stejný flag se nepřepíše) toto stačí. */
+        s_focus_highlight_until = -1.0;  /* sentinel "init at next render" */
+    }
 }
 
 
@@ -1239,8 +1261,34 @@ extern "C" void memmap_window_render ( bool *p_open )
             ImGui::PopStyleColor ( 2 );
         };
 
+        /* V2: cross-window highlight - init "until" time při prvním
+         * viditelném framu po request, pak fading background nad target
+         * row. Idempotentní volání memmap_window_request_focus_at()
+         * v rámci jednoho framu (= flag se opakovaně nepřepíše). */
+        if ( s_focus_highlight_page >= 0 && s_focus_highlight_until < 0.0 ) {
+            s_focus_highlight_until = ImGui::GetTime ( )
+                                       + MEMMAP_FOCUS_HIGHLIGHT_SEC;
+        }
+        double now = ImGui::GetTime ( );
+        if ( s_focus_highlight_page >= 0 && now >= s_focus_highlight_until ) {
+            s_focus_highlight_page = -1;  /* expire */
+        }
+
         for ( int row = 0; row < 16; row++ ) {
             ImGui::TableNextRow ( );
+
+            /* V2: pulse highlight target row z cross-window navigation. */
+            if ( row == s_focus_highlight_page ) {
+                double rem = s_focus_highlight_until - now;
+                if ( rem < 0.0 ) rem = 0.0;
+                if ( rem > MEMMAP_FOCUS_HIGHLIGHT_SEC ) rem = MEMMAP_FOCUS_HIGHLIGHT_SEC;
+                float alpha = ( float ) ( rem / MEMMAP_FOCUS_HIGHLIGHT_SEC );
+                /* Žluté pulse highlight - kontrast vůči RowBg defaultu.
+                 * Linear fade z plné na 0 přes 1.5s = jasná pulse animace. */
+                ImU32 hi = IM_COL32 ( 240, 200, 60,
+                                       ( int ) ( 180.0f * alpha ) );
+                ImGui::TableSetBgColor ( ImGuiTableBgTarget_RowBg0, hi );
+            }
 
             /* Sloupec Addr - text label $XYZ0 přes InvisibleButton aby
              * fungoval pravý klik (popup Banking menu) a hover hint

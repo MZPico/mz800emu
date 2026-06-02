@@ -23,7 +23,6 @@
  * ---------------------------------------------------------------------------
  */
 
-#include "main.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -40,27 +39,12 @@
 
 #include "libs/cpu-z80/z80.h"
 #include "memory/memory.h"
-#include "memory/rom.h"
 #include "mzarch/mzarch.h"
 #include "cmt.h"
-#include "cmthack.h"
 
 #include "iface/iface_audio.h"
 #include "hw-generic/gdg/framebuffer.h"
-#include "emulator.h"
 #include "emulator_measuring.h"
-
-#ifdef MZ800EMU_CFG_UI_ENABLED
-#include "ui-gtk3/ui_main.h"
-#include "ui-gtk3/ui_file_chooser.h"
-#include "ui-gtk3/ui_cmt.h"
-#include "ui-gtk3/vkbd/ui_vkbd.h"
-#else
-
-#define ui_cmt_hack_menu_update()
-#define ui_vkbd_reset_keyboard_state()
-// #define ui_cmt_check_mzf_filesize(x, y)
-#endif /* MZ800EMU_CFG_UI_ENABLED */
 
 #include "cfgmain.h"
 
@@ -90,13 +74,11 @@ typedef enum en_LOADRET
 void cmthack_reinstall_rom_patch(void)
 {
     cmthack_mzarch_reinstall_rom_patch();
-    ui_cmt_hack_menu_update();
 }
 
 void cmthack_load_rom_patch(unsigned enabled)
 {
     cmthack_mzarch_load_rom_patch(enabled);
-    ui_cmt_hack_menu_update();
 }
 
 void cmthack_reset(void)
@@ -144,8 +126,6 @@ void cmthack_init(void)
 
     cfgmodule_parse(cmod);
     cfgmodule_propagate(cmod);
-
-    ui_cmt_hack_menu_update();
 }
 
 void cmthack_result(en_LOADRET result)
@@ -166,10 +146,6 @@ void cmthack_result(en_LOADRET result)
     z80_set_reg(g_mzarch_main.cpu, Z80_REG_AF, reg_af);
 }
 
-#ifdef USE_GTK4_VIDEO
-extern void iface_gtk4_keyboard_reset(void);
-#endif
-
 /*
  *
  * Pozadavek na precteni headeru z CMT
@@ -177,15 +153,6 @@ extern void iface_gtk4_keyboard_reset(void);
  */
 void cmthack_load_file(void)
 {
-
-    /* BUGFIX: po otevreni file selektoru pri RESET + C se zakousne stav vkbd */
-    ui_vkbd_reset_keyboard_state();
-
-    /* Stejny problem je i u klavesnice z gtk4 iface_video */
-#ifdef USE_GTK4_VIDEO
-    iface_gtk4_keyboard_reset();
-#endif
-
     iface_audio_pause_emulation(1);
     framebuffer_flush_full_screen();
 

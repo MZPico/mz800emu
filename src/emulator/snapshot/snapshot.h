@@ -115,6 +115,51 @@ en_SNAPSHOT_RESULT snapshot_save(const char *filepath,
 en_SNAPSHOT_RESULT snapshot_load(const char *filepath);
 
 /**
+ * Uložení snapshotu do paměťového bufferu
+ *
+ * Funkčně ekvivalentní @ref snapshot_save, ale výstupem je nově alokovaný
+ * buffer s .mzs daty místo zápisu na disk. Použití: MCP server (inline
+ * payload pro AI klienta), back-stepping snapshot ring v paměti,
+ * headless CI bez disk I/O.
+ *
+ * @param description Popis snapshotu (může být NULL)
+ * @param out_data Výstupní ukazatel na alokovaný buffer s .mzs daty.
+ *                 Volající uvolní přes g_free(). Při chybě bude
+ *                 *out_data = NULL.
+ * @param out_size Výstupní velikost dat v bajtech. Při chybě bude
+ *                 *out_size = 0.
+ * @return SNAPSHOT_OK při úspěchu; jinak některý z @ref en_SNAPSHOT_RESULT
+ *         (mimo jiné SNAPSHOT_ERR_NOT_PAUSED pokud emulátor neběží v pauze).
+ *
+ * @note Vyžaduje, aby byl emulátor v pauze (stejně jako @ref snapshot_save).
+ * @note Vyprodukovaný buffer je bit-identický s .mzs souborem, který by
+ *       vznikl voláním @ref snapshot_save - lze jej následně načíst přes
+ *       @ref snapshot_load (po zapsání na disk) i přes
+ *       @ref snapshot_load_from_buffer.
+ */
+en_SNAPSHOT_RESULT snapshot_save_to_buffer(const char *description,
+                                           uint8_t **out_data,
+                                           size_t *out_size);
+
+/**
+ * Načtení snapshotu z paměťového bufferu
+ *
+ * Funkčně ekvivalentní @ref snapshot_load, ale vstupem je in-memory ZIP
+ * archiv místo souboru.
+ *
+ * @param data Ukazatel na .mzs data v paměti (musí zůstat platné po
+ *             celou dobu volání - po návratu lze uvolnit)
+ * @param size Velikost dat v bajtech
+ * @return SNAPSHOT_OK při úspěchu; jinak některý z @ref en_SNAPSHOT_RESULT.
+ *
+ * @note Vyžaduje, aby byl emulátor v pauze.
+ * @note Akceptuje data vyprodukovaná jak @ref snapshot_save_to_buffer,
+ *       tak @ref snapshot_save (= identický .mzs formát).
+ */
+en_SNAPSHOT_RESULT snapshot_load_from_buffer(const uint8_t *data,
+                                             size_t size);
+
+/**
  * Načtení metadat snapshotu (pro náhled v selektoru, bez načtení stavu)
  *
  * @param filepath Cesta k souboru (.mzs)

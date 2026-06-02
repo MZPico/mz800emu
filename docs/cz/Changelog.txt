@@ -1,4 +1,45 @@
 
+2026-06-02 - Released version 2.0.3 - preview
+
+	- Nové samostatné okno pro disassemblování bloku paměti
+
+	- Debugger: vytvořen panel GDG State (video subsystém, raster, paleta, PCG)
+
+	- Debugger: vytvořeny per-chip detail panely (CTC / PPI / Z80 PIO / PSG)
+
+	- Debugger: vytvořeno PSG Audio Scope okno (osciloskopy, envelope, piano roll, MIDI/CSV export)
+
+	- Debugger: Memory Browser window, Memory Diff
+
+	- z projektu byly konečně odstraněny všechny artefakty a pozůstalosti z GTK
+
+	- Implementován MCP server
+
+	- Vytvořen virtuální CENTRONIX printer, který provádí automatický capture do souboru
+
+	- Virtual keyboard: u neintuitivně umístěných kláves přidán hint s popisem PC key
+
+	- Breakpoints Window: doplněna sekce Groups + drobná vylepšení
+
+	- Unicard: kořenový SD adresář lze nyní změnit za běhu i při připojené kartě (automatický reconnect na nový adresář; neexistující nebo prázdný adresář se inicializuje stejně jako při startu)
+
+	- BUGFIX: klávesnice MZ-700/1500, odstraněn TAB a opraveno rozložení Virtual Keyboard (barvy kláves zůstaly původní z MZ-800)
+
+	- BUGFIX: CPU Registers window - tlačítka před VEC[A/B] a ISR[A/B] neměly funkční right click menu
+
+	- BUGFIX: Breakpoints - dříve nešlo uložit prázdný BP seznam
+
+	- BUGFIX: CPU z80-mz800 při nedokončeném HALT ukazoval již inkrementovaný regPC
+
+	- BUGFIX: dbgapi: pokud je CPU v HALT a dojde k manuální změne regPC, tak se musíme probudit z HALT (chybné chování bylo, že stále čekal na INT)
+
+	- BUGFIX: klávesnice - klávesa ALPHA nyní reaguje i na druhou PC klávesu s backslashem (ISO / Oem102 vedle levého Shiftu; CZ rozložení má dvě klávesy s backslash)
+
+	- BUGFIX: Version Check Setup Window - opraven z-order problém u Check period comba 
+
+	- proběhlo také několik drobných korekcí v lokalizaci
+
+
 2026-05-21 - Released version 2.0.2 - preview
 
 	- vytvořeno hlavní okno debuggeru + IASM + 4 pomocné disassembled window, CPU registers a Memory map window, Symbols, Bookmarks, Watch
@@ -28,7 +69,7 @@
 	- GDG MZ-800: doplněny některé doposud přesně nezdokumentované vlastnosti, viz projekt GDG Documented https://www.ordoz.com/gdg-documented/
 	Jedinou neimplemenvovanou vlastností zůstává zcela záměrně Suporimpose bit, který by z hlediska emulace nepřinesl nic zásadního, ale zbytečně by zkomplikoval počítání screens podle uplynulých pxCLK.
 
-	- Unicard: plná integrace kompletního FS API pro firmware uc1 rev.60 a uc3 v0.26 (u ovou verzí se stále používá původní QD bootstrap)
+	- Unicard: plná integrace kompletního FS API pro firmware uc1 rev.60 a uc3 v0.26 (u obou verzí se stále používá původní QD bootstrap)
 
 	- nyní máme projekt oficiálně rozdělen na tři MZ architektury: MZ-800 / MZ-1500 / MZ-700 (PAL, NTSC).
 	Primární architekturou však zůstává MZ-800.

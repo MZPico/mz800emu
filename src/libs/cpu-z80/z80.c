@@ -1023,13 +1023,25 @@ check_interrupts:
     /* HALT */
     op_76: cpu->halted = true;
            if (cpu->halt_cb) { WRITEBACK(); cpu->halt_cb(cpu, cpu->halt_data); RELOAD(); }
-           /* CPU control event - HALT entry. Nezavisly na halt_cb (= BC). */
+           /* CPU control event - HALT entry. Nezavisly na halt_cb (= BC).
+            * Event vidi PC = X+1 (post-fetch, adresa za HALT) - sémantika
+            * eventu beze zmeny (viz test_eventlog). */
            if (cpu->cpu_ctrl_event_cb) {
                WRITEBACK();
                cpu->cpu_ctrl_event_cb(cpu, (uint8_t)Z80_CPU_CTRL_HALT_ENTER,
                                       cpu->pc, cpu->cpu_ctrl_event_data);
                RELOAD();
            }
+           /* BUG1 fix: behem HALT drzi realny Z80 PC = X = adresa instrukce
+            * HALT (instrukce se re-fetchuje cyklicky kvuli DRAM refreshi,
+            * PC se inkrementuje az pred skokem do INT/NMI rutiny - viz KB
+            * 12-cpu-control.md:27, 07-interrupts.md:147,151). FETCH() vsak
+            * PC uz inkrementoval na X+1, tak ho vratime na X. Inkrement
+            * zpet na X+1 (navratova adresa za HALT) provede INT/NMI accept
+            * v handle_interrupts_internal(). Az PO HALT_ENTER eventu vyse,
+            * aby event videl X+1. Dekrementujeme lokalni rPC - WRITEBACK na
+            * done: ho propise do cpu->pc. */
+           rPC--;
            NEXT_SLOW(4);
 
     op_77: WR(HL_VAL, rA); NEXT(7);
@@ -2013,6 +2025,11 @@ static int handle_interrupts_internal(z80_t *cpu) {
         cpu->halted = false;
         cpu->iff2 = cpu->iff1;
         cpu->iff1 = 0;
+        /* BUG1 fix: behem HALT je cpu->pc = X (adresa instrukce HALT, viz
+         * op_76). Pred ulozenim navratove adresy ho inkrementujeme na X+1
+         * (= adresa za HALT) - realny Z80 inkrementuje PC pred skokem do
+         * rutiny. Tim push i HALT_EXIT event vidi X+1 (sémantika beze zmeny). */
+        if (was_halted) cpu->pc++;
         cpu->sp -= 2;
         wr16_slow(cpu, cpu->sp, cpu->pc);
         /*
@@ -2050,6 +2067,12 @@ static int handle_interrupts_internal(z80_t *cpu) {
         cpu->halted = false;
         cpu->iff1 = 0;
         cpu->iff2 = 0;
+
+        /* BUG1 fix: behem HALT je cpu->pc = X (adresa instrukce HALT, viz
+         * op_76). Pred HALT_EXIT eventem i pushem v switch(im) nize ho
+         * inkrementujeme na X+1 (= adresa za HALT, navratova adresa) -
+         * realny Z80 inkrementuje PC pred skokem do rutiny. */
+        if (was_halted) cpu->pc++;
 
         /* HALT exit fire jen pri skutecnem prechodu 1->0 (= IRQ pred INT
          * mezi beznymi instrukcemi nesmi fire HALT_EXIT). PC je za HALT

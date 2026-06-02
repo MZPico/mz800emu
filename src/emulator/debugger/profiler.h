@@ -301,6 +301,42 @@ void profiler_snapshot_free ( st_PROF_SNAPSHOT *snap );
 
 
 /**
+ * @brief Formát exportu agregátoru profileru.
+ *
+ * Použito v @ref profiler_export_to_file. Hodnoty odpovídají
+ * en kódování v MCP Tool `emu_profiler_export` (format="csv"/"json").
+ */
+typedef enum en_PROF_EXPORT_FORMAT {
+    PROF_EXPORT_CSV  = 0,   /**< CSV (UTF-8, '\n', header + entry rows). */
+    PROF_EXPORT_JSON = 1    /**< JSON (stats objekt + entries pole). */
+} en_PROF_EXPORT_FORMAT;
+
+
+/**
+ * @brief Export agregátoru do souboru.
+ *
+ * Vyrobí atomický snapshot (= profiler_snapshot_get), zformátuje a zapíše
+ * do souboru. Snapshot se po dokončení uvolní. Funkce je read-only nad
+ * stavem profileru (nemění active flag, agregátor ani baseline cycles).
+ *
+ * Threading: voláno z EMU vlákna v dbgapi sync handleru (= stejný kontrakt
+ * jako profiler_snapshot_get).
+ *
+ * @param filepath      Cílová cesta. NULL nebo prázdný řetězec = chyba.
+ * @param format        @ref en_PROF_EXPORT_FORMAT hodnota.
+ * @param out_entry_count Volitelný OUT pointer pro počet zapsaných entries
+ *                        (NULL = neplnit).
+ * @return  0 OK; -1 open/write chyba; -2 neplatný format/parametry;
+ *         -3 alokační chyba snapshot.
+ *
+ * @post Při návratu != 0 obsah souboru může být částečně zapsaný
+ *       (caller by měl při chybě soubor zahodit).
+ */
+int profiler_export_to_file ( const char *filepath, int format,
+                              int *out_entry_count );
+
+
+/**
  * @brief Levný náhled statistik bez alokace entries.
  *
  * Pro status bar refresh (= 4 Hz polling). Vyplní @c out aktuálním

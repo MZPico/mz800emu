@@ -1,4 +1,3 @@
-#include "main.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -9,9 +8,6 @@
 #endif
 
 #include "libs/imgui/imgui.h"
-
-// Lokalizace
-#include "i18n.h"
 
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "emulator.h"
@@ -27,17 +23,10 @@
 #include "hw-generic/fdc/fdc.h"
 #endif /* CFG_HWEXT_HAVE_FDC */
 
-#include "hw-generic/pio8255/pio8255.h"
 #include "debugger/debugger.h"
 #include "ui-imgui/debugger/debugger_state.h"
 #include "ui-imgui/debugger/breakpoints/bpt_state.h"
 #include "ui-imgui/debugger/dbgapi_helpers.h"
-
-#if HAVE_JOY
-#include "hw-generic/joy/joy.h"
-#endif
-
-#define TEST_HOTKEYS_DISABLED 0
 
 extern "C"
 {
@@ -90,14 +79,6 @@ void imgui_global_shortcuts(void)
 #endif
     };
 
-    /*
-     * Zakaze klavesove zkratky Alt + xx, pokud je to pozadovano
-     */
-    if (TEST_HOTKEYS_DISABLED)
-    {
-        return;
-    };
-
     // Alt + xx klavesove zkratky
     if (io.KeyAlt)
     {
@@ -127,12 +108,24 @@ void imgui_global_shortcuts(void)
          * Alt + C
          * ========
          *
-         * Show/Hide Virtual CMT window
+         * Show/Hide Virtual CMT window.
          *
+         * Per-chip-panels F1: Alt+Shift+C = toggle CTC 8253 State okno.
+         * Shift se kontroluje pred prostym Alt+C aby combo varianta nebyla
+         * "snenita" prostou variantou (pattern shoda s Alt+Shift+W / +P).
          */
         if (ImGui::IsKeyPressed(ImGuiKey_C, false))
         {
-            g_gui->showVirtualCmtWindow = !g_gui->showVirtualCmtWindow;
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+            if (io.KeyShift)
+            {
+                g_gui->showCtcStateWindow = !g_gui->showCtcStateWindow;
+            }
+            else
+#endif
+            {
+                g_gui->showVirtualCmtWindow = !g_gui->showVirtualCmtWindow;
+            };
         };
 
         /*
@@ -393,41 +386,106 @@ void imgui_global_shortcuts(void)
          * Toggle viditelnosti hlavního okna debuggeru (ImGui).
          * Při otevírání nastavíme flag, aby debugger window na tomto framu
          * přeskočil svůj Alt+D handler (jinak by se okno ihned zavřelo).
+         *
+         * Disassembler window: Alt + Shift + D
+         * Combo varianta - toggle Disassembler okna V1 (mutant
+         * disassembler-window-v1). Shift se kontroluje pred prostym
+         * Alt+D aby combo varianta nebyla "snenita" prostou variantou
+         * (pattern shoda s Alt+Shift+B / +R / +S / +H / +W / +P).
          */
         if (ImGui::IsKeyPressed(ImGuiKey_D, false))
         {
-            if (!g_debugger.active)
-                g_dbg_ui.opened_via_alt_d = true;
-            debugger_show_hide_main_window();
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+            if (io.KeyShift)
+            {
+                g_gui->showDisassemblerWindow = !g_gui->showDisassemblerWindow;
+            }
+            else
+#endif
+            {
+                if (!g_debugger.active)
+                    g_dbg_ui.opened_via_alt_d = true;
+                debugger_show_hide_main_window();
+            }
         };
 
         /*
          * Breakpoints window: Alt + B
          * Toggle viditelnosti okna breakpointů (ImGui).
+         *
+         * Bookmarks: Alt + Shift + B
+         * Toggle viditelnosti Bookmarks okna (= pojmenované adresové
+         * záložky). Shift se kontroluje pred prostym Alt+B aby combo
+         * varianta nebyla "snenita" prostou variantou (pattern shoda
+         * s Alt+Shift+R / +S / +H / +W).
          */
         if (ImGui::IsKeyPressed(ImGuiKey_B, false))
         {
-            if (!g_gui->showBreakpointsWindow)
-                g_bpt_ui.opened_via_alt_b = true;
-            g_gui->showBreakpointsWindow = !g_gui->showBreakpointsWindow;
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+            if (io.KeyShift)
+            {
+                g_gui->showBookmarksWindow = !g_gui->showBookmarksWindow;
+            }
+            else
+#endif
+            {
+                if (!g_gui->showBreakpointsWindow)
+                    g_bpt_ui.opened_via_alt_b = true;
+                g_gui->showBreakpointsWindow = !g_gui->showBreakpointsWindow;
+            };
         };
 
         /*
-         * Variables window: Alt + V
-         * Toggle viditelnosti $vars panelu (V1.5.B).
+         * Memory Browser window: Alt + E (membrowser mutant V0).
+         * Toggle viditelnosti Memory Browser hex MVP okna.
+         */
+        if (ImGui::IsKeyPressed(ImGuiKey_E, false))
+        {
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+            g_gui->showMemoryBrowserWindow = !g_gui->showMemoryBrowserWindow;
+#endif
+        };
+
+        /*
+         * Variables window: Alt + V (V1.5.B)
+         * gdg-panel F1: Alt + Shift + V = toggle GDG State okno (V = Video).
+         * Shift se kontroluje uvnitř - bez Shift toggleme Variables, s Shift
+         * toggleme GDG State (analogie patternu Alt+I / Alt+Shift+I).
          */
         if (ImGui::IsKeyPressed(ImGuiKey_V, false))
         {
-            g_gui->showVarsWindow = !g_gui->showVarsWindow;
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+            if (io.KeyShift)
+            {
+                g_gui->showGdgStateWindow = !g_gui->showGdgStateWindow;
+            }
+            else
+#endif
+            {
+                g_gui->showVarsWindow = !g_gui->showVarsWindow;
+            };
         };
 
         /*
          * I/O Ports window: Alt + I
          * Toggle viditelnosti I/O Ports panelu (V1.5.D rework).
+         *
+         * Per-chip-panels F1: Alt+Shift+I = toggle PPI 8255 State okno
+         * (I = Intel 8255). Shift se kontroluje pred prostym Alt+I aby
+         * combo varianta nebyla "snenita" prostou variantou.
          */
         if (ImGui::IsKeyPressed(ImGuiKey_I, false))
         {
-            g_gui->showIoWindow = !g_gui->showIoWindow;
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+            if (io.KeyShift)
+            {
+                g_gui->showPpiStateWindow = !g_gui->showPpiStateWindow;
+            }
+            else
+#endif
+            {
+                g_gui->showIoWindow = !g_gui->showIoWindow;
+            };
         };
 
         /*
@@ -466,12 +524,59 @@ void imgui_global_shortcuts(void)
         };
 
         /*
-         * Memory browser window: Alt + E (placeholder — zatím neimplementováno)
+         * Disassembler window: Alt + Shift + D - obslouženo uvnitř
+         * `if (Alt+D)` handleru výše (řádek ~390). Combo varianta
+         * patternu Alt+D / Alt+Shift+D (= hlavní debugger / Disassembler).
+         */
+
+#if HAVE_PIOZ80
+        /*
+         * Per-chip-panels F1: Alt + Shift + Z = toggle Z80 PIO State okno.
+         * Alt+Z bez Shift dnes není používán, ale gate na Shift zachováváme
+         * pro budoucí symetrii s ostatními combo zkratkami.
+         * Z80 PIO je jen na MZ-800 / MZ-1500 (HAVE_PIOZ80=1).
+         */
+        if (ImGui::IsKeyPressed(ImGuiKey_Z, false) && io.KeyShift)
+        {
+            g_gui->showPiozStateWindow = !g_gui->showPiozStateWindow;
+        };
+#endif
+
+#if HAVE_PSG >= 1
+        /*
+         * Per-chip-panels F1: Alt + Shift + G = toggle PSG State okno
+         * (G = Generator). Alt+G bez Shift dnes není používán.
+         * PSG je jen na MZ-800 / MZ-1500 (HAVE_PSG>=1).
+         */
+        if (ImGui::IsKeyPressed(ImGuiKey_G, false) && io.KeyShift)
+        {
+            g_gui->showPsgStateWindow = !g_gui->showPsgStateWindow;
+        };
+
+        /*
+         * psg-audio-scope mutant F1: Alt + Shift + A = toggle PSG Audio
+         * Scope okno (A = Audio). Alt+A bez Shift dnes není používán.
+         * PSG je jen na MZ-800 / MZ-1500 (HAVE_PSG>=1).
+         */
+        if (ImGui::IsKeyPressed(ImGuiKey_A, false) && io.KeyShift)
+        {
+            g_gui->showPsgAudioScopeWindow = !g_gui->showPsgAudioScopeWindow;
+        };
+#endif
+        /*
+         * gdg-panel F1: Alt + Shift + V = toggle GDG State okno - obslouženo
+         * uvnitř `if (Alt+V)` handleru výše (analogie Alt+I / Alt+Shift+I).
          */
 
         /*
-         * Dissassembler window: zkratka odebrána V1.5.D (= Alt+I nyní I/O Ports)
+         * Symbols window: Alt + Y (Y = sYmbol).
+         * Y bez Shift volné (klávesa Y není použita nikde jinde). Toggle
+         * Symbol Browser okna (load NoICE / sdldz80 .map / sjasmplus .sym).
          */
+        if (ImGui::IsKeyPressed(ImGuiKey_Y, false))
+        {
+            g_gui->showSymbolsWindow = !g_gui->showSymbolsWindow;
+        };
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */
     }; // Alt + xx klavesove zkratky
 }

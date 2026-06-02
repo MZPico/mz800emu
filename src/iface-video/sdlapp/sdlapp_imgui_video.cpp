@@ -19,6 +19,7 @@
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 #include "ui-imgui/debugger/eventview/event_viewer_window.h"
 #include "ui-imgui/debugger/profiler/profiler_window.h"
+#include "ui-imgui/debugger/membrowser/membrowser_window.h"
 #endif
 
 // #include "imgui_impl_sdl3.h"
@@ -164,6 +165,72 @@ static Uint32 sdlapp_mygui_video_update_status_line(void *userdata, SDL_TimerID 
 
 static gboolean sdlapp_myimgui_video_init(void)
 {
+    /* Headless režim: žádné SDL okno se nevytváří, žádný ImGui kontext.
+     * Alokujeme:
+     *  - SdlappMyImGuiVideo_t + SDL surface (= cíl @c set_colors callbacku
+     *    z display.c, který běží v emu vlákně a očekává existující surface).
+     *  - Stub @c MyImGui struct (g_gui) zaplněný nulami. Důvod: 400+ míst
+     *    v kódu emulátoru i UI cest čte @c g_gui->showXxxWindow flagy
+     *    (viz např. @c imgui_cmt_tape_update_filelist volané z @c cmt_init
+     *    v emu vlákně). NULL deref by emu vlákno spadl. Stub všech polí
+     *    na nulu = všechny @c show* flagy false = UI cesty no-op.
+     *
+     * SDL surface lze vytvořit i bez SDL_INIT_VIDEO (SDL_CreateSurface
+     * alokuje jen paměťový buffer), ale @ref sdl3_backend_video_init
+     * stejně potřebujeme pro hlavní smyčku @ref sdlapp_run
+     * (SDL_PollEvent vyžaduje SDL_INIT_VIDEO + SDL_INIT_EVENTS). */
+    if (sdlapp_option_present("--headless"))
+    {
+        g_print("Headless mode: skipping main window + ImGui creation (no-op)\n");
+
+        sdl3_backend_video_init();
+
+        SdlappMyImGuiVideo_t *video = g_new0(SdlappMyImGuiVideo_t, 1);
+        if (!video)
+        {
+            SDLAPP_ERROR("Failed to allocate memory for SdlappMyImGuiVideo_t (headless)");
+            return false;
+        };
+
+        SDL_Surface *surface = video_sdl3_create_surface();
+        if (!surface)
+        {
+            SDLAPP_ERROR("Could not create surface (headless)! SDL_Error: %s\n", SDL_GetError());
+            g_free(video);
+            return false;
+        };
+
+        video->surface = surface;
+        video->raise_pending_frames = 0;
+        video->update_title_timer = 0;
+        g_sdlapp_myimgui_video = video;
+
+        /* Stub g_gui - all-zero MyImGui pro NULL-safety v emu init pipeline.
+         * Žádné ImGui context, žádné okno, žádné callbacks. Emu kód, který
+         * jen čte show* flagy nebo MainWindowHasFocus, dostane 0 = false. */
+        g_gui = g_new0(MyImGui, 1);
+        if (!g_gui)
+        {
+            SDLAPP_ERROR("Failed to allocate stub MyImGui (headless)");
+            SDL_DestroySurface(surface);
+            g_free(video);
+            g_sdlapp_myimgui_video = NULL;
+            return false;
+        };
+
+        sdlapp_myimgui_video_set_colormap(g_display_predef_colors);
+
+        /* @ref sdlapp_myimgui_video_reset_fps_timer čte @c g_display.custom_fps,
+         * což je bezpečné - cfgmain už proběhl. FRAME_TIME se v headless
+         * nepoužije (žádný render callback). */
+        sdlapp_myimgui_video_reset_fps_timer();
+
+        g_iface_video->last_wsizeX = IFACE_WINDOW_WIDTH;
+        g_iface_video->last_wsizeY = IFACE_WINDOW_HEIGHT;
+
+        return true;
+    };
+
     // sdl3_backend_video_init();
     sdl3_backend_video_opengl_init();
 
@@ -198,6 +265,9 @@ static gboolean sdlapp_myimgui_video_init(void)
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
     event_viewer_window_apply_persisted();
     profiler_window_apply_persisted();
+    /* V0-leftovers F4: propagate CLI flag --memory-browser do
+     * g_gui->showMemoryBrowserWindow (po vytvoření g_gui). */
+    membrowser_window_apply_persisted();
 #endif
 
     // Pri prvnim spusteni zobrazime okno s informacemi o programu.
@@ -247,6 +317,10 @@ static gboolean sdlapp_myimgui_video_init(void)
 
 static void sdlapp_myimgui_video_exit(void)
 {
+    /* Headless režim: nealokovali jsme ImGui obrázky ani timer titulku,
+     * proto cleanup omezujeme jen na surface + stub g_gui. Vyhneme se
+     * @c imgui_images_destroy_all (= hlásilo by "Images not loaded"). */
+    gboolean headless = sdlapp_option_present("--headless");
 
     if (g_sdlapp_myimgui_video)
     {
@@ -263,9 +337,18 @@ static void sdlapp_myimgui_video_exit(void)
         g_free(g_sdlapp_myimgui_video);
         g_sdlapp_myimgui_video = NULL;
     };
+    if (headless && g_gui)
+    {
+        /* Stub g_gui byl alokovaný v init headless větvi - free, ne destroy
+         * (žádný ImGui kontext k destroynutí). */
+        g_free(g_gui);
+    };
     g_gui = NULL;
     sdl3_backend_video_quit();
-    imgui_images_destroy_all();
+    if (!headless)
+    {
+        imgui_images_destroy_all();
+    };
 }
 
 static SDL_Window *getSDL_Window_by_name(const char *name)

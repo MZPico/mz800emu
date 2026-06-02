@@ -58,14 +58,23 @@ extern "C"
  * ============================================================================ */
 
 /*
- * Synchronní odeslání příkazu do emulátoru.
+ * Synchronní odeslání příkazu do emulátoru s explicitním origin.
  *
- * Vloží příkaz do CMDRQ fronty, probudí emulátorové vlákno (queue_cond)
- * a čeká na odpověď (slot->cond) s timeoutem.
+ * Vloží příkaz do CMDRQ fronty s identifikací zdroje (cmd_origin),
+ * probudí emulátorové vlákno (queue_cond) a čeká na odpověď
+ * (slot->cond) s timeoutem.
+ *
+ * Origin propagace:
+ *   - cmd_origin se zkopíruje do slot->cmd_origin při zařazení do fronty
+ *   - po úspěšném dispatchi, pokud cmd_origin == DBGAPI_CMD_ORIGIN_MCP,
+ *     EMU vlákno emituje broadcast DBGAPI_MSG_MCP_ACTION
+ *   - ostatní origin (USER/TEST/INTERNAL) jsou dnes equivalentní z pohledu
+ *     side efektu (= jen audit), případný GUI Activity Log si filtr řeší sám
  *
  * Parametry:
  *   queue:       ukazatel na CMDRQ frontu
  *   cmd:         příkaz (en_DBGAPI_CMD), volitelně OR s DBGAPI_CMDFLAG_BLOCKING
+ *   origin:      zdroj příkazu (USER/MCP/TEST/INTERNAL)
  *   data_ptr:    vstupní data pro emulátor (NULL pokud příkaz nepotřebuje data)
  *   result_ptr:  buffer pro odpověď (NULL pokud příkaz nevrací data)
  *   timeout_ms:  maximální čekání na odpověď v milisekundách (0 = neomezený)
@@ -73,6 +82,24 @@ extern "C"
  * Vrací:
  *   true  = příkaz byl úspěšně zpracován (rq->success == true)
  *   false = chyba (timeout, fronta plná, emulátor se ukončuje, rq->success == false)
+ */
+bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
+                                            en_DBGAPI_CMD cmd,
+                                            en_DBGAPI_CMD_ORIGIN origin,
+                                            void *data_ptr,
+                                            void *result_ptr,
+                                            int timeout_ms);
+
+
+/*
+ * Synchronní odeslání příkazu do emulátoru (backward compat wrapper).
+ *
+ * Volá dbgapi_ui_submit_cmd_sync_with_origin() s implicitním
+ * origin = DBGAPI_CMD_ORIGIN_USER. Pro GUI callsites (klik, hotkey, menu)
+ * je toto výchozí cesta. Test framework a MCP wrapper by měly volat
+ * _with_origin variantu přímo.
+ *
+ * Parametry: viz dbgapi_ui_submit_cmd_sync_with_origin (bez origin).
  *
  * Příklad:
  *   bool is_running;

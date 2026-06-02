@@ -27,3 +27,15 @@ mz_add_test(wd279x
     SOURCES  test_wd279x.c
     LABELS   "emu;peripherals"
 )
+
+mz_add_test(gdg_mirror
+    TYPE     EMU
+    SOURCES  test_gdg_mirror.c
+    LABELS   "emu;peripherals"
+)
+
+mz_add_test(centronics
+    TYPE     EMU
+    SOURCES  test_centronics.c
+    LABELS   "emu;peripherals"
+)

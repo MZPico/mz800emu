@@ -19,6 +19,8 @@
 
 #include "mzarch/mzarch_config.h"
 
+#include "ui-imgui/debugger/chip_window_helpers.h"
+
 #if CFG_HWEXT_HAVE_FDC
 #include "hw-generic/fdc/fdc.h"
 
@@ -31,54 +33,6 @@ extern "C"
 }
 
 #if CFG_HWEXT_HAVE_FDC
-
-/** Helper: text label = hex byte (2-digit). */
-static void render_hex8_row(const char *name, uint8_t value, const char *tooltip = nullptr)
-{
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    ImGui::TextUnformatted(name);
-    if (tooltip && ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", tooltip);
-    ImGui::TableSetColumnIndex(1);
-    ImGui::Text("0x%02X", value);
-    ImGui::TableSetColumnIndex(2);
-    /* Binary representation for bit-fields. */
-    char binbuf[10];
-    for (int i = 7; i >= 0; --i)
-        binbuf[7 - i] = (value & (1u << i)) ? '1' : '0';
-    binbuf[8] = '\0';
-    ImGui::Text("%s", binbuf);
-}
-
-static void render_dec_row(const char *name, unsigned value, const char *tooltip = nullptr)
-{
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    ImGui::TextUnformatted(name);
-    if (tooltip && ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", tooltip);
-    ImGui::TableSetColumnIndex(1);
-    ImGui::Text("%u", value);
-    ImGui::TableSetColumnIndex(2);
-    ImGui::TextDisabled("-");
-}
-
-static void render_flag_row(const char *name, int value, const char *tooltip = nullptr)
-{
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    ImGui::TextUnformatted(name);
-    if (tooltip && ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", tooltip);
-    ImGui::TableSetColumnIndex(1);
-    if (value)
-        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "1");
-    else
-        ImGui::TextDisabled("0");
-    ImGui::TableSetColumnIndex(2);
-    ImGui::TextDisabled("-");
-}
 
 /** Render _new_ chip state. */
 static void render_new_chip_state(void)

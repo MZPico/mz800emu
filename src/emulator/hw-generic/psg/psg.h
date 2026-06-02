@@ -242,6 +242,67 @@ extern "C"
      */
     extern en_NOISE_TYPE psg_mirror_channel_noise_type(const st_PSG *psg, unsigned ch);
 
+    /* ===================================================================== */
+    /* PSG Write Log - autoritativní 1:1 záznam každého register zápisu.    */
+    /*                                                                       */
+    /* Záznam se odebírá přímo v `psg_write_byte()` (= hook), tj. zachytí    */
+    /* každý byte přesně tak, jak ho CPU zapíše na PSG datový port. Slouží  */
+    /* pro offline rekonstrukci PSG stavu (replay v external tool) - krok   */
+    /* po kroku, bit po bitu.                                                */
+    /*                                                                       */
+    /* Kontrast vůči polling sample/event logu v UI vrstvě: tyto polling    */
+    /* logy zachycují stav PSG mezi UI tick (= ~60 Hz), takže sub-tick      */
+    /* eventy propadnou. Write-log je autoritativní (= 1:1).                */
+    /*                                                                       */
+    /* Formát: TSV s headerem (emulator_clock_hz, stereo flag), per řádek   */
+    /*   pxclk_ticks <TAB> channel_mask <TAB> raw_byte_hex                   */
+    /*                                                                       */
+    /* Thread safety: enable/disable se volá z UI vlákna; record z emu      */
+    /* vlákna. Vnitřní GLib GMutex chrání file pointer a enabled flag.      */
+    /* Performance: PSG zápisy jsou low-frequency (~100-1000/s), režie mutex */
+    /* je zanedbatelná. Při disabled se vrací z record-path bez mutexu      */
+    /* (atomic check g_psg_write_log.enabled).                               */
+    /* ===================================================================== */
+
+    /**
+     * @brief Zapne write log a otevře cílový soubor.
+     *
+     * Pokud je již log aktivní, nejdřív zavře předchozí soubor a otevře
+     * nový s daným path. Zapíše TSV header (metadata + sloupce). Voláno
+     * typicky z UI vlákna.
+     *
+     * Vedlejší efekty: vytvoří/přepíše soubor na disku, alokuje GMutex
+     * (jednorázově, lazy).
+     *
+     * @param path  Cílová cesta TSV souboru (UTF-8). NESMÍ být NULL.
+     * @return  true = otevřeno OK; false = open selhal (errno nastaveno).
+     */
+    extern bool psg_write_log_enable(const char *path);
+
+    /**
+     * @brief Vypne write log a zavře soubor.
+     *
+     * Po návratu jsou všechny zápisy zahozeny (no-op). Bezpečné volat
+     * opakovaně. Voláno typicky z UI vlákna.
+     *
+     * Vedlejší efekty: fflush + fclose souboru.
+     */
+    extern void psg_write_log_disable(void);
+
+    /**
+     * @brief Vrací true pokud je write log právě aktivní.
+     *
+     * Atomic snapshot enabled flagu; bezpečné z libovolného vlákna.
+     */
+    extern bool psg_write_log_is_enabled(void);
+
+    /**
+     * @brief Vrací počet řádků zapsaných od posledního enable.
+     *
+     * Pro UI status indikátor. Atomic snapshot; bezpečné z UI vlákna.
+     */
+    extern unsigned psg_write_log_row_count(void);
+
 #ifdef __cplusplus
 }
 #endif
