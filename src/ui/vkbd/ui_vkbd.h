@@ -7,7 +7,7 @@
 #include "emulator/hw-generic/pio8255/pio8255.h"
 
 
-#define VKBD_IMAGE_BASE_PATH "ui_resources/vkbd/"
+#define VKBD_IMAGE_BASE_PATH "ui_resources/mz800-vkbd/"
 
 typedef struct st_VKBD_KEYDEF
 {
