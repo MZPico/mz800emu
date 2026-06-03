@@ -1004,6 +1004,12 @@ static char* unicard_normalize_emu_path ( const char *emu_path, int *escape_dete
     }
 
     if ( count_path_components ) {
+        /* Seed naked[0]='/' z inicializace zahodit: smyčka níže přidává
+         * '/' PŘED každou komponentu, takže ponechaný seed by způsobil
+         * vedoucí dvojité lomítko u nekořenové cesty (= "/foo" -> "//foo").
+         * Reálná Unikarta (uc1 i uc3 přes FatFS f_getcwd) vrací single
+         * slash, proto naked stavíme bez úvodního seedu. */
+        naked[0] = 0x00;
         int naked_len = 1;
         for ( i = 0; i < count_path_components; i++ ) {
             int j = path_components[i];
@@ -1013,7 +1019,7 @@ static char* unicard_normalize_emu_path ( const char *emu_path, int *escape_dete
             strncat ( naked, real_node[j], naked_len );
         }
     } else {
-        /* naked už obsahuje "/" z inicializace. */
+        /* Žádné komponenty (= SD root) - naked zůstává "/" z inicializace. */
     }
 
     g_free ( complete_filepath );

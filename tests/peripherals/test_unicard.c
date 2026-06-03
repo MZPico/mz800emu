@@ -243,10 +243,10 @@ void test_unicard_smoke_cmdREV(void)
 }
 
 
-/* cmdGETCWD - po RESET je CWD "/" (uc1) resp. "0:/" (uc3) + 0x0d. */
-static void check_cmdGETCWD_expect(const char *expected)
+/* Pošle cmdGETCWD a ověří, že výstup (CWD string + 0x0d) == expected.
+ * NEresetuje CWD - použitelné i pro test po cmdCHDIR. */
+static void recv_cmdGETCWD_expect(const char *expected)
 {
-    uc_send_cmd(cmdRESET);
     uc_send_cmd(cmdGETCWD);
 
     uint8_t sts = uc_master_status();
@@ -255,7 +255,7 @@ static void check_cmdGETCWD_expect(const char *expected)
     TEST_ASSERT_EQUAL_HEX8_MESSAGE(UNICARD_STS_DOUTRQ, sts & UNICARD_STS_DOUTRQ,
                                     "Po cmdGETCWD musí být DOUTRQ=1");
 
-    char buf[16];
+    char buf[32];
     size_t n = 0;
     while (n < sizeof(buf) - 1) {
         uint8_t b = uc_recv_data();
@@ -265,6 +265,13 @@ static void check_cmdGETCWD_expect(const char *expected)
     buf[n] = '\0';
 
     TEST_ASSERT_EQUAL_STRING_MESSAGE(expected, buf, "CWD format mismatch");
+}
+
+/* cmdGETCWD - po RESET je CWD "/" (uc1) resp. "0:/" (uc3) + 0x0d. */
+static void check_cmdGETCWD_expect(const char *expected)
+{
+    uc_send_cmd(cmdRESET);
+    recv_cmdGETCWD_expect(expected);
 }
 
 void test_unicard_smoke_cmdGETCWD(void)
@@ -279,6 +286,53 @@ void test_unicard_smoke_cmdGETCWD(void)
     if (g_mzarch_platform_numeric == 800) {
         unicard_set_fw(UNICARD_FW_UC1);
         check_cmdGETCWD_expect("/\x0d");
+        /* Vrátit default pro další testy. */
+        unicard_set_fw(UNICARD_FW_UC3);
+    }
+}
+
+
+/* Vejde do /sub (cmdCHDIR) a ověří, že chdir neselhal.
+ * Předpoklad: /sub na SD existuje. Cesta je absolutní, takže je odolná
+ * vůči případnému resetu CWD při přepnutí FW (disconnect/reconnect). */
+static void chdir_to_sub_ok(void)
+{
+    uc_send_cmd(cmdCHDIR);
+    uc_send_str("/sub");
+    uint8_t sts = uc_master_status();
+    TEST_ASSERT_EQUAL_HEX8_MESSAGE(0x00, sts & UNICARD_STS_ERROR,
+                                    "cmdCHDIR /sub nesmí ERROR");
+}
+
+/* Regrese (bugreport 0010): cmdGETCWD po vstupu do podadresáře MUSÍ vrátit
+ * single-slash cestu - "0:/sub" (uc3) resp. "/sub" (uc1) - shodně s reálnou
+ * Unikartou. Dřív emu path-normalizér produkoval vedoucí dvojité lomítko
+ * ("0://sub" / "//sub"), což se v mzdos shellu projevovalo jako "//dir"
+ * ve výpisu PWD. Bug se týkal obou FW (sdílený normalizér), oba real FW
+ * (přes FatFS f_getcwd) přitom vrací single slash. */
+void test_unicard_cmdGETCWD_subdir_single_slash(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    /* Vytvořit /sub na SD (per-test tmpdir, tj. neexistuje). */
+    uc_send_cmd(cmdRESET);
+    uc_send_cmd(cmdMKDIR);
+    uc_send_str("/sub");
+    uint8_t sts = uc_master_status();
+    TEST_ASSERT_EQUAL_HEX8_MESSAGE(0x00, sts & UNICARD_STS_ERROR,
+                                    "cmdMKDIR /sub nesmí ERROR");
+
+    /* uc3 (default, všechny mzarch): "0:/sub" + CR. chdir AŽ po set_fw
+     * (reconnect při přepnutí FW může resetovat CWD na "/"). */
+    unicard_set_fw(UNICARD_FW_UC3);
+    chdir_to_sub_ok();
+    recv_cmdGETCWD_expect("0:/sub\x0d");
+
+    /* uc1 (jen MZ-800): "/sub" + CR bez drive prefixu. */
+    if (g_mzarch_platform_numeric == 800) {
+        unicard_set_fw(UNICARD_FW_UC1);
+        chdir_to_sub_ok();
+        recv_cmdGETCWD_expect("/sub\x0d");
         /* Vrátit default pro další testy. */
         unicard_set_fw(UNICARD_FW_UC3);
     }
@@ -1327,11 +1381,11 @@ static void assert_full_under_sd_root(const char *full, const char *expected_bas
 /* Bezpečné cesty uvnitř SD root - jail musí vrátit non-NULL plný path
  * začínající SD_root prefixem.
  *
- * Poznámka k implementaci: aktuální normalize produkuje naked s vedoucím
- * "//" pro top-level komponentu (= "/foo" -> naked "//foo"). To je
- * implementační quirk, který neovlivňuje security (g_build_filename
- * správně sestaví SD_root + cestu), ale testy raději kontrolují plný
- * path než exact match naked. */
+ * Naked path má vždy single-slash tvar ("/foo", "/subdir/foo.mzf"),
+ * shodný s tím, co vrací reálná Unikarta (uc1 i uc3 přes FatFS f_getcwd).
+ * Dřívější quirk s vedoucím dvojitým lomítkem ("/foo" -> "//foo") byl
+ * příčinou bugu v cmdGETCWD (mzdos PWD zobrazoval "//dir") a je opraven
+ * v unicard_normalize_emu_path. */
 void test_unicard_jail_basic_paths(void)
 {
     MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
@@ -1345,24 +1399,31 @@ void test_unicard_jail_basic_paths(void)
     char *full = unicard_jail_resolve_with_naked("", &naked);
     TEST_ASSERT_NOT_NULL_MESSAGE(full, "Prázdná cesta musí být platná (SD root)");
     TEST_ASSERT_NOT_NULL(naked);
+    /* Root naked musí být přesně single-slash "/". */
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("/", naked,
+                                     "Naked pro \"\" (SD root) musí být \"/\"");
     /* Plný path = SD_root (suffix s_test_sd_root sám sebe = true). */
     TEST_ASSERT_TRUE_MESSAGE(g_str_has_prefix(full, s_test_sd_root),
                              "Plný path \"\" musí být SD_root");
     baseui_tools_mem_free(full);
     baseui_tools_mem_free(naked);
 
-    /* Case B: leading slash - SD-rooted path. */
+    /* Case B: leading slash - SD-rooted path. Naked musí být single-slash. */
     naked = NULL;
     full = unicard_jail_resolve_with_naked("/foo", &naked);
     TEST_ASSERT_NOT_NULL_MESSAGE(naked, "Naked pro /foo nesmí být NULL");
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("/foo", naked,
+                                     "Naked pro /foo musí být single-slash \"/foo\"");
     assert_full_under_sd_root(full, "foo", "Plný path /foo musí být SD_root/.../foo");
     baseui_tools_mem_free(full);
     baseui_tools_mem_free(naked);
 
-    /* Case C: relativní subdir s souborem. */
+    /* Case C: relativní subdir s souborem. Naked musí být single-slash. */
     naked = NULL;
     full = unicard_jail_resolve_with_naked("subdir/foo.mzf", &naked);
     TEST_ASSERT_NOT_NULL_MESSAGE(naked, "Naked pro subdir/foo.mzf nesmí být NULL");
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("/subdir/foo.mzf", naked,
+                                     "Naked pro subdir/foo.mzf musí být \"/subdir/foo.mzf\"");
     assert_full_under_sd_root(full, "foo.mzf",
                               "Plný path musí obsahovat foo.mzf");
     TEST_ASSERT_NOT_NULL_MESSAGE(strstr(full, "subdir"),
@@ -1869,6 +1930,7 @@ int main(int argc, char *argv[])
     RUN_TEST(test_unicard_smoke_cmdRESET);
     RUN_TEST(test_unicard_smoke_cmdREV);
     RUN_TEST(test_unicard_smoke_cmdGETCWD);
+    RUN_TEST(test_unicard_cmdGETCWD_subdir_single_slash);
     RUN_TEST(test_unicard_parser_BS_via_cmdOPEN);
     RUN_TEST(test_unicard_parser_BS_open_existing);
     RUN_TEST(test_unicard_cmdSIZE);
