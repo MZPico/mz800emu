@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-01 22:39+0200\n"
+"POT-Creation-Date: 2026-06-04 14:14+0200\n"
 "PO-Revision-Date: 2026-03-11 21:00+0100\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -63,20 +63,20 @@ msgstr ""
 "Adresa = 0x%04x\n"
 "Inštrukcia = '%s'\n"
 
-#: src/emulator/emulator.c:290
+#: src/emulator/emulator.c:304
 #: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:421
 msgid "PAUSED"
 msgstr "POZASTAVENÉ"
 
-#: src/emulator/emulator.c:293
+#: src/emulator/emulator.c:307
 msgid "Max speed"
 msgstr "Maximálna rýchlosť"
 
-#: src/emulator/emulator.c:296
+#: src/emulator/emulator.c:310
 msgid "Custom speed"
 msgstr "Vlastná rýchlosť"
 
-#: src/emulator/emulator.c:298
+#: src/emulator/emulator.c:312
 msgid "Normal speed"
 msgstr "Normálna rýchlosť"
 
@@ -104,10 +104,10 @@ msgstr "Vyberte CMT súbor na otvorenie"
 msgid "Select a MZF File"
 msgstr "Vyberte MZF súbor"
 
-#: src/emulator/hw-generic/fdc/fdc.c:1007
+#: src/emulator/hw-generic/fdc/fdc.c:1128
 #, c-format
-msgid "Select DSK image file for drive FD%d"
-msgstr "Vyberte súbor obrazu DSK pre mechaniku FD%d"
+msgid "Select DSK image file for FDC%u drive FD%d"
+msgstr "Vyberte súbor obrazu DSK pre FDC%u mechaniku FD%d"
 
 #: src/emulator/hw-generic/qdisk/qdisk.c:816
 msgid "Select existing .MZQ file or create new QD image"
@@ -117,7 +117,7 @@ msgstr "Vyberte existujúci .MZQ súbor alebo vytvorte nový QD obraz"
 msgid "Select directory to mount as virtual Quick Disk"
 msgstr "Vyberte adresár na pripojenie ako virtuálny Quick Disk"
 
-#: src/emulator/hw-generic/unicard/unicard.c:2080
+#: src/emulator/hw-generic/unicard/unicard.c:2175
 msgid "Select SD root directory for Unicard"
 msgstr "Vyberte koreňový adresár SD pre Unicard"
 
@@ -547,7 +547,7 @@ msgid "Virtual CMT is not available!"
 msgstr "Virtuálny CMT nie je k dispozícii!"
 
 #: src/ui-imgui/cmt/cmt_window.cpp:823
-#: src/ui-imgui/version_check/imgui_version_check.cpp:364
+#: src/ui-imgui/version_check/imgui_version_check.cpp:390
 msgid "Close"
 msgstr "Zavrieť"
 
@@ -2545,7 +2545,7 @@ msgid "Hide noise"
 msgstr "Skryť šum"
 
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1369
-#: src/ui-imgui/debugger/ioview/io_window.cpp:972
+#: src/ui-imgui/debugger/ioview/io_window.cpp:973
 #: src/ui-imgui/debugger/symbols/sym_window.cpp:618
 msgid "Clear filter"
 msgstr "Vymazať filter"
@@ -2816,6 +2816,7 @@ msgstr ""
 
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2346
 #: src/ui-imgui/joy/joy_setup_window.cpp:415
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:284
 msgid "None"
 msgstr "Žiadne"
 
@@ -3322,17 +3323,29 @@ msgstr "Mechaniky"
 msgid "FDC State"
 msgstr "FDC State"
 
-#: src/ui-imgui/debugger/fdc_window.cpp:193
+#: src/ui-imgui/debugger/fdc_window.cpp:198
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:427
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:288
+msgid "FDC0 (standard)"
+msgstr "FDC0 (štandardný)"
+
+#: src/ui-imgui/debugger/fdc_window.cpp:199
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:433
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:292
+msgid "FDC1 (secondary)"
+msgstr "FDC1 (sekundárny)"
+
+#: src/ui-imgui/debugger/fdc_window.cpp:202
 #, c-format
 msgid "Connected: %s"
 msgstr "Pripojené: %s"
 
-#: src/ui-imgui/debugger/fdc_window.cpp:194
+#: src/ui-imgui/debugger/fdc_window.cpp:203
 #: src/ui-imgui/debugger/gdg_window_mz800.cpp:285
 msgid "yes"
 msgstr "áno"
 
-#: src/ui-imgui/debugger/fdc_window.cpp:194
+#: src/ui-imgui/debugger/fdc_window.cpp:203
 #: src/ui-imgui/debugger/gdg_window_mz800.cpp:285
 msgid "no"
 msgstr "nie"
@@ -3995,11 +4008,11 @@ msgstr "Okno prehliadača pamäte"
 msgid "Disassembler window"
 msgstr "Okno Disassemblera"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:482
+#: src/ui-imgui/debugger/ioview/io_window.cpp:483
 msgid "(no bit-level decode available)"
 msgstr "(bit-level dekód nie je k dispozícii)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:637
+#: src/ui-imgui/debugger/ioview/io_window.cpp:638
 msgid ""
 "16-bit CRTC family port. Bus addr is 0x<RR>CF (Z80 OUT (C),A pattern with "
 "B=register index, C=0xCF). MZ notation 0xCF<RR> is human-readable display."
@@ -4008,52 +4021,52 @@ msgstr ""
 "(C),A s B=index registra, C=0xCF). MZ notácia 0xCF<RR> je človeku čitateľné "
 "zobrazenie."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:655
+#: src/ui-imgui/debugger/ioview/io_window.cpp:656
 msgid "Add IORQ R BP##ioctx"
 msgstr "Pridať IORQ R BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:658
+#: src/ui-imgui/debugger/ioview/io_window.cpp:659
 msgid "Add IORQ W BP##ioctx"
 msgstr "Pridať IORQ W BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:662
+#: src/ui-imgui/debugger/ioview/io_window.cpp:663
 msgid "Add MEM R BP##ioctx"
 msgstr "Pridať MEM R BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:665
+#: src/ui-imgui/debugger/ioview/io_window.cpp:666
 msgid "Add MEM W BP##ioctx"
 msgstr "Pridať MEM W BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:670
+#: src/ui-imgui/debugger/ioview/io_window.cpp:671
 msgid "Reset activity counter##ioctx"
 msgstr "Reset čítača aktivity##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:679
+#: src/ui-imgui/debugger/ioview/io_window.cpp:680
 msgid "Show in History tab##ioctx"
 msgstr "Zobraziť v záložke História##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:716
+#: src/ui-imgui/debugger/ioview/io_window.cpp:717
 msgid "Show in Memory Map##ioctx"
 msgstr "Zobraziť v Memory Map##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:811
+#: src/ui-imgui/debugger/ioview/io_window.cpp:812
 #, c-format
 msgid "Last cached value %u frames ago"
 msgstr "Posledná cachovaná hodnota pred %u snímkami"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:818
+#: src/ui-imgui/debugger/ioview/io_window.cpp:819
 msgid "No data captured (port has no mirror and no IORQ event yet)"
 msgstr "Žiadne dáta zachytené (port nemá mirror a zatiaľ nemá IORQ udalosť)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:847
+#: src/ui-imgui/debugger/ioview/io_window.cpp:848
 msgid "Hits per second over last 1s window (50 buckets)"
 msgstr "Zásahy za sekundu v okne poslednej 1 s (50 bucketov)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:853
+#: src/ui-imgui/debugger/ioview/io_window.cpp:854
 msgid "Tracking disabled (panel closed or toggled off)"
 msgstr "Sledovanie zakázané (panel zatvorený alebo vypnutý)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:877
+#: src/ui-imgui/debugger/ioview/io_window.cpp:878
 msgid ""
 "MMIO events (0xE000-0xE008) are always recorded (per-port filter applies to "
 "8-bit IORQ space only)"
@@ -4061,7 +4074,7 @@ msgstr ""
 "MMIO udalosti (0xE000-0xE008) sú zaznamenávané vždy (filter per port sa "
 "vzťahuje iba na 8-bitový IORQ priestor)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:891
+#: src/ui-imgui/debugger/ioview/io_window.cpp:892
 msgid ""
 "Record IORQ events for this port into History ring buffer. Uncheck to skip "
 "high-frequency ports and preserve ring capacity for events of interest."
@@ -4070,12 +4083,12 @@ msgstr ""
 "Odškrtnite pre preskočenie vysokofrekvenčných portov a zachovanie kapacity "
 "bufferu pre zaujímavé udalosti."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:958
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1845
+#: src/ui-imgui/debugger/ioview/io_window.cpp:959
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1864
 msgid "Filter..."
 msgstr "Filter..."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:964
+#: src/ui-imgui/debugger/ioview/io_window.cpp:965
 msgid ""
 "Filter visible ports (case-insensitive substring match on name, address hex, "
 "or direction r/w/rw)."
@@ -4083,34 +4096,34 @@ msgstr ""
 "Filtrovať viditeľné porty (zhoda podreťazca bez ohľadu na veľkosť písmen v "
 "názve, hex adrese alebo smere r/w/rw)."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:968
+#: src/ui-imgui/debugger/ioview/io_window.cpp:969
 msgid "Clear##io_clear_filter"
 msgstr "Vymazať##io_clear_filter"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:978
+#: src/ui-imgui/debugger/ioview/io_window.cpp:979
 msgid "Reset Activity##io_reset_act"
 msgstr "Reset aktivity##io_reset_act"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:983
+#: src/ui-imgui/debugger/ioview/io_window.cpp:984
 msgid "Clear activity counters for all 256 ports"
 msgstr "Vymazať čítače aktivity pre všetkých 256 portov"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:989
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1955
+#: src/ui-imgui/debugger/ioview/io_window.cpp:990
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1974
 msgid "Capacity:"
 msgstr "Kapacita:"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1022
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1985
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1023
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2004
 msgid "History buffer size. Resize discards existing events."
 msgstr "Veľkosť bufferu histórie. Zmena veľkosti zahodí existujúce udalosti."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1030
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1031
 msgid "Track##io_track"
 msgstr "Sledovať##io_track"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1035
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2003
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1036
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2022
 msgid ""
 "Enable IORQ activity + history capture (gated). Default ON when panel is "
 "open. Toggle off to reduce overhead."
@@ -4118,75 +4131,75 @@ msgstr ""
 "Povoliť zachytenie IORQ aktivity + histórie (riadené). Predvolené ON, keď je "
 "panel otvorený. Vypnite pre zníženie réžie."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1050
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1051
 msgid "Heat...##io_heat_btn"
 msgstr "Heat...##io_heat_btn"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1055
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1056
 msgid "Configure activity heat coloring thresholds."
 msgstr "Nastaviť prahy heat zafarbenia aktivity."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1058
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1059
 msgid "Heat coloring thresholds (hits/s):"
 msgstr "Prahy heat zafarbenia (zásahy/s):"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1061
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1062
 msgid "Text active (green)##io_heat_text"
 msgstr "Text aktívny (zelená)##io_heat_text"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1072
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1073
 msgid "Minimum hits/s to color row text green. Default 1."
 msgstr "Minimum zásahov/s pre zafarbenie textu riadku zeleno. Predvolené 1."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1075
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1076
 msgid "Bg hot tint (red)##io_heat_bg"
 msgstr "Pozadie horúce (červená)##io_heat_bg"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1086
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1087
 msgid ""
 "Minimum hits/s for red row background tint (bottleneck warn). Default 10000."
 msgstr ""
 "Minimum zásahov/s pre červené tónovanie pozadia riadku (varovanie úzkeho "
 "hrdla). Predvolené 10000."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1090
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1091
 msgid "Reset to defaults##io_heat_reset"
 msgstr "Obnoviť predvolené##io_heat_reset"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1128
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1129
 msgid "No ports match filter"
 msgstr "Žiadne porty nezodpovedajú filtru"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1604
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1623
 msgid "(no selection)"
 msgstr "(nič nevybrané)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1605
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1624
 msgid "Click a row to see details"
 msgstr "Kliknutím na riadok zobrazíte detaily"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1617
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1636
 msgid "Selected event:"
 msgstr "Vybraná udalosť:"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1651
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1670
 msgid "Focus to primary disassembly. Right-click for additional actions."
 msgstr "Zamerať na primárny Disasm. Pravý klik pre ďalšie akcie."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1692
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1711
 msgid "Focus to..."
 msgstr "Zamerať na..."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1711
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1730
 #: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3319
 msgid "Add to bookmarks"
 msgstr "Pridať do záložiek"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1730
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1749
 msgid "Add breakpoint"
 msgstr "Pridať breakpoint"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1851
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1870
 msgid ""
 "Filter syntax (boolean expression):\n"
 "Atoms (leaf tokens):\n"
@@ -4239,23 +4252,23 @@ msgstr ""
 "  (port:CE pc:42) | port:CF  skupina OR skupina\n"
 "  !(in | out)                ani IN ani OUT"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1877
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1896
 msgid "Clear##io_hist_clear"
 msgstr "Vymazať##io_hist_clear"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1911
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1930
 msgid "Latest##io_hist_latest"
 msgstr "Najnovšie##io_hist_latest"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1917
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1936
 msgid "Re-enable auto-follow and scroll to latest event"
 msgstr "Znovu povoliť auto-follow a posunúť na najnovšiu udalosť"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1921
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1940
 msgid "Auto-follow##io_hist_af"
 msgstr "Auto-follow##io_hist_af"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1933
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1952
 msgid ""
 "Auto-scroll History tab to latest event. User scroll up disables follow; "
 "click [Latest] re-enables."
@@ -4263,27 +4276,27 @@ msgstr ""
 "Automaticky posúvať záložku História na najnovšiu udalosť. Posun "
 "používateľom nahor vypne follow; klik na [Najnovšie] ho znovu povolí."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1939
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1958
 msgid "Clear history##io_hist_purge"
 msgstr "Vymazať históriu##io_hist_purge"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1946
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1965
 msgid "Discard all recorded IORQ events"
 msgstr "Zahodiť všetky zaznamenané IORQ udalosti"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1991
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2010
 msgid "Track##io_hist_track"
 msgstr "Sledovať##io_hist_track"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2010
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2029
 msgid "Filter error"
 msgstr "Chyba filtra"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2149
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2168
 msgid "Filter actions for this event:"
 msgstr "Akcie filtra pre túto udalosť:"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2428
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2447
 msgid ""
 "Wraps the current filter in parentheses, then appends ' & token'. Use to AND-"
 "narrow an OR chain (parser precedence: & binds tighter than |)."
@@ -4291,7 +4304,7 @@ msgstr ""
 "Obalí aktuálny filter zátvorkami a pridá ' & token'. Použite pre zúženie OR "
 "reťazca cez AND (priorita parsera: & viaže silnejšie než |)."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2432
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2451
 msgid ""
 "Wraps the current filter in parentheses, then appends ' | token'. Use when "
 "the current filter is itself an AND chain that should be OR-extended as a "
@@ -4300,15 +4313,15 @@ msgstr ""
 "Obalí aktuálny filter zátvorkami a pridá ' | token'. Použite, keď je "
 "aktuálny filter sám AND reťazcom, ktorý má byť ako celok rozšírený cez OR."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2728
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2747
 msgid "I/O Ports###io_main"
 msgstr "I/O Porty###io_main"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2764
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2783
 msgid "Overview##io_tab_ov"
 msgstr "Prehľad##io_tab_ov"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2778
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2797
 msgid "History##io_tab_hist"
 msgstr "História##io_tab_hist"
 
@@ -4346,7 +4359,7 @@ msgstr "Zmazať"
 #: src/ui-imgui/rom/rom_settings_window.cpp:321
 #: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:137
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:174
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:95
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:99
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:93
 msgid "Cancel"
 msgstr "Zrušiť"
@@ -4721,8 +4734,8 @@ msgstr "Príklad: \"AA BB CC\" alebo \"DEADBEEF\" - max 64 bajtov"
 #: src/ui-imgui/debugger/membrowser/membrowser_fill_dialog.cpp:262
 #: src/ui-imgui/debugger/sections/dbg_focus_to.cpp:274
 #: src/ui-imgui/memext/memext_map_window.cpp:252
-#: src/ui-imgui/version_check/imgui_version_check.cpp:219
-#: src/ui-imgui/version_check/imgui_version_check.cpp:224
+#: src/ui-imgui/version_check/imgui_version_check.cpp:245
+#: src/ui-imgui/version_check/imgui_version_check.cpp:250
 msgid "Apply"
 msgstr "Použiť"
 
@@ -5746,7 +5759,7 @@ msgstr "Pripojiť"
 #: src/ui-imgui/debugger/memmap/memmap_window.cpp:655
 #: src/ui-imgui/debugger/memmap/memmap_window.cpp:683
 #: src/ui-imgui/debugger/memmap/memmap_window.cpp:698
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:189
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:193
 msgid "Umount"
 msgstr "Odpojiť"
 
@@ -10082,107 +10095,107 @@ msgstr "Opraviť ukončovač FNAME"
 msgid "HW & Devices"
 msgstr "HW a zariadenia"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:78
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:80
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:82
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:84
 msgid "FDC: Unsaved RAM changes"
 msgstr "FDC: neuložené zmeny v RAM"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:83
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:87
 #, c-format
 msgid "Drive %d is in Discard mode and has unsaved RAM changes."
 msgstr "Mechanika %d je v režime Discard a obsahuje neuložené zmeny v RAM."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:84
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:88
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:84
 #, c-format
 msgid "Switching to '%s' mode will close the current RAM buffer."
 msgstr "Prepnutie do režimu '%s' zavrie aktuálny RAM buffer."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:87
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:91
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:86
 msgid "What to do with the changes?"
 msgstr "Čo urobiť so zmenami?"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:93
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:97
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:91
 msgid "Save and switch"
 msgstr "Uložiť a prepnúť"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:94
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:98
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:92
 msgid "Switch and discard"
 msgstr "Prepnúť a zahodiť"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:169
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:173
 #: src/ui-imgui/topmenu/devices/menu_ide8.cpp:40
 msgid "No image"
 msgstr "Bez obrazu"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:182
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:186
 msgid "Mount..."
 msgstr "Pripojiť..."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:182
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:186
 msgid "Re-Mount..."
 msgstr "Znovu pripojiť..."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:207
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:211
 msgid "Read-only (FS write-protected)"
 msgstr "Iba na čítanie (súbor chránený proti zápisu)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:213
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:217
 msgid "Read-only"
 msgstr "Iba na čítanie"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:238
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:242
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:353
 msgid "Storage mode"
 msgstr "Režim úložiska"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:256
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:260
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:375
 msgid "Cached (sync at reset/umount/exit)"
 msgstr "Cached (sync pri resete/odpojení/konci)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:261
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:265
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:380
 msgid "Direct (write-through to file)"
 msgstr "Direct (priamy zápis do súboru)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:266
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:270
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:385
 msgid "Discard changes (in-RAM, no sync)"
 msgstr "Discard (iba v RAM, bez synchronizácie)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:274
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:278
 msgid "Sync now"
 msgstr "Synchronizovať teraz"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:288
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:292
 msgid "FDD "
 msgstr "FDD "
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:294
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:300
 msgid "(Empty)"
 msgstr "(Prázdny)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:320
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:328
 msgid "Hardware options"
 msgstr "Nastavenie hardvéru"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:323
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:331
 msgid "HD Patch enabled"
 msgstr "HD Patch povolený"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:328
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:336
 msgid "Restart emulator to apply change."
 msgstr "Pre uplatnenie zmeny reštartujte emulátor."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:331
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:339
 msgid "Bus translation: invert (Sharp)"
 msgstr "Preklad zbernice: invertovať (Sharp)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:336
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:344
 msgid ""
 "Sharp MZ default - XOR 0xFF between CPU bus and WD279x chip. Restart "
 "emulator to apply change."
@@ -10190,11 +10203,11 @@ msgstr ""
 "Predvolené pre Sharp MZ - XOR 0xFF medzi CPU zbernicou a čipom WD279x. Pre "
 "uplatnenie zmeny reštartujte emulátor."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:339
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:347
 msgid "Bus translation: passthrough"
 msgstr "Preklad zbernice: passthrough"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:347
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:355
 msgid ""
 "NOT compatible with Sharp MZ - no inversion between CPU bus and WD279x chip. "
 "Reserved for future 'true bus' ROMs / experiments. Restart emulator to apply "
@@ -10204,31 +10217,43 @@ msgstr ""
 "WD279x. Vyhradené pre budúce 'true bus' ROM / experimenty. Pre uplatnenie "
 "zmeny reštartujte emulátor."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:358
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:375
+msgid "Floppy Drives"
+msgstr "Disketové mechaniky"
+
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:389
 msgid "FD Controller"
 msgstr "FD radič"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:367
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:399
 #: src/ui-imgui/topmenu/devices/menu_memext.cpp:59
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:183
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:65
 msgid "Not Connected"
 msgstr "Nepripojené"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:372
-msgid "WD279x"
-msgstr "WD279x"
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:409
+msgid "WD279x (standard)"
+msgstr "WD279x (štandardný)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:377
-msgid "Floppy Drives"
-msgstr "Disketové mechaniky"
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:414
+msgid "Default FDC on ports 0xD8 - 0xDF"
+msgstr "Predvolený FDC na portoch 0xD8 - 0xDF"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:385
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:416
+msgid "WD279x (secondary)"
+msgstr "WD279x (sekundárny)"
+
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:421
+msgid "Unicard alternate FDC ports 0x58 - 0x5F"
+msgstr "Alternatívne porty 0x58 - 0x5F pre Unicard FDC"
+
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:440
 #: src/ui-imgui/topmenu/menu_tools.cpp:29
 msgid "Tools"
 msgstr "Nástroje"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:387
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:442
 msgid "FDC State (debugger)..."
 msgstr "Stav FDC (debugger)..."
 
@@ -10633,7 +10658,7 @@ msgstr "Unicard runtime preinštalovaný s mgr V2.4 (uc1)."
 
 #: src/ui-imgui/topmenu/devices/menu_unicard.cpp:164
 #: src/ui-imgui/topmenu/devices/menu_unicard.cpp:180
-#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:307
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:349
 msgid "Unicard runtime reinitialization failed."
 msgstr "Reinicializácia Unicard runtime zlyhala."
 
@@ -10683,27 +10708,49 @@ msgstr ""
 msgid "Read-only SD"
 msgstr "SD iba na čítanie"
 
-#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:270
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:274
+msgid "Managed FDC"
+msgstr "Spravovaný FDC"
+
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:278
+msgid ""
+"Which FDC controller the Unicard API manages (DSK mount).\n"
+"'None' disables Unicard FDD commands.\n"
+"Change affects only future operations."
+msgstr ""
+"Ktorý FDC radič spravuje Unicard API (pripojenie DSK).\n"
+"'Žiadne' vypne FDD príkazy Unicard.\n"
+"Zmena ovplyvní len budúce operácie."
+
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:305
 msgid "Set SD Root Directory..."
 msgstr "Nastaviť koreňový adresár SD..."
 
-#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:288
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:312
+msgid ""
+"Change the host directory used as the Unicard SD root.\n"
+"If connected, the Unicard is automatically reconnected to the new root."
+msgstr ""
+"Zmení hostiteľský adresár používaný ako SD root Unicard.\n"
+"Ak je pripojená, Unicard sa automaticky znova pripojí k novému rootu."
+
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:330
 msgid "Reinitialize Runtime..."
 msgstr "Reinicializovať runtime..."
 
-#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:302
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:344
 msgid "Unicard runtime files in '{SD}/unicard/' have been reinitialized."
 msgstr "Súbory Unicard runtime v '{SD}/unicard/' boli reinicializované."
 
-#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:314
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:356
 msgid ""
 "Overwrites manager files in '{SD}/unicard/' (mgr.mzf, mgr800.mzf, "
-"mgr700.mzf, mgr1500.mzf) with the selected version.\nOn MZ-800 prompts for "
-"mgr V2.4 vs V2.11b."
+"mgr700.mzf, mgr1500.mzf) with the selected version.\n"
+"On MZ-800 prompts for mgr V2.4 vs V2.11b."
 msgstr ""
 "Prepíše súbory správcu v '{SD}/unicard/' (mgr.mzf, mgr800.mzf, mgr700.mzf, "
-"mgr1500.mzf) vybranou verziou.\nNa MZ-800 sa opýta na voľbu mgr V2.4 vs "
-"V2.11b."
+"mgr1500.mzf) vybranou verziou.\n"
+"Na MZ-800 sa opýta na voľbu mgr V2.4 vs V2.11b."
 
 #: src/ui-imgui/topmenu/interface/language_window.cpp:32
 msgid "Language"
@@ -11142,19 +11189,19 @@ msgstr "MCP Activity##menu_mcp_activity"
 msgid "About..."
 msgstr "O programe..."
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:94
+#: src/ui-imgui/version_check/imgui_version_check.cpp:90
 msgid "mz800emu - Version Check Setup"
 msgstr "mz800emu - Nastavenia kontroly verzie"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:107
+#: src/ui-imgui/version_check/imgui_version_check.cpp:133
 msgid "Enable online checking the latest version of the mz800emu."
 msgstr "Zapnúť online kontrolu najnovšej verzie mz800emu."
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:108
+#: src/ui-imgui/version_check/imgui_version_check.cpp:134
 msgid "If a new version is found, an information window will be displayed."
 msgstr "Ak bude nájdená nová verzia, zobrazí sa informačné okno."
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:109
+#: src/ui-imgui/version_check/imgui_version_check.cpp:135
 msgid ""
 "This option can be changed at any time in the version check setup from the "
 "Tools submenu."
@@ -11162,83 +11209,83 @@ msgstr ""
 "Túto voľbu je možné kedykoľvek zmeniť v nastaveniach kontroly verzie v "
 "podmenu Nástroje."
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:115
+#: src/ui-imgui/version_check/imgui_version_check.cpp:141
 msgid "never"
 msgstr "nikdy"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:116
+#: src/ui-imgui/version_check/imgui_version_check.cpp:142
 msgid "daily"
 msgstr "denne"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:117
+#: src/ui-imgui/version_check/imgui_version_check.cpp:143
 msgid "weekly"
 msgstr "týždenne"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:118
+#: src/ui-imgui/version_check/imgui_version_check.cpp:144
 msgid "monthly"
 msgstr "mesačne"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:119
+#: src/ui-imgui/version_check/imgui_version_check.cpp:145
 msgid "sometimes"
 msgstr "občas"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:143
+#: src/ui-imgui/version_check/imgui_version_check.cpp:169
 msgid "none"
 msgstr "žiadny"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:144
+#: src/ui-imgui/version_check/imgui_version_check.cpp:170
 msgid "from system environment"
 msgstr "zo systémového prostredia"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:145
+#: src/ui-imgui/version_check/imgui_version_check.cpp:171
 msgid "manual"
 msgstr "manuálny"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:152
+#: src/ui-imgui/version_check/imgui_version_check.cpp:178
 msgid "Check period"
 msgstr "Interval kontroly"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:153
+#: src/ui-imgui/version_check/imgui_version_check.cpp:179
 msgid "Proxy server (optional)"
 msgstr "Proxy server (voliteľný)"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:281
+#: src/ui-imgui/version_check/imgui_version_check.cpp:307
 msgid "MZ800 Emulator Version Check Report"
 msgstr "MZ800 Emulátor - Správa o kontrole verzie"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:292
+#: src/ui-imgui/version_check/imgui_version_check.cpp:318
 msgid "A new version of the mz800emu software is available"
 msgstr "Je dostupná nová verzia softvéru mz800emu"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:292
+#: src/ui-imgui/version_check/imgui_version_check.cpp:318
 msgid "Your mz800emu software version is up to date"
 msgstr "Vaša verzia softvéru mz800emu je aktuálna"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:307
+#: src/ui-imgui/version_check/imgui_version_check.cpp:333
 msgid "Running"
 msgstr "Beží"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:308
+#: src/ui-imgui/version_check/imgui_version_check.cpp:334
 msgid "Available"
 msgstr "Dostupná"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:324
+#: src/ui-imgui/version_check/imgui_version_check.cpp:350
 msgid "Tag"
 msgstr "Tag"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:325
+#: src/ui-imgui/version_check/imgui_version_check.cpp:351
 msgid "Version"
 msgstr "Verzia"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:326
+#: src/ui-imgui/version_check/imgui_version_check.cpp:352
 msgid "Revision"
 msgstr "Revízia"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:327
+#: src/ui-imgui/version_check/imgui_version_check.cpp:353
 msgid "Build date"
 msgstr "Dátum zostavenia"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:358
+#: src/ui-imgui/version_check/imgui_version_check.cpp:384
 msgid "Setup"
 msgstr "Nastavenia"
 
@@ -11253,6 +11300,13 @@ msgstr "MZ-1500 Virtuálna klávesnica"
 #: src/ui-imgui/vkbd_window.cpp:228
 msgid "MZ-800 Virtual Keyboard"
 msgstr "MZ-800 Virtuálna klávesnica"
+
+#, c-format
+#~ msgid "Select DSK image file for drive FD%d"
+#~ msgstr "Vyberte súbor obrazu DSK pre mechaniku FD%d"
+
+#~ msgid "WD279x"
+#~ msgstr "WD279x"
 
 #~ msgid "10-bit value 0..1023. f_out = GDGCLK_BASE / (32 * divider). <2 = DC."
 #~ msgstr ""
@@ -11322,11 +11376,3 @@ msgstr "MZ-800 Virtuálna klávesnica"
 #~ msgstr ""
 #~ "Povolí druhý PSG (SN76489) na porte 0xF3, čím poskytne stereo zvuk "
 #~ "podobný MZ-1500."
-
-#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:281
-msgid ""
-"Change the host directory used as the Unicard SD root.\n"
-"If connected, the Unicard is automatically reconnected to the new root."
-msgstr ""
-"Zmení hostiteľský adresár používaný ako SD root Unicard.\n"
-"Ak je pripojená, Unicard sa automaticky znova pripojí k novému rootu."

@@ -73,7 +73,7 @@ documented separately in [Resources overview](resources-overview.md).
 | `emu_media_load_binary` | **YES** | Raw bytes from file to Z80 memory, **destructive** |
 | `emu_media_insert` | **YES** | Insert image into slot (auto-eject when already mounted) |
 | `emu_media_eject` | no | Eject image from slot |
-| `emu_media_state` | no | Snapshot of all 5 slots (cmt/fdc0/fdc1/qd/ide8) |
+| `emu_media_state` | no | Snapshot of all 11 slots (cmt/fdc0_fd0..3/fdc1_fd0..3/qd/ide8) |
 | `emu_settings_set` | **YES** | Live INI write (whitelist); **mutates global state** |
 | `emu_settings_get` | no | Read INI key + type (open read, no whitelist) |
 | `emu_platform_set` | **YES** | Platform switch attempt - returns error (compile-time MZARCH) |
@@ -846,13 +846,13 @@ The client is expected to sort it according to its own metric
 
 ## Media tools
 
-Unified access to media operations across 5 supported slots:
+Unified access to media operations across 11 supported slots:
 
 | Slot | Meaning |
 |------|---------|
 | `cmt` | CMT cassette (.mzf, .mzt) |
-| `fdc0` | WD279x FDC drive 0 (.dsk) |
-| `fdc1` | WD279x FDC drive 1 (.dsk) |
+| `fdc0_fd0` .. `fdc0_fd3` | WD279x FDC0 (standard, ports 0xD8-0xDF) drives 0..3 (.dsk) |
+| `fdc1_fd0` .. `fdc1_fd3` | WD279x FDC1 (secondary, ports 0x58-0x5F) drives 0..3 (.dsk) |
 | `qd` | Quick Disk (.qd) |
 | `ide8` | IDE8 master HDD (.img) |
 
@@ -955,25 +955,26 @@ Insert image into slot. If the slot is already occupied, a silent
 auto-eject happens (= equivalent of eject + insert in one step).
 
 ```
-emu_media_insert(slot="fdc0", path="/disks/cpm.dsk")
+emu_media_insert(slot="fdc0_fd0", path="/disks/cpm.dsk")
+emu_media_insert(slot="fdc1_fd0", path="/disks/data.dsk")
 emu_media_insert(slot="cmt", bytes_b64="...", ro=True)
 ```
 
-Returns `{"ok": true, "slot": "fdc0", "result_code": 0}`.
+Returns `{"ok": true, "slot": "fdc0_fd0", "result_code": 0}`.
 
 ### `emu_media_eject`
 
 Eject image from slot. No-op when the slot is empty.
 
 ```
-emu_media_eject(slot="fdc0")
+emu_media_eject(slot="fdc0_fd0")
 ```
 
-Returns `{"ok": true, "slot": "fdc0"}`.
+Returns `{"ok": true, "slot": "fdc0_fd0"}`.
 
 ### `emu_media_state`
 
-Snapshot of all 5 slots' state.
+Snapshot of all 11 slots' state.
 
 ```
 emu_media_state()
@@ -983,13 +984,19 @@ Returns:
 
 ```json
 {
-  "count": 5,
+  "count": 11,
   "slots": [
-    {"slot": "cmt",  "inserted": true,  "path": "/cassettes/sapo-p.mzf", "ro": false},
-    {"slot": "fdc0", "inserted": false, "path": "", "ro": false},
-    {"slot": "fdc1", "inserted": false, "path": "", "ro": false},
-    {"slot": "qd",   "inserted": false, "path": "", "ro": false},
-    {"slot": "ide8", "inserted": true,  "path": "hdd0-mz800.img", "ro": false}
+    {"slot": "cmt",      "inserted": true,  "path": "/cassettes/sapo-p.mzf", "ro": false},
+    {"slot": "fdc0_fd0", "inserted": false, "path": "", "ro": false},
+    {"slot": "fdc0_fd1", "inserted": false, "path": "", "ro": false},
+    {"slot": "fdc0_fd2", "inserted": false, "path": "", "ro": false},
+    {"slot": "fdc0_fd3", "inserted": false, "path": "", "ro": false},
+    {"slot": "fdc1_fd0", "inserted": false, "path": "", "ro": false},
+    {"slot": "fdc1_fd1", "inserted": false, "path": "", "ro": false},
+    {"slot": "fdc1_fd2", "inserted": false, "path": "", "ro": false},
+    {"slot": "fdc1_fd3", "inserted": false, "path": "", "ro": false},
+    {"slot": "qd",       "inserted": false, "path": "", "ro": false},
+    {"slot": "ide8",     "inserted": true,  "path": "hdd0-mz800.img", "ro": false}
   ]
 }
 ```

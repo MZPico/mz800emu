@@ -6431,16 +6431,23 @@ static en_MCP_DISPATCH_RESULT _handle_profiler_get(const st_JSONL_MESSAGE *req,
  *
  * Whitelist validace - neznámá hodnota vrátí DBGAPI_MEDIA_SLOT_NONE.
  *
- * @param s Slot identifikátor ("cmt", "fdc0", "fdc1", "qd", "ide8").
+ * @param s Slot identifikátor ("cmt", "fdc0_fd0".."fdc0_fd3",
+ *          "fdc1_fd0".."fdc1_fd3", "qd", "ide8").
  * @return Příslušná enum hodnota nebo NONE.
  */
 static en_DBGAPI_MEDIA_SLOT _parse_media_slot(const char *s) {
     if (!s) return DBGAPI_MEDIA_SLOT_NONE;
-    if (strcmp(s, "cmt") == 0)  return DBGAPI_MEDIA_SLOT_CMT;
-    if (strcmp(s, "fdc0") == 0) return DBGAPI_MEDIA_SLOT_FDC0;
-    if (strcmp(s, "fdc1") == 0) return DBGAPI_MEDIA_SLOT_FDC1;
-    if (strcmp(s, "qd") == 0)   return DBGAPI_MEDIA_SLOT_QD;
-    if (strcmp(s, "ide8") == 0) return DBGAPI_MEDIA_SLOT_IDE8;
+    if (strcmp(s, "cmt") == 0)      return DBGAPI_MEDIA_SLOT_CMT;
+    if (strcmp(s, "fdc0_fd0") == 0) return DBGAPI_MEDIA_SLOT_FDC0_FD0;
+    if (strcmp(s, "fdc0_fd1") == 0) return DBGAPI_MEDIA_SLOT_FDC0_FD1;
+    if (strcmp(s, "fdc0_fd2") == 0) return DBGAPI_MEDIA_SLOT_FDC0_FD2;
+    if (strcmp(s, "fdc0_fd3") == 0) return DBGAPI_MEDIA_SLOT_FDC0_FD3;
+    if (strcmp(s, "fdc1_fd0") == 0) return DBGAPI_MEDIA_SLOT_FDC1_FD0;
+    if (strcmp(s, "fdc1_fd1") == 0) return DBGAPI_MEDIA_SLOT_FDC1_FD1;
+    if (strcmp(s, "fdc1_fd2") == 0) return DBGAPI_MEDIA_SLOT_FDC1_FD2;
+    if (strcmp(s, "fdc1_fd3") == 0) return DBGAPI_MEDIA_SLOT_FDC1_FD3;
+    if (strcmp(s, "qd") == 0)       return DBGAPI_MEDIA_SLOT_QD;
+    if (strcmp(s, "ide8") == 0)     return DBGAPI_MEDIA_SLOT_IDE8;
     return DBGAPI_MEDIA_SLOT_NONE;
 }
 
@@ -6449,15 +6456,21 @@ static en_DBGAPI_MEDIA_SLOT _parse_media_slot(const char *s) {
  * @brief Zpětný překlad slot enum na string pro response.
  *
  * @param s Slot enum.
- * @return Konstantní string ("cmt", "fdc0", ...). Pro NONE vrátí "".
+ * @return Konstantní string ("cmt", "fdc0_fd0", ...). Pro NONE vrátí "".
  */
 static const char *_media_slot_str(en_DBGAPI_MEDIA_SLOT s) {
     switch (s) {
-        case DBGAPI_MEDIA_SLOT_CMT:  return "cmt";
-        case DBGAPI_MEDIA_SLOT_FDC0: return "fdc0";
-        case DBGAPI_MEDIA_SLOT_FDC1: return "fdc1";
-        case DBGAPI_MEDIA_SLOT_QD:   return "qd";
-        case DBGAPI_MEDIA_SLOT_IDE8: return "ide8";
+        case DBGAPI_MEDIA_SLOT_CMT:      return "cmt";
+        case DBGAPI_MEDIA_SLOT_FDC0_FD0: return "fdc0_fd0";
+        case DBGAPI_MEDIA_SLOT_FDC0_FD1: return "fdc0_fd1";
+        case DBGAPI_MEDIA_SLOT_FDC0_FD2: return "fdc0_fd2";
+        case DBGAPI_MEDIA_SLOT_FDC0_FD3: return "fdc0_fd3";
+        case DBGAPI_MEDIA_SLOT_FDC1_FD0: return "fdc1_fd0";
+        case DBGAPI_MEDIA_SLOT_FDC1_FD1: return "fdc1_fd1";
+        case DBGAPI_MEDIA_SLOT_FDC1_FD2: return "fdc1_fd2";
+        case DBGAPI_MEDIA_SLOT_FDC1_FD3: return "fdc1_fd3";
+        case DBGAPI_MEDIA_SLOT_QD:       return "qd";
+        case DBGAPI_MEDIA_SLOT_IDE8:     return "ide8";
         default: return "";
     }
 }
@@ -6656,7 +6669,8 @@ static en_MCP_DISPATCH_RESULT _handle_media_load_binary(const st_JSONL_MESSAGE *
  * @brief `media_insert` - vložit média do slotu.
  *
  * Parametry:
- *   - `slot` (string, povinný) - "cmt" | "fdc0" | "fdc1" | "qd" | "ide8"
+ *   - `slot` (string, povinný) - "cmt" | "fdc0_fd0".."fdc0_fd3" |
+ *     "fdc1_fd0".."fdc1_fd3" | "qd" | "ide8"
  *   - `path` (string) NEBO `bytes_b64` (string) - právě jeden
  *   - `ro` (bool, optional) - R/O mount (informativní, závislé na slotu)
  *
@@ -6749,7 +6763,8 @@ static en_MCP_DISPATCH_RESULT _handle_media_insert(const st_JSONL_MESSAGE *req,
  * @brief `media_eject` - vyjmout obsah ze slotu.
  *
  * Parametry:
- *   - `slot` (string, povinný) - "cmt" | "fdc0" | "fdc1" | "qd" | "ide8"
+ *   - `slot` (string, povinný) - "cmt" | "fdc0_fd0".."fdc0_fd3" |
+ *     "fdc1_fd0".."fdc1_fd3" | "qd" | "ide8"
  *
  * Volá `DBGAPI_CMD_MEDIA_EJECT`.
  */

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-01 22:39+0200\n"
+"POT-Creation-Date: 2026-06-04 14:14+0200\n"
 "PO-Revision-Date: 2026-03-11 21:00+0100\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -63,20 +63,20 @@ msgstr ""
 "Dirección = 0x%04x\n"
 "Instrucción = '%s'\n"
 
-#: src/emulator/emulator.c:290
+#: src/emulator/emulator.c:304
 #: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:421
 msgid "PAUSED"
 msgstr "PAUSADO"
 
-#: src/emulator/emulator.c:293
+#: src/emulator/emulator.c:307
 msgid "Max speed"
 msgstr "Velocidad máxima"
 
-#: src/emulator/emulator.c:296
+#: src/emulator/emulator.c:310
 msgid "Custom speed"
 msgstr "Velocidad personalizada"
 
-#: src/emulator/emulator.c:298
+#: src/emulator/emulator.c:312
 msgid "Normal speed"
 msgstr "Velocidad normal"
 
@@ -104,10 +104,10 @@ msgstr "Seleccionar archivo CMT para abrir"
 msgid "Select a MZF File"
 msgstr "Seleccionar archivo MZF"
 
-#: src/emulator/hw-generic/fdc/fdc.c:1007
+#: src/emulator/hw-generic/fdc/fdc.c:1128
 #, c-format
-msgid "Select DSK image file for drive FD%d"
-msgstr "Seleccionar imagen DSK para la unidad FD%d"
+msgid "Select DSK image file for FDC%u drive FD%d"
+msgstr "Seleccione el archivo de imagen DSK para FDC%u unidad FD%d"
 
 #: src/emulator/hw-generic/qdisk/qdisk.c:816
 msgid "Select existing .MZQ file or create new QD image"
@@ -117,7 +117,7 @@ msgstr "Seleccionar archivo .MZQ existente o crear nueva imagen QD"
 msgid "Select directory to mount as virtual Quick Disk"
 msgstr "Seleccionar directorio para montar como Quick Disk virtual"
 
-#: src/emulator/hw-generic/unicard/unicard.c:2080
+#: src/emulator/hw-generic/unicard/unicard.c:2175
 msgid "Select SD root directory for Unicard"
 msgstr "Seleccionar directorio raíz SD para Unicard"
 
@@ -550,7 +550,7 @@ msgid "Virtual CMT is not available!"
 msgstr "¡CMT virtual no está disponible!"
 
 #: src/ui-imgui/cmt/cmt_window.cpp:823
-#: src/ui-imgui/version_check/imgui_version_check.cpp:364
+#: src/ui-imgui/version_check/imgui_version_check.cpp:390
 msgid "Close"
 msgstr "Cerrar"
 
@@ -2561,7 +2561,7 @@ msgid "Hide noise"
 msgstr "Ocultar ruido"
 
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1369
-#: src/ui-imgui/debugger/ioview/io_window.cpp:972
+#: src/ui-imgui/debugger/ioview/io_window.cpp:973
 #: src/ui-imgui/debugger/symbols/sym_window.cpp:618
 msgid "Clear filter"
 msgstr "Limpiar filtro"
@@ -2834,6 +2834,7 @@ msgstr ""
 
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2346
 #: src/ui-imgui/joy/joy_setup_window.cpp:415
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:284
 msgid "None"
 msgstr "Ninguno"
 
@@ -3349,17 +3350,29 @@ msgstr "Unidades"
 msgid "FDC State"
 msgstr "Estado FDC"
 
-#: src/ui-imgui/debugger/fdc_window.cpp:193
+#: src/ui-imgui/debugger/fdc_window.cpp:198
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:427
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:288
+msgid "FDC0 (standard)"
+msgstr "FDC0 (estándar)"
+
+#: src/ui-imgui/debugger/fdc_window.cpp:199
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:433
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:292
+msgid "FDC1 (secondary)"
+msgstr "FDC1 (secundario)"
+
+#: src/ui-imgui/debugger/fdc_window.cpp:202
 #, c-format
 msgid "Connected: %s"
 msgstr "Conectado: %s"
 
-#: src/ui-imgui/debugger/fdc_window.cpp:194
+#: src/ui-imgui/debugger/fdc_window.cpp:203
 #: src/ui-imgui/debugger/gdg_window_mz800.cpp:285
 msgid "yes"
 msgstr "sí"
 
-#: src/ui-imgui/debugger/fdc_window.cpp:194
+#: src/ui-imgui/debugger/fdc_window.cpp:203
 #: src/ui-imgui/debugger/gdg_window_mz800.cpp:285
 msgid "no"
 msgstr "no"
@@ -4027,11 +4040,11 @@ msgstr "Ventana del explorador de memoria"
 msgid "Disassembler window"
 msgstr "Ventana del desensamblador"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:482
+#: src/ui-imgui/debugger/ioview/io_window.cpp:483
 msgid "(no bit-level decode available)"
 msgstr "(decodificación a nivel de bit no disponible)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:637
+#: src/ui-imgui/debugger/ioview/io_window.cpp:638
 msgid ""
 "16-bit CRTC family port. Bus addr is 0x<RR>CF (Z80 OUT (C),A pattern with "
 "B=register index, C=0xCF). MZ notation 0xCF<RR> is human-readable display."
@@ -4040,52 +4053,52 @@ msgstr ""
 "(C),A con B=índice de registro, C=0xCF). La notación MZ 0xCF<RR> es la "
 "visualización legible para humanos."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:655
+#: src/ui-imgui/debugger/ioview/io_window.cpp:656
 msgid "Add IORQ R BP##ioctx"
 msgstr "Añadir IORQ R BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:658
+#: src/ui-imgui/debugger/ioview/io_window.cpp:659
 msgid "Add IORQ W BP##ioctx"
 msgstr "Añadir IORQ W BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:662
+#: src/ui-imgui/debugger/ioview/io_window.cpp:663
 msgid "Add MEM R BP##ioctx"
 msgstr "Añadir MEM R BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:665
+#: src/ui-imgui/debugger/ioview/io_window.cpp:666
 msgid "Add MEM W BP##ioctx"
 msgstr "Añadir MEM W BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:670
+#: src/ui-imgui/debugger/ioview/io_window.cpp:671
 msgid "Reset activity counter##ioctx"
 msgstr "Restablecer contador de actividad##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:679
+#: src/ui-imgui/debugger/ioview/io_window.cpp:680
 msgid "Show in History tab##ioctx"
 msgstr "Mostrar en pestaña Historial##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:716
+#: src/ui-imgui/debugger/ioview/io_window.cpp:717
 msgid "Show in Memory Map##ioctx"
 msgstr "Mostrar en Memory Map##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:811
+#: src/ui-imgui/debugger/ioview/io_window.cpp:812
 #, c-format
 msgid "Last cached value %u frames ago"
 msgstr "Último valor cacheado hace %u frames"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:818
+#: src/ui-imgui/debugger/ioview/io_window.cpp:819
 msgid "No data captured (port has no mirror and no IORQ event yet)"
 msgstr "Sin datos capturados (el puerto no tiene mirror ni evento IORQ aún)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:847
+#: src/ui-imgui/debugger/ioview/io_window.cpp:848
 msgid "Hits per second over last 1s window (50 buckets)"
 msgstr "Aciertos por segundo en la última ventana de 1s (50 buckets)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:853
+#: src/ui-imgui/debugger/ioview/io_window.cpp:854
 msgid "Tracking disabled (panel closed or toggled off)"
 msgstr "Seguimiento deshabilitado (panel cerrado o desactivado)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:877
+#: src/ui-imgui/debugger/ioview/io_window.cpp:878
 msgid ""
 "MMIO events (0xE000-0xE008) are always recorded (per-port filter applies to "
 "8-bit IORQ space only)"
@@ -4093,7 +4106,7 @@ msgstr ""
 "Los eventos MMIO (0xE000-0xE008) siempre se registran (el filtro por puerto "
 "se aplica solo al espacio IORQ de 8 bits)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:891
+#: src/ui-imgui/debugger/ioview/io_window.cpp:892
 msgid ""
 "Record IORQ events for this port into History ring buffer. Uncheck to skip "
 "high-frequency ports and preserve ring capacity for events of interest."
@@ -4102,12 +4115,12 @@ msgstr ""
 "Desmarcar para omitir puertos de alta frecuencia y preservar capacidad del "
 "buffer para eventos de interés."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:958
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1845
+#: src/ui-imgui/debugger/ioview/io_window.cpp:959
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1864
 msgid "Filter..."
 msgstr "Filtro..."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:964
+#: src/ui-imgui/debugger/ioview/io_window.cpp:965
 msgid ""
 "Filter visible ports (case-insensitive substring match on name, address hex, "
 "or direction r/w/rw)."
@@ -4115,35 +4128,35 @@ msgstr ""
 "Filtrar puertos visibles (coincidencia de subcadena sin distinguir "
 "mayúsculas en nombre, dirección hex o dirección r/w/rw)."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:968
+#: src/ui-imgui/debugger/ioview/io_window.cpp:969
 msgid "Clear##io_clear_filter"
 msgstr "Limpiar##io_clear_filter"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:978
+#: src/ui-imgui/debugger/ioview/io_window.cpp:979
 msgid "Reset Activity##io_reset_act"
 msgstr "Restablecer actividad##io_reset_act"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:983
+#: src/ui-imgui/debugger/ioview/io_window.cpp:984
 msgid "Clear activity counters for all 256 ports"
 msgstr "Limpiar contadores de actividad para los 256 puertos"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:989
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1955
+#: src/ui-imgui/debugger/ioview/io_window.cpp:990
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1974
 msgid "Capacity:"
 msgstr "Capacidad:"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1022
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1985
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1023
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2004
 msgid "History buffer size. Resize discards existing events."
 msgstr ""
 "Tamaño del buffer de historial. Cambiar tamaño descarta eventos existentes."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1030
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1031
 msgid "Track##io_track"
 msgstr "Seguir##io_track"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1035
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2003
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1036
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2022
 msgid ""
 "Enable IORQ activity + history capture (gated). Default ON when panel is "
 "open. Toggle off to reduce overhead."
@@ -4151,77 +4164,77 @@ msgstr ""
 "Habilitar captura de actividad IORQ + historial (controlado). Predeterminado "
 "ON cuando el panel está abierto. Desactivar para reducir sobrecarga."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1050
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1051
 msgid "Heat...##io_heat_btn"
 msgstr "Heat...##io_heat_btn"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1055
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1056
 msgid "Configure activity heat coloring thresholds."
 msgstr "Configurar umbrales de coloreado heat de actividad."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1058
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1059
 msgid "Heat coloring thresholds (hits/s):"
 msgstr "Umbrales de coloreado heat (aciertos/s):"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1061
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1062
 msgid "Text active (green)##io_heat_text"
 msgstr "Texto activo (verde)##io_heat_text"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1072
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1073
 msgid "Minimum hits/s to color row text green. Default 1."
 msgstr ""
 "Mínimo de aciertos/s para colorear texto de fila en verde. Predeterminado 1."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1075
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1076
 msgid "Bg hot tint (red)##io_heat_bg"
 msgstr "Fondo caliente (rojo)##io_heat_bg"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1086
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1087
 msgid ""
 "Minimum hits/s for red row background tint (bottleneck warn). Default 10000."
 msgstr ""
 "Mínimo de aciertos/s para tinte rojo de fondo de fila (advertencia de cuello "
 "de botella). Predeterminado 10000."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1090
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1091
 msgid "Reset to defaults##io_heat_reset"
 msgstr "Restablecer a predeterminados##io_heat_reset"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1128
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1129
 msgid "No ports match filter"
 msgstr "Ningún puerto coincide con el filtro"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1604
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1623
 msgid "(no selection)"
 msgstr "(sin selección)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1605
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1624
 msgid "Click a row to see details"
 msgstr "Haga clic en una fila para ver detalles"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1617
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1636
 msgid "Selected event:"
 msgstr "Evento seleccionado:"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1651
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1670
 msgid "Focus to primary disassembly. Right-click for additional actions."
 msgstr ""
 "Enfocar en disassembly principal. Clic derecho para acciones adicionales."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1692
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1711
 msgid "Focus to..."
 msgstr "Enfocar en..."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1711
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1730
 #: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3319
 msgid "Add to bookmarks"
 msgstr "Añadir a marcadores"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1730
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1749
 msgid "Add breakpoint"
 msgstr "Añadir breakpoint"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1851
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1870
 msgid ""
 "Filter syntax (boolean expression):\n"
 "Atoms (leaf tokens):\n"
@@ -4273,24 +4286,24 @@ msgstr ""
 "  (port:CE pc:42) | port:CF  grupo OR grupo\n"
 "  !(in | out)                ni IN ni OUT"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1877
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1896
 msgid "Clear##io_hist_clear"
 msgstr "Limpiar##io_hist_clear"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1911
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1930
 msgid "Latest##io_hist_latest"
 msgstr "Más reciente##io_hist_latest"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1917
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1936
 msgid "Re-enable auto-follow and scroll to latest event"
 msgstr ""
 "Volver a habilitar auto-seguimiento y desplazarse al evento más reciente"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1921
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1940
 msgid "Auto-follow##io_hist_af"
 msgstr "Auto-seguir##io_hist_af"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1933
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1952
 msgid ""
 "Auto-scroll History tab to latest event. User scroll up disables follow; "
 "click [Latest] re-enables."
@@ -4299,27 +4312,27 @@ msgstr ""
 "usuario hacia arriba deshabilita el seguimiento; clic en [Más reciente] lo "
 "vuelve a habilitar."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1939
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1958
 msgid "Clear history##io_hist_purge"
 msgstr "Limpiar historial##io_hist_purge"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1946
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1965
 msgid "Discard all recorded IORQ events"
 msgstr "Descartar todos los eventos IORQ registrados"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1991
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2010
 msgid "Track##io_hist_track"
 msgstr "Seguir##io_hist_track"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2010
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2029
 msgid "Filter error"
 msgstr "Error de filtro"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2149
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2168
 msgid "Filter actions for this event:"
 msgstr "Acciones de filtro para este evento:"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2428
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2447
 msgid ""
 "Wraps the current filter in parentheses, then appends ' & token'. Use to AND-"
 "narrow an OR chain (parser precedence: & binds tighter than |)."
@@ -4328,7 +4341,7 @@ msgstr ""
 "estrechar con AND una cadena OR (precedencia del parser: & se enlaza más "
 "fuertemente que |)."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2432
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2451
 msgid ""
 "Wraps the current filter in parentheses, then appends ' | token'. Use when "
 "the current filter is itself an AND chain that should be OR-extended as a "
@@ -4338,15 +4351,15 @@ msgstr ""
 "filtro actual es en sí una cadena AND que debe extenderse con OR como un "
 "todo."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2728
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2747
 msgid "I/O Ports###io_main"
 msgstr "Puertos I/O###io_main"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2764
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2783
 msgid "Overview##io_tab_ov"
 msgstr "Vista general##io_tab_ov"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2778
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2797
 msgid "History##io_tab_hist"
 msgstr "Historial##io_tab_hist"
 
@@ -4384,7 +4397,7 @@ msgstr "Eliminar"
 #: src/ui-imgui/rom/rom_settings_window.cpp:321
 #: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:137
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:174
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:95
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:99
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:93
 msgid "Cancel"
 msgstr "Cancelar"
@@ -4759,8 +4772,8 @@ msgstr "Ejemplo: \"AA BB CC\" o \"DEADBEEF\" - máx 64 bytes"
 #: src/ui-imgui/debugger/membrowser/membrowser_fill_dialog.cpp:262
 #: src/ui-imgui/debugger/sections/dbg_focus_to.cpp:274
 #: src/ui-imgui/memext/memext_map_window.cpp:252
-#: src/ui-imgui/version_check/imgui_version_check.cpp:219
-#: src/ui-imgui/version_check/imgui_version_check.cpp:224
+#: src/ui-imgui/version_check/imgui_version_check.cpp:245
+#: src/ui-imgui/version_check/imgui_version_check.cpp:250
 msgid "Apply"
 msgstr "Aplicar"
 
@@ -5797,7 +5810,7 @@ msgstr "Montar"
 #: src/ui-imgui/debugger/memmap/memmap_window.cpp:655
 #: src/ui-imgui/debugger/memmap/memmap_window.cpp:683
 #: src/ui-imgui/debugger/memmap/memmap_window.cpp:698
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:189
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:193
 msgid "Umount"
 msgstr "Desmontar"
 
@@ -10161,107 +10174,107 @@ msgstr "Corregir terminador FNAME"
 msgid "HW & Devices"
 msgstr "HW y dispositivos"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:78
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:80
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:82
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:84
 msgid "FDC: Unsaved RAM changes"
 msgstr "FDC: cambios sin guardar en RAM"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:83
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:87
 #, c-format
 msgid "Drive %d is in Discard mode and has unsaved RAM changes."
 msgstr "La unidad %d está en modo Discard y tiene cambios sin guardar en RAM."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:84
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:88
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:84
 #, c-format
 msgid "Switching to '%s' mode will close the current RAM buffer."
 msgstr "Cambiar al modo '%s' cerrará el buffer RAM actual."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:87
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:91
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:86
 msgid "What to do with the changes?"
 msgstr "¿Qué hacer con los cambios?"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:93
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:97
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:91
 msgid "Save and switch"
 msgstr "Guardar y cambiar"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:94
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:98
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:92
 msgid "Switch and discard"
 msgstr "Cambiar y descartar"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:169
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:173
 #: src/ui-imgui/topmenu/devices/menu_ide8.cpp:40
 msgid "No image"
 msgstr "Sin imagen"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:182
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:186
 msgid "Mount..."
 msgstr "Montar..."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:182
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:186
 msgid "Re-Mount..."
 msgstr "Remontar..."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:207
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:211
 msgid "Read-only (FS write-protected)"
 msgstr "Solo lectura (archivo protegido contra escritura)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:213
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:217
 msgid "Read-only"
 msgstr "Solo lectura"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:238
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:242
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:353
 msgid "Storage mode"
 msgstr "Modo de almacenamiento"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:256
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:260
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:375
 msgid "Cached (sync at reset/umount/exit)"
 msgstr "Cached (sync al reset/desmontar/salir)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:261
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:265
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:380
 msgid "Direct (write-through to file)"
 msgstr "Direct (escritura directa al archivo)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:266
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:270
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:385
 msgid "Discard changes (in-RAM, no sync)"
 msgstr "Discard (solo en RAM, sin sincronización)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:274
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:278
 msgid "Sync now"
 msgstr "Sincronizar ahora"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:288
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:292
 msgid "FDD "
 msgstr "FDD "
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:294
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:300
 msgid "(Empty)"
 msgstr "(Vacío)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:320
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:328
 msgid "Hardware options"
 msgstr "Opciones de hardware"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:323
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:331
 msgid "HD Patch enabled"
 msgstr "HD Patch habilitado"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:328
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:336
 msgid "Restart emulator to apply change."
 msgstr "Reinicie el emulador para aplicar el cambio."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:331
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:339
 msgid "Bus translation: invert (Sharp)"
 msgstr "Traducción de bus: invertir (Sharp)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:336
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:344
 msgid ""
 "Sharp MZ default - XOR 0xFF between CPU bus and WD279x chip. Restart "
 "emulator to apply change."
@@ -10269,11 +10282,11 @@ msgstr ""
 "Predeterminado Sharp MZ - XOR 0xFF entre bus CPU y chip WD279x. Reinicie el "
 "emulador para aplicar el cambio."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:339
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:347
 msgid "Bus translation: passthrough"
 msgstr "Traducción de bus: passthrough"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:347
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:355
 msgid ""
 "NOT compatible with Sharp MZ - no inversion between CPU bus and WD279x chip. "
 "Reserved for future 'true bus' ROMs / experiments. Restart emulator to apply "
@@ -10283,31 +10296,43 @@ msgstr ""
 "Reservado para futuras ROMs / experimentos 'true bus'. Reinicie el emulador "
 "para aplicar el cambio."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:358
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:375
+msgid "Floppy Drives"
+msgstr "Unidades de disquete"
+
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:389
 msgid "FD Controller"
 msgstr "Controlador FD"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:367
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:399
 #: src/ui-imgui/topmenu/devices/menu_memext.cpp:59
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:183
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:65
 msgid "Not Connected"
 msgstr "No conectado"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:372
-msgid "WD279x"
-msgstr "WD279x"
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:409
+msgid "WD279x (standard)"
+msgstr "WD279x (estándar)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:377
-msgid "Floppy Drives"
-msgstr "Unidades de disquete"
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:414
+msgid "Default FDC on ports 0xD8 - 0xDF"
+msgstr "FDC predeterminado en los puertos 0xD8 - 0xDF"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:385
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:416
+msgid "WD279x (secondary)"
+msgstr "WD279x (secundario)"
+
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:421
+msgid "Unicard alternate FDC ports 0x58 - 0x5F"
+msgstr "Puertos FDC alternativos de Unicard 0x58 - 0x5F"
+
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:440
 #: src/ui-imgui/topmenu/menu_tools.cpp:29
 msgid "Tools"
 msgstr "Herramientas"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:387
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:442
 msgid "FDC State (debugger)..."
 msgstr "Estado FDC (depurador)..."
 
@@ -10713,7 +10738,7 @@ msgstr "Runtime Unicard reinstalado con mgr V2.4 (uc1)."
 
 #: src/ui-imgui/topmenu/devices/menu_unicard.cpp:164
 #: src/ui-imgui/topmenu/devices/menu_unicard.cpp:180
-#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:307
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:349
 msgid "Unicard runtime reinitialization failed."
 msgstr "Reinicialización del runtime Unicard falló."
 
@@ -10763,28 +10788,50 @@ msgstr ""
 msgid "Read-only SD"
 msgstr "SD solo lectura"
 
-#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:270
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:274
+msgid "Managed FDC"
+msgstr "FDC gestionado"
+
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:278
+msgid ""
+"Which FDC controller the Unicard API manages (DSK mount).\n"
+"'None' disables Unicard FDD commands.\n"
+"Change affects only future operations."
+msgstr ""
+"Qué controlador FDC gestiona la API de Unicard (montaje DSK).\n"
+"'Ninguno' desactiva los comandos FDD de Unicard.\n"
+"El cambio solo afecta a operaciones futuras."
+
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:305
 msgid "Set SD Root Directory..."
 msgstr "Establecer directorio raíz SD..."
 
-#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:288
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:312
+msgid ""
+"Change the host directory used as the Unicard SD root.\n"
+"If connected, the Unicard is automatically reconnected to the new root."
+msgstr ""
+"Cambia el directorio del host usado como raíz SD de Unicard.\n"
+"Si está conectada, la Unicard se reconecta automáticamente a la nueva raíz."
+
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:330
 msgid "Reinitialize Runtime..."
 msgstr "Reinicializar runtime..."
 
-#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:302
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:344
 msgid "Unicard runtime files in '{SD}/unicard/' have been reinitialized."
 msgstr ""
 "Los archivos runtime Unicard en '{SD}/unicard/' han sido reinicializados."
 
-#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:314
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:356
 msgid ""
 "Overwrites manager files in '{SD}/unicard/' (mgr.mzf, mgr800.mzf, "
-"mgr700.mzf, mgr1500.mzf) with the selected version.\nOn MZ-800 prompts for "
-"mgr V2.4 vs V2.11b."
+"mgr700.mzf, mgr1500.mzf) with the selected version.\n"
+"On MZ-800 prompts for mgr V2.4 vs V2.11b."
 msgstr ""
 "Sobrescribe los archivos del gestor en '{SD}/unicard/' (mgr.mzf, mgr800.mzf, "
-"mgr700.mzf, mgr1500.mzf) con la versión seleccionada.\nEn MZ-800 pregunta por "
-"mgr V2.4 vs V2.11b."
+"mgr700.mzf, mgr1500.mzf) con la versión seleccionada.\n"
+"En MZ-800 pregunta por mgr V2.4 vs V2.11b."
 
 #: src/ui-imgui/topmenu/interface/language_window.cpp:32
 msgid "Language"
@@ -11229,20 +11276,20 @@ msgstr "MCP Activity##menu_mcp_activity"
 msgid "About..."
 msgstr "Acerca de..."
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:94
+#: src/ui-imgui/version_check/imgui_version_check.cpp:90
 msgid "mz800emu - Version Check Setup"
 msgstr "mz800emu - Configuración de comprobación de versión"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:107
+#: src/ui-imgui/version_check/imgui_version_check.cpp:133
 msgid "Enable online checking the latest version of the mz800emu."
 msgstr "Activar la comprobación en línea de la última versión de mz800emu."
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:108
+#: src/ui-imgui/version_check/imgui_version_check.cpp:134
 msgid "If a new version is found, an information window will be displayed."
 msgstr ""
 "Si se encuentra una nueva versión, se mostrará una ventana informativa."
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:109
+#: src/ui-imgui/version_check/imgui_version_check.cpp:135
 msgid ""
 "This option can be changed at any time in the version check setup from the "
 "Tools submenu."
@@ -11250,83 +11297,83 @@ msgstr ""
 "Esta opción se puede cambiar en cualquier momento en la configuración de "
 "comprobación de versión desde el submenú Herramientas."
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:115
+#: src/ui-imgui/version_check/imgui_version_check.cpp:141
 msgid "never"
 msgstr "nunca"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:116
+#: src/ui-imgui/version_check/imgui_version_check.cpp:142
 msgid "daily"
 msgstr "diariamente"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:117
+#: src/ui-imgui/version_check/imgui_version_check.cpp:143
 msgid "weekly"
 msgstr "semanalmente"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:118
+#: src/ui-imgui/version_check/imgui_version_check.cpp:144
 msgid "monthly"
 msgstr "mensualmente"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:119
+#: src/ui-imgui/version_check/imgui_version_check.cpp:145
 msgid "sometimes"
 msgstr "a veces"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:143
+#: src/ui-imgui/version_check/imgui_version_check.cpp:169
 msgid "none"
 msgstr "ninguno"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:144
+#: src/ui-imgui/version_check/imgui_version_check.cpp:170
 msgid "from system environment"
 msgstr "del entorno del sistema"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:145
+#: src/ui-imgui/version_check/imgui_version_check.cpp:171
 msgid "manual"
 msgstr "manual"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:152
+#: src/ui-imgui/version_check/imgui_version_check.cpp:178
 msgid "Check period"
 msgstr "Período de comprobación"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:153
+#: src/ui-imgui/version_check/imgui_version_check.cpp:179
 msgid "Proxy server (optional)"
 msgstr "Servidor proxy (opcional)"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:281
+#: src/ui-imgui/version_check/imgui_version_check.cpp:307
 msgid "MZ800 Emulator Version Check Report"
 msgstr "Informe de comprobación de versión del emulador MZ800"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:292
+#: src/ui-imgui/version_check/imgui_version_check.cpp:318
 msgid "A new version of the mz800emu software is available"
 msgstr "Una nueva versión del software mz800emu está disponible"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:292
+#: src/ui-imgui/version_check/imgui_version_check.cpp:318
 msgid "Your mz800emu software version is up to date"
 msgstr "Su versión del software mz800emu está actualizada"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:307
+#: src/ui-imgui/version_check/imgui_version_check.cpp:333
 msgid "Running"
 msgstr "En ejecución"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:308
+#: src/ui-imgui/version_check/imgui_version_check.cpp:334
 msgid "Available"
 msgstr "Disponible"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:324
+#: src/ui-imgui/version_check/imgui_version_check.cpp:350
 msgid "Tag"
 msgstr "Etiqueta"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:325
+#: src/ui-imgui/version_check/imgui_version_check.cpp:351
 msgid "Version"
 msgstr "Versión"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:326
+#: src/ui-imgui/version_check/imgui_version_check.cpp:352
 msgid "Revision"
 msgstr "Revisión"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:327
+#: src/ui-imgui/version_check/imgui_version_check.cpp:353
 msgid "Build date"
 msgstr "Fecha de compilación"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:358
+#: src/ui-imgui/version_check/imgui_version_check.cpp:384
 msgid "Setup"
 msgstr "Configuración"
 
@@ -11341,6 +11388,13 @@ msgstr "Teclado virtual MZ-1500"
 #: src/ui-imgui/vkbd_window.cpp:228
 msgid "MZ-800 Virtual Keyboard"
 msgstr "Teclado virtual MZ-800"
+
+#, c-format
+#~ msgid "Select DSK image file for drive FD%d"
+#~ msgstr "Seleccionar imagen DSK para la unidad FD%d"
+
+#~ msgid "WD279x"
+#~ msgstr "WD279x"
 
 #~ msgid "10-bit value 0..1023. f_out = GDGCLK_BASE / (32 * divider). <2 = DC."
 #~ msgstr ""
@@ -11411,11 +11465,3 @@ msgstr "Teclado virtual MZ-800"
 #~ msgstr ""
 #~ "Activa un segundo PSG (SN76489) en el puerto 0xF3, proporcionando sonido "
 #~ "estéreo similar al MZ-1500."
-
-#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:281
-msgid ""
-"Change the host directory used as the Unicard SD root.\n"
-"If connected, the Unicard is automatically reconnected to the new root."
-msgstr ""
-"Cambia el directorio del host usado como raíz SD de Unicard.\n"
-"Si está conectada, la Unicard se reconecta automáticamente a la nueva raíz."

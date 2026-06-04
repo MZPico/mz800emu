@@ -746,8 +746,10 @@ void wd279x_init(st_WD279X *chip)
     if (!chip)
         return;
     struct st_FDDrive *saved_drives = chip->drives;
+    const int *saved_hd_patch_ref = chip->hd_patch_ref;
     memset(chip, 0, sizeof(*chip));
     chip->drives = saved_drives; /* attach se volá zvlášť, init je idempotentní. */
+    chip->hd_patch_ref = saved_hd_patch_ref; /* HW config ref přežívá init (jako drives). */
     wd279x_reset(chip);
 }
 
@@ -1181,10 +1183,11 @@ int wd279x_write_byte(st_WD279X *chip, int i_addroffset, uint8_t *io_data)
 
     case FDCPORT_EINT:
         /* HD Patch obvod buď je nebo není osazen v reálném HW. Pokud
-         * g_fdc.hd_patch == 0 (= raw / unpatched řadič), port 0xDF nemá
-         * efekt - chip->EINT zůstává 0, čímž wd279x_get_interrupt_state
-         * vždy vrátí 0 (= žádný HD Patch INT nikdy nefire). */
-        if (!g_fdc.hd_patch)
+         * hd_patch == 0 (= raw / unpatched řadič) nebo ref není napojen,
+         * port 0xDF nemá efekt - chip->EINT zůstává 0, čímž
+         * wd279x_get_interrupt_state vždy vrátí 0 (= žádný HD Patch INT
+         * nikdy nefire). hd_patch je per-instance (vlastní st_FDC). */
+        if (!chip->hd_patch_ref || !*chip->hd_patch_ref)
         {
             chip->EINT = 0;
             chip->intrq_active = 0;
@@ -1226,11 +1229,12 @@ int wd279x_get_interrupt_state(st_WD279X *chip)
      * checks - radič nesignalizuje konstantně, ale občasným pulsem.
      * Reset waitForInt se děje při Command write, Track read, Data read
      * a EINT off (viz wd279x_write_byte / wd279x_read_byte). */
-    /* HD Patch obvod absent v HW (g_fdc.hd_patch == 0) - žádný HD Patch
-     * INT nikdy nefire. Tato kontrola je defensive proti race kdy user
-     * vypne hd_patch za běhu po předchozím nastavení EINT=1 - chip->EINT
-     * by zůstal 1 do dalšího reset, INT by stále fire. */
-    if (!g_fdc.hd_patch)
+    /* HD Patch obvod absent v HW (hd_patch == 0 nebo ref nenapojen) -
+     * žádný HD Patch INT nikdy nefire. Tato kontrola je defensive proti
+     * race kdy user vypne hd_patch za běhu po předchozím nastavení EINT=1
+     * - chip->EINT by zůstal 1 do dalšího reset, INT by stále fire.
+     * hd_patch je per-instance (vlastní st_FDC). */
+    if (!chip->hd_patch_ref || !*chip->hd_patch_ref)
     {
         return 0;
     };

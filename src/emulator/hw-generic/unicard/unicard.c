@@ -63,6 +63,23 @@ static CFGELM *g_elm_sd_root;
 static CFGELM *g_elm_readonly;
 static CFGELM *g_elm_fw_version;
 static CFGELM *g_elm_runtime_check_on_connect;
+static CFGELM *g_elm_managed_fdc;
+
+/**
+ * @brief Vrátí instanci FDC, kterou Unicard API spravuje, nebo NULL.
+ *
+ * Mapuje g_unicard.managed_fdc na ukazatel do pole g_fdc. NONE vrací
+ * NULL (Unicard FDD příkazy se nepropagují do žádného řadiče).
+ *
+ * @return ukazatel na st_FDC, nebo NULL pokud managed_fdc == NONE.
+ */
+static st_FDC *unicard_managed_fdc_instance ( void ) {
+    switch ( g_unicard.managed_fdc ) {
+        case UNICARD_MANAGED_FDC_FDC0: return &g_fdc[FDC0];
+        case UNICARD_MANAGED_FDC_FDC1: return &g_fdc[FDC1];
+        default:                       return NULL;
+    }
+}
 
 int g_unicard_runtime_mismatch_pending = 0;
 
@@ -827,6 +844,12 @@ void unicard_init ( void ) {
     g_elm_runtime_check_on_connect = cfgmodule_register_new_element ( cmod, "runtime_check_on_connect", CFGENTYPE_BOOL, 1 );
     cfgelement_set_handlers ( g_elm_runtime_check_on_connect, (void*) &g_unicard.runtime_check_on_connect, (void*) &g_unicard.runtime_check_on_connect );
 
+    /* Který FDC řadič Unicard API spravuje (0=none, 1=FDC0, 2=FDC1).
+     * Default FDC0 = zpětně kompatibilní (Unicard dosud spravoval primární
+     * FDC). Pole je int, UNSIGNED handler zapisuje 4 B (hodnoty 0..2). */
+    g_elm_managed_fdc = cfgmodule_register_new_element ( cmod, "managed_fdc", CFGENTYPE_UNSIGNED, UNICARD_MANAGED_FDC_FDC0 );
+    cfgelement_set_handlers ( g_elm_managed_fdc, (void*) &g_unicard.managed_fdc, (void*) &g_unicard.managed_fdc );
+
     cfgmodule_parse ( cmod );
     /* Propaguj hodnoty z INI do target proměnných (g_unicard.*).
      * Existující connected/readonly to obchází manuálně (viz níže),
@@ -1086,6 +1109,17 @@ void unicard_set_readonly ( int readonly ) {
     } else if ( prev && !g_unicard.readonly ) {
         g_message ( "Unicard: SD card switched to read-write mode" );
     }
+}
+
+en_UNICARD_MANAGED_FDC unicard_get_managed_fdc ( void ) {
+    return ( en_UNICARD_MANAGED_FDC ) g_unicard.managed_fdc;
+}
+
+void unicard_set_managed_fdc ( en_UNICARD_MANAGED_FDC managed_fdc ) {
+    /* Nastav pole; persistence do INI proběhne přes SAVE handler cfg
+     * elementu (čte g_unicard.managed_fdc při shutdown). Ovlivní jen
+     * budoucí FDD operace - aktuální mounty zůstávají. */
+    g_unicard.managed_fdc = ( int ) managed_fdc;
 }
 
 
@@ -1537,7 +1571,9 @@ FRESULT unicard_file_open ( st_UNICARD_FILE *file, char *filepath, uint8_t fa_mo
 
         int drive_id = naked_filepath[fdcfg1_len] - '0';
         if ( ( drive_id >= 0 ) && ( drive_id <= 3 ) ) {
-            const char *dsk_filepath = fdc_get_dsk_filepath ( drive_id );
+            /* Cesta k DSK se čte z FDC spravovaného Unicard API; NONE -> NULL. */
+            st_FDC *managed_fdc = unicard_managed_fdc_instance ( );
+            const char *dsk_filepath = managed_fdc ? fdc_get_dsk_filepath ( managed_fdc, drive_id ) : NULL;
             FILE *fh = g_fopen ( full_filepath, "wb" );
             if ( ( dsk_filepath ) && dsk_filepath[0] != 0x00 ) {
                 int len = strlen ( unicard_get_sd_root_dirpath ( ) );
@@ -2039,6 +2075,14 @@ FRESULT unicard_chmod ( const char *path, uint8_t attr, uint8_t mask ) {
 void unicard_fdc_mount ( uint8_t drive_id, char *filepath ) {
     //printf ( "unicard_fdc_mount (FD%d): '%s'\n", drive_id, filepath );
 
+    /* Směruj na FDC řadič spravovaný Unicard API. Pokud je managed_fdc
+     * NONE, příkaz se nepropaguje (no-op). Změna managed_fdc ovlivní jen
+     * budoucí operace - již namountované obrazy zůstávají beze změny. */
+    st_FDC *fdc = unicard_managed_fdc_instance ( );
+    if ( !fdc ) {
+        return;
+    }
+
     if ( filepath[0] != 0x00 ) {
         char *full_filepath = unicard_jail_resolve ( filepath );
         if ( !full_filepath ) {
@@ -2051,12 +2095,12 @@ void unicard_fdc_mount ( uint8_t drive_id, char *filepath ) {
         if ( !g_file_test ( full_filepath, G_FILE_TEST_EXISTS ) ) {
             fprintf ( stderr, "%s():%d - File not exists '%s'\n", __func__, __LINE__, full_filepath_locale );
         } else {
-            fdc_mount_dskfile ( drive_id, full_filepath );
+            fdc_mount_dskfile ( fdc, drive_id, full_filepath );
         };
         baseui_tools_mem_free ( full_filepath );
         baseui_tools_mem_free ( full_filepath_locale );
     } else {
-        fdc_umount ( drive_id );
+        fdc_umount ( fdc, drive_id );
     };
 }
 

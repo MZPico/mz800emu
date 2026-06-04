@@ -134,6 +134,37 @@
 #include "libs/cfgfile/cfgcommon.h"
 
 
+#if CFG_HWEXT_HAVE_FDC
+/**
+ * @brief Mapuje FDC media slot na instanci řadiče a mechaniku.
+ *
+ * Sloty fdc0_fd0..3 -> g_fdc[FDC0] mechanika 0..3, fdc1_fd0..3 ->
+ * g_fdc[FDC1] mechanika 0..3.
+ *
+ * @param slot      media slot enum.
+ * @param out_fdc   OUT: ukazatel na instanci FDC (platný jen při návratu 1).
+ * @param out_drive OUT: index mechaniky 0..3 (platný jen při návratu 1).
+ * @return 1 pokud je `slot` FDC slot, 0 jinak.
+ */
+static int dbgapi_media_slot_to_fdc ( en_DBGAPI_MEDIA_SLOT slot,
+                                      st_FDC **out_fdc, unsigned *out_drive )
+{
+    switch ( slot )
+    {
+        case DBGAPI_MEDIA_SLOT_FDC0_FD0: *out_fdc = &g_fdc[FDC0]; *out_drive = 0; return 1;
+        case DBGAPI_MEDIA_SLOT_FDC0_FD1: *out_fdc = &g_fdc[FDC0]; *out_drive = 1; return 1;
+        case DBGAPI_MEDIA_SLOT_FDC0_FD2: *out_fdc = &g_fdc[FDC0]; *out_drive = 2; return 1;
+        case DBGAPI_MEDIA_SLOT_FDC0_FD3: *out_fdc = &g_fdc[FDC0]; *out_drive = 3; return 1;
+        case DBGAPI_MEDIA_SLOT_FDC1_FD0: *out_fdc = &g_fdc[FDC1]; *out_drive = 0; return 1;
+        case DBGAPI_MEDIA_SLOT_FDC1_FD1: *out_fdc = &g_fdc[FDC1]; *out_drive = 1; return 1;
+        case DBGAPI_MEDIA_SLOT_FDC1_FD2: *out_fdc = &g_fdc[FDC1]; *out_drive = 2; return 1;
+        case DBGAPI_MEDIA_SLOT_FDC1_FD3: *out_fdc = &g_fdc[FDC1]; *out_drive = 3; return 1;
+        default: return 0;
+    }
+}
+#endif
+
+
 /* ============================================================================
  * GLOBÁLNÍ INSTANCE CMDRQ FRONTY
  * ============================================================================ */
@@ -3718,21 +3749,31 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                     break;
                 };
 #if CFG_HWEXT_HAVE_FDC
-                case DBGAPI_MEDIA_SLOT_FDC0:
+                case DBGAPI_MEDIA_SLOT_FDC0_FD0:
+                case DBGAPI_MEDIA_SLOT_FDC0_FD1:
+                case DBGAPI_MEDIA_SLOT_FDC0_FD2:
+                case DBGAPI_MEDIA_SLOT_FDC0_FD3:
+                case DBGAPI_MEDIA_SLOT_FDC1_FD0:
+                case DBGAPI_MEDIA_SLOT_FDC1_FD1:
+                case DBGAPI_MEDIA_SLOT_FDC1_FD2:
+                case DBGAPI_MEDIA_SLOT_FDC1_FD3:
                 {
-                    fdc_mount_dskfile ( 0, (char *) p->filepath );
-                    rc = FDC_TEST_DRIVE_ID_MOUNTED ( 0 ) ? 0 : -3;
-                    break;
-                };
-                case DBGAPI_MEDIA_SLOT_FDC1:
-                {
-                    fdc_mount_dskfile ( 1, (char *) p->filepath );
-                    rc = FDC_TEST_DRIVE_ID_MOUNTED ( 1 ) ? 0 : -3;
+                    st_FDC *fdc = NULL;
+                    unsigned drive = 0;
+                    dbgapi_media_slot_to_fdc ( p->slot, &fdc, &drive );
+                    fdc_mount_dskfile ( fdc, drive, (char *) p->filepath );
+                    rc = FDC_TEST_DRIVE_ID_MOUNTED ( fdc, drive ) ? 0 : -3;
                     break;
                 };
 #else
-                case DBGAPI_MEDIA_SLOT_FDC0:
-                case DBGAPI_MEDIA_SLOT_FDC1:
+                case DBGAPI_MEDIA_SLOT_FDC0_FD0:
+                case DBGAPI_MEDIA_SLOT_FDC0_FD1:
+                case DBGAPI_MEDIA_SLOT_FDC0_FD2:
+                case DBGAPI_MEDIA_SLOT_FDC0_FD3:
+                case DBGAPI_MEDIA_SLOT_FDC1_FD0:
+                case DBGAPI_MEDIA_SLOT_FDC1_FD1:
+                case DBGAPI_MEDIA_SLOT_FDC1_FD2:
+                case DBGAPI_MEDIA_SLOT_FDC1_FD3:
                     rc = -10; /* FDC není v této arch sestavě */
                     break;
 #endif
@@ -3792,17 +3833,31 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                     rc = 0;
                     break;
 #if CFG_HWEXT_HAVE_FDC
-                case DBGAPI_MEDIA_SLOT_FDC0:
-                    fdc_umount ( 0 );
+                case DBGAPI_MEDIA_SLOT_FDC0_FD0:
+                case DBGAPI_MEDIA_SLOT_FDC0_FD1:
+                case DBGAPI_MEDIA_SLOT_FDC0_FD2:
+                case DBGAPI_MEDIA_SLOT_FDC0_FD3:
+                case DBGAPI_MEDIA_SLOT_FDC1_FD0:
+                case DBGAPI_MEDIA_SLOT_FDC1_FD1:
+                case DBGAPI_MEDIA_SLOT_FDC1_FD2:
+                case DBGAPI_MEDIA_SLOT_FDC1_FD3:
+                {
+                    st_FDC *fdc = NULL;
+                    unsigned drive = 0;
+                    dbgapi_media_slot_to_fdc ( p->slot, &fdc, &drive );
+                    fdc_umount ( fdc, drive );
                     rc = 0;
                     break;
-                case DBGAPI_MEDIA_SLOT_FDC1:
-                    fdc_umount ( 1 );
-                    rc = 0;
-                    break;
+                };
 #else
-                case DBGAPI_MEDIA_SLOT_FDC0:
-                case DBGAPI_MEDIA_SLOT_FDC1:
+                case DBGAPI_MEDIA_SLOT_FDC0_FD0:
+                case DBGAPI_MEDIA_SLOT_FDC0_FD1:
+                case DBGAPI_MEDIA_SLOT_FDC0_FD2:
+                case DBGAPI_MEDIA_SLOT_FDC0_FD3:
+                case DBGAPI_MEDIA_SLOT_FDC1_FD0:
+                case DBGAPI_MEDIA_SLOT_FDC1_FD1:
+                case DBGAPI_MEDIA_SLOT_FDC1_FD2:
+                case DBGAPI_MEDIA_SLOT_FDC1_FD3:
                     rc = -10;
                     break;
 #endif
@@ -3864,29 +3919,35 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             };
             idx++;
 
-#if CFG_HWEXT_HAVE_FDC
-            for ( unsigned d = 0; d < 2; d++ )
+            /* FDC sloty: 2 řadiče (FDC0/FDC1) × 4 mechaniky = 8 slotů. */
             {
-                p->slots[ idx ].slot = ( d == 0 )
-                    ? DBGAPI_MEDIA_SLOT_FDC0
-                    : DBGAPI_MEDIA_SLOT_FDC1;
-                int mounted = fdc_test_drive_id_mounted ( d );
-                p->slots[ idx ].inserted = mounted ? 1 : 0;
-                p->slots[ idx ].read_only = 0;
-                if ( mounted && g_fdc.drive[ d ].filename[ 0 ] )
-                {
-                    strncpy ( p->slots[ idx ].filepath,
-                              g_fdc.drive[ d ].filename,
-                              sizeof ( p->slots[ idx ].filepath ) - 1 );
+                static const en_DBGAPI_MEDIA_SLOT fdc_slot_ids[2][4] = {
+                    { DBGAPI_MEDIA_SLOT_FDC0_FD0, DBGAPI_MEDIA_SLOT_FDC0_FD1,
+                      DBGAPI_MEDIA_SLOT_FDC0_FD2, DBGAPI_MEDIA_SLOT_FDC0_FD3 },
+                    { DBGAPI_MEDIA_SLOT_FDC1_FD0, DBGAPI_MEDIA_SLOT_FDC1_FD1,
+                      DBGAPI_MEDIA_SLOT_FDC1_FD2, DBGAPI_MEDIA_SLOT_FDC1_FD3 },
                 };
-                idx++;
-            };
-#else
-            p->slots[ idx ].slot = DBGAPI_MEDIA_SLOT_FDC0;
-            idx++;
-            p->slots[ idx ].slot = DBGAPI_MEDIA_SLOT_FDC1;
-            idx++;
+                for ( unsigned c = 0; c < 2; c++ )
+                {
+                    for ( unsigned d = 0; d < 4; d++ )
+                    {
+                        p->slots[ idx ].slot = fdc_slot_ids[ c ][ d ];
+#if CFG_HWEXT_HAVE_FDC
+                        st_FDC *fdc = &g_fdc[ c ];
+                        int mounted = fdc_test_drive_id_mounted ( fdc, d );
+                        p->slots[ idx ].inserted = mounted ? 1 : 0;
+                        p->slots[ idx ].read_only = fdc->drive[ d ].readonly ? 1 : 0;
+                        if ( mounted && fdc->drive[ d ].filename[ 0 ] )
+                        {
+                            strncpy ( p->slots[ idx ].filepath,
+                                      fdc->drive[ d ].filename,
+                                      sizeof ( p->slots[ idx ].filepath ) - 1 );
+                        };
 #endif
+                        idx++;
+                    };
+                };
+            };
 
 #if CFG_HWEXT_HAVE_QDISK
             p->slots[ idx ].slot = DBGAPI_MEDIA_SLOT_QD;
@@ -5120,7 +5181,7 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
              * Pokud build neměl CFG_HWEXT_HAVE_FDC, vrátíme available=0.
              * Pokud FDC compiled ale runtime detached (= connected != 1),
              * také available=0. Při available=1 kopírujeme registry
-             * z g_fdc.wd279x + mount metadata z g_fdc.drive[4].
+             * z g_fdc[FDC0].wd279x + mount metadata z g_fdc[FDC0].drive[4].
              *
              * Image_basename je jen filename (= basename z full path),
              * security per V1.D.1 precedent.
@@ -5134,37 +5195,37 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             };
             memset ( p, 0, sizeof ( *p ) );
 #if CFG_HWEXT_HAVE_FDC
-            if ( g_fdc.connected != FDC_CONNECTED )
+            if ( g_fdc[FDC0].connected != FDC_CONNECTED )
             {
                 p->available = 0;
                 rq->success  = true;
                 break;
             };
             p->available        = 1;
-            p->bus_xlate_invert = (uint8_t)( g_fdc.bus_xlate == FDC_BUS_XLATE_INVERT ? 1 : 0 );
-            p->hd_patch         = (uint8_t)( g_fdc.hd_patch ? 1 : 0 );
-            p->reg_status       = g_fdc.wd279x.regSTATUS;
-            p->reg_command      = g_fdc.wd279x.regCOMMAND;
-            p->reg_track        = g_fdc.wd279x.regTRACK;
-            p->reg_sector       = g_fdc.wd279x.regSECTOR;
-            p->reg_data         = g_fdc.wd279x.regDATA;
-            p->motor            = g_fdc.wd279x.MOTOR;
-            p->side             = g_fdc.wd279x.SIDE;
-            p->density          = g_fdc.wd279x.DENSITY;
-            p->multiblock_rw    = g_fdc.wd279x.multiblock_rw;
-            p->direction_latch  = g_fdc.wd279x.direction_latch;
-            p->intrq_active     = g_fdc.wd279x.intrq_active;
-            p->positioned_track = g_fdc.wd279x.positioned_track;
-            p->positioned_sector = g_fdc.wd279x.positioned_sector;
-            p->positioned_side  = g_fdc.wd279x.positioned_side;
-            p->status_mode      = (uint8_t)g_fdc.wd279x.status_mode;
-            p->buffer_pos       = g_fdc.wd279x.buffer_pos;
-            p->data_counter     = g_fdc.wd279x.data_counter;
-            p->current_sector_size = g_fdc.wd279x.current_sector_size;
+            p->bus_xlate_invert = (uint8_t)( g_fdc[FDC0].bus_xlate == FDC_BUS_XLATE_INVERT ? 1 : 0 );
+            p->hd_patch         = (uint8_t)( g_fdc[FDC0].hd_patch ? 1 : 0 );
+            p->reg_status       = g_fdc[FDC0].wd279x.regSTATUS;
+            p->reg_command      = g_fdc[FDC0].wd279x.regCOMMAND;
+            p->reg_track        = g_fdc[FDC0].wd279x.regTRACK;
+            p->reg_sector       = g_fdc[FDC0].wd279x.regSECTOR;
+            p->reg_data         = g_fdc[FDC0].wd279x.regDATA;
+            p->motor            = g_fdc[FDC0].wd279x.MOTOR;
+            p->side             = g_fdc[FDC0].wd279x.SIDE;
+            p->density          = g_fdc[FDC0].wd279x.DENSITY;
+            p->multiblock_rw    = g_fdc[FDC0].wd279x.multiblock_rw;
+            p->direction_latch  = g_fdc[FDC0].wd279x.direction_latch;
+            p->intrq_active     = g_fdc[FDC0].wd279x.intrq_active;
+            p->positioned_track = g_fdc[FDC0].wd279x.positioned_track;
+            p->positioned_sector = g_fdc[FDC0].wd279x.positioned_sector;
+            p->positioned_side  = g_fdc[FDC0].wd279x.positioned_side;
+            p->status_mode      = (uint8_t)g_fdc[FDC0].wd279x.status_mode;
+            p->buffer_pos       = g_fdc[FDC0].wd279x.buffer_pos;
+            p->data_counter     = g_fdc[FDC0].wd279x.data_counter;
+            p->current_sector_size = g_fdc[FDC0].wd279x.current_sector_size;
             for ( unsigned d = 0; d < 4; d++ )
             {
                 st_DBGAPI_PERIPH_FDC_DRIVE *out  = &p->drives[ d ];
-                const st_FDDrive          *src  = &g_fdc.drive[ d ];
+                const st_FDDrive          *src  = &g_fdc[FDC0].drive[ d ];
                 out->present        = (uint8_t)( src->mounted ? 1 : 0 );
                 out->readonly       = (uint8_t)( src->readonly ? 1 : 0 );
                 out->user_readonly  = (uint8_t)( src->user_readonly ? 1 : 0 );

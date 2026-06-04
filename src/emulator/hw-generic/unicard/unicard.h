@@ -176,6 +176,20 @@ extern "C" {
      */
     extern int g_unicard_runtime_mismatch_pending;
 
+    /**
+     * @brief Který FDC řadič spravuje Unicard API (mount DSK do FDC).
+     *
+     * Unicard API příkazy pro FDD mount/umount se propagují do zvolené
+     * instance FDC. NONE = příkazy se nepropagují (Unicard FDD operace
+     * jsou no-op). Změna nastavení ovlivní jen budoucí operace - již
+     * namountované obrazy zůstávají beze změny.
+     */
+    typedef enum en_UNICARD_MANAGED_FDC {
+        UNICARD_MANAGED_FDC_NONE = 0, /**< Unicard FDD příkazy se nepropagují. */
+        UNICARD_MANAGED_FDC_FDC0 = 1, /**< Primární FDC (porty 0xD8-0xDF). Default. */
+        UNICARD_MANAGED_FDC_FDC1 = 2  /**< Sekundární FDC (porty 0x58-0x5F). */
+    } en_UNICARD_MANAGED_FDC;
+
     typedef struct st_UNICARD {
         en_UNICARD_CONNECTION connected;
         //char *sd_root;
@@ -191,6 +205,10 @@ extern "C" {
          * pro uc1, mgr800.mzf/mgr1500.mzf pro uc3). Mismatch
          * triggeruje dialog s nabídkou reinicializace. */
         int runtime_check_on_connect;
+
+        /* Který FDC řadič spravuje Unicard API (en_UNICARD_MANAGED_FDC).
+         * Default FDC0. Typ int kvůli cfgelement INT bind. */
+        int managed_fdc;
     } st_UNICARD;
 
     extern st_UNICARD g_unicard;
@@ -200,6 +218,22 @@ extern "C" {
     extern void unicard_reset ( void );
     extern char* unicard_get_mzfloader_image_filepath ( void );
     extern void unicard_set_connected ( en_UNICARD_CONNECTION conn );
+
+    /**
+     * @brief Vrátí, který FDC řadič Unicard API spravuje.
+     * @return en_UNICARD_MANAGED_FDC (NONE / FDC0 / FDC1).
+     */
+    extern en_UNICARD_MANAGED_FDC unicard_get_managed_fdc ( void );
+
+    /**
+     * @brief Nastaví, který FDC řadič Unicard API spravuje.
+     *
+     * Ovlivní jen budoucí FDD operace; již namountované obrazy zůstávají.
+     * Hodnota se persistuje do INI (cfg klíč `managed_fdc`).
+     *
+     * @param managed_fdc NONE / FDC0 / FDC1.
+     */
+    extern void unicard_set_managed_fdc ( en_UNICARD_MANAGED_FDC managed_fdc );
 
     extern char* unicard_get_sd_root_dirpath ( void );
     extern void unicard_set_sd_root_dirpath ( char *dirpath );

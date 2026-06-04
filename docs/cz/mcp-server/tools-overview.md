@@ -73,7 +73,7 @@ dokumentu [Resources overview](resources-overview.md).
 | `emu_media_load_binary` | **ANO** | Raw bajty z file do Z80 paměti, **destruktivní** |
 | `emu_media_insert` | **ANO** | Vloží image do slotu (auto-eject pokud již vloženo) |
 | `emu_media_eject` | ne | Vyjme image ze slotu |
-| `emu_media_state` | ne | Snapshot stavu všech 5 slotů (cmt/fdc0/fdc1/qd/ide8) |
+| `emu_media_state` | ne | Snapshot stavu všech 11 slotů (cmt/fdc0_fd0..3/fdc1_fd0..3/qd/ide8) |
 | `emu_settings_set` | **ANO** | Live INI write (whitelist), **mutuje globální stav** |
 | `emu_settings_get` | ne | Read INI klíče + typ (open read, žádný whitelist) |
 | `emu_platform_set` | **ANO** | Pokus o platform switch - vrací error (compile-time MZARCH) |
@@ -827,13 +827,13 @@ descending).
 
 ## Media tools
 
-Sjednocený přístup k media operacím napříč 5 podporovanými sloty:
+Sjednocený přístup k media operacím napříč 11 podporovanými sloty:
 
 | Slot | Význam |
 |------|--------|
 | `cmt` | CMT pásek (.mzf, .mzt) |
-| `fdc0` | WD279x FDC drive 0 (.dsk) |
-| `fdc1` | WD279x FDC drive 1 (.dsk) |
+| `fdc0_fd0` .. `fdc0_fd3` | WD279x FDC0 (standard, porty 0xD8-0xDF) mechaniky 0..3 (.dsk) |
+| `fdc1_fd0` .. `fdc1_fd3` | WD279x FDC1 (secondary, porty 0x58-0x5F) mechaniky 0..3 (.dsk) |
 | `qd` | Quick Disk (.qd) |
 | `ide8` | IDE8 master HDD (.img) |
 
@@ -935,25 +935,26 @@ Vloží image do slotu. Pokud je slot již obsazený, dojde k tichému
 auto-eject (= ekvivalent eject + insert v jednom kroku).
 
 ```
-emu_media_insert(slot="fdc0", path="/disks/cpm.dsk")
+emu_media_insert(slot="fdc0_fd0", path="/disks/cpm.dsk")
+emu_media_insert(slot="fdc1_fd0", path="/disks/data.dsk")
 emu_media_insert(slot="cmt", bytes_b64="...", ro=True)
 ```
 
-Vrací `{"ok": true, "slot": "fdc0", "result_code": 0}`.
+Vrací `{"ok": true, "slot": "fdc0_fd0", "result_code": 0}`.
 
 ### `emu_media_eject`
 
 Vyjme image ze slotu. No-op pokud je slot prázdný.
 
 ```
-emu_media_eject(slot="fdc0")
+emu_media_eject(slot="fdc0_fd0")
 ```
 
-Vrací `{"ok": true, "slot": "fdc0"}`.
+Vrací `{"ok": true, "slot": "fdc0_fd0"}`.
 
 ### `emu_media_state`
 
-Snapshot stavu všech 5 slotů.
+Snapshot stavu všech 11 slotů.
 
 ```
 emu_media_state()
@@ -963,13 +964,19 @@ Vrací:
 
 ```json
 {
-  "count": 5,
+  "count": 11,
   "slots": [
-    {"slot": "cmt",  "inserted": true,  "path": "/cassettes/sapo-p.mzf", "ro": false},
-    {"slot": "fdc0", "inserted": false, "path": "", "ro": false},
-    {"slot": "fdc1", "inserted": false, "path": "", "ro": false},
-    {"slot": "qd",   "inserted": false, "path": "", "ro": false},
-    {"slot": "ide8", "inserted": true,  "path": "hdd0-mz800.img", "ro": false}
+    {"slot": "cmt",      "inserted": true,  "path": "/cassettes/sapo-p.mzf", "ro": false},
+    {"slot": "fdc0_fd0", "inserted": false, "path": "", "ro": false},
+    {"slot": "fdc0_fd1", "inserted": false, "path": "", "ro": false},
+    {"slot": "fdc0_fd2", "inserted": false, "path": "", "ro": false},
+    {"slot": "fdc0_fd3", "inserted": false, "path": "", "ro": false},
+    {"slot": "fdc1_fd0", "inserted": false, "path": "", "ro": false},
+    {"slot": "fdc1_fd1", "inserted": false, "path": "", "ro": false},
+    {"slot": "fdc1_fd2", "inserted": false, "path": "", "ro": false},
+    {"slot": "fdc1_fd3", "inserted": false, "path": "", "ro": false},
+    {"slot": "qd",       "inserted": false, "path": "", "ro": false},
+    {"slot": "ide8",     "inserted": true,  "path": "hdd0-mz800.img", "ro": false}
   ]
 }
 ```

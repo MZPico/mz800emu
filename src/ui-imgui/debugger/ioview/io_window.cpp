@@ -146,7 +146,8 @@ static const SectionGroup g_sections[] = {
     { "gdg",       "GDG video",                "GDG -" },
     { "ppi8255",   "8255 PPI",                 "8255 PPI -" },
     { "ctc8253",   "8253 CTC",                 "8253 CTC -" },
-    { "fdc",       "FDC",                      "FDC -" },
+    { "fdc",       "FDC (standard)",           "FDC -" },
+    { "fdc1",      "FDC1 (secondary)",         "FDC1 -" },
     { "memory",    "Memory banking",           "Memory bank -" },
     /* MemExt = oddělená HW karta (paměťová extenze 64 kB -> 512 kB SRAM),
      * jediný port 0xE7. NENÍ to banking - Sharp banking porty (0xE0-0xE6)
@@ -1505,6 +1506,24 @@ static const char* io_history_describe ( uint16_t port, uint8_t value,
             return is_in ? NULL : "FDC density";
         case 0xDF:
             return is_in ? NULL : "FDC HD Patch EINT";
+        /* === FDC1 (sekundarni, 0x58-0x5F) === */
+        case 0x58:
+            return is_in ? "FDC1 status" : "FDC1 command";
+        case 0x59:
+            return "FDC1 track";
+        case 0x5A:
+            return "FDC1 sector";
+        case 0x5B:
+            return "FDC1 data";
+        /* 0x5C-0x5F jsou externi Sharp logika, ne WD279x chip. Write-only. */
+        case 0x5C:
+            return is_in ? NULL : "FDC1 motor / drive select";
+        case 0x5D:
+            return is_in ? NULL : "FDC1 side";
+        case 0x5E:
+            return is_in ? NULL : "FDC1 density";
+        case 0x5F:
+            return is_in ? NULL : "FDC1 HD Patch EINT";
         /* === Z80 PIO === */
         case 0xFC:
             return "Z80 PIO Port A control";

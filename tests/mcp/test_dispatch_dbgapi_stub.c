@@ -973,13 +973,19 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                 g_stub_state.media_state_calls++;
                 int n = g_stub_state.media_state_fake_count;
                 if (n < 0) n = 0;
-                if (n > 5) n = 5;
+                if (n > 11) n = 11;
                 memset(p, 0, sizeof(*p));
-                /* Default ordering: CMT, FDC0, FDC1, QD, IDE8. */
-                static const en_DBGAPI_MEDIA_SLOT order[5] = {
+                /* Default ordering: CMT, FDC0_FD0..3, FDC1_FD0..3, QD, IDE8. */
+                static const en_DBGAPI_MEDIA_SLOT order[11] = {
                     DBGAPI_MEDIA_SLOT_CMT,
-                    DBGAPI_MEDIA_SLOT_FDC0,
-                    DBGAPI_MEDIA_SLOT_FDC1,
+                    DBGAPI_MEDIA_SLOT_FDC0_FD0,
+                    DBGAPI_MEDIA_SLOT_FDC0_FD1,
+                    DBGAPI_MEDIA_SLOT_FDC0_FD2,
+                    DBGAPI_MEDIA_SLOT_FDC0_FD3,
+                    DBGAPI_MEDIA_SLOT_FDC1_FD0,
+                    DBGAPI_MEDIA_SLOT_FDC1_FD1,
+                    DBGAPI_MEDIA_SLOT_FDC1_FD2,
+                    DBGAPI_MEDIA_SLOT_FDC1_FD3,
                     DBGAPI_MEDIA_SLOT_QD,
                     DBGAPI_MEDIA_SLOT_IDE8,
                 };

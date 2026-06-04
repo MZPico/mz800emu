@@ -25,11 +25,12 @@ extern "C"
 /* --- State pro modal "Switch storage mode with pending RAM changes" --- */
 typedef struct fdc_storage_switch_pending_t
 {
+    int fdc_index;        /* FDC0 / FDC1 - kterého řadiče se popup týká */
     int drive_id;
     char target_mode[16]; /* "cached" | "direct" */
 } fdc_storage_switch_pending_t;
 
-static fdc_storage_switch_pending_t g_fdc_storage_switch_pending = { -1, "" };
+static fdc_storage_switch_pending_t g_fdc_storage_switch_pending = { FDC0, -1, "" };
 
 /**
  * @brief Aktivuj modal popup pro confirm switch storage mode s dirty RAM.
@@ -38,8 +39,9 @@ static fdc_storage_switch_pending_t g_fdc_storage_switch_pending = { -1, "" };
  * RAM changes na Cached/Direct. Popup nabídne: Save & Switch / Discard &
  * Switch / Cancel.
  */
-static void imgui_fdc_storage_switch_activate(int drive_id, const char *target_mode)
+static void imgui_fdc_storage_switch_activate(int fdc_index, int drive_id, const char *target_mode)
 {
+    g_fdc_storage_switch_pending.fdc_index = fdc_index;
     g_fdc_storage_switch_pending.drive_id = drive_id;
     g_strlcpy(g_fdc_storage_switch_pending.target_mode, target_mode,
               sizeof(g_fdc_storage_switch_pending.target_mode));
@@ -52,15 +54,16 @@ static void imgui_fdc_storage_switch_activate(int drive_id, const char *target_m
  * Tato pomocná funkce sdílí kód mezi okamžitým switchem (= bez popupu)
  * a popup "Switch" tlačítky.
  */
-static void imgui_fdc_storage_apply_switch(int drive_id, const char *target_mode)
+static void imgui_fdc_storage_apply_switch(int fdc_index, int drive_id, const char *target_mode)
 {
-    fdc_cfg_set_storage_mode((unsigned)drive_id, target_mode);
-    if (FDC_TEST_DRIVE_ID_MOUNTED(drive_id))
+    st_FDC *fdc = &g_fdc[fdc_index];
+    fdc_cfg_set_storage_mode(fdc, (unsigned)drive_id, target_mode);
+    if (FDC_TEST_DRIVE_ID_MOUNTED(fdc, drive_id))
     {
-        char *pathdup = g_strdup(fdc_get_dsk_filepath((unsigned)drive_id));
+        char *pathdup = g_strdup(fdc_get_dsk_filepath(fdc, (unsigned)drive_id));
         if (pathdup)
         {
-            fdc_mount_dskfile((unsigned)drive_id, pathdup);
+            fdc_mount_dskfile(fdc, (unsigned)drive_id, pathdup);
             g_free(pathdup);
         }
     }
@@ -68,8 +71,9 @@ static void imgui_fdc_storage_apply_switch(int drive_id, const char *target_mode
 
 void imgui_fdc_storage_switch_popup(bool *p_open)
 {
+    int fi = g_fdc_storage_switch_pending.fdc_index;
     int drv = g_fdc_storage_switch_pending.drive_id;
-    if (drv < 0 || drv >= 4)
+    if (drv < 0 || drv >= 4 || fi < 0 || fi >= FDC_INSTANCE_COUNT)
     {
         *p_open = false;
         return;
@@ -116,8 +120,8 @@ void imgui_fdc_storage_switch_popup(bool *p_open)
 
         if (ImGui::Button(btn_save, ImVec2(button_width, 0)))
         {
-            fdc_drive_force_save_to_file((unsigned)drv);
-            imgui_fdc_storage_apply_switch(drv, g_fdc_storage_switch_pending.target_mode);
+            fdc_drive_force_save_to_file(&g_fdc[fi], (unsigned)drv);
+            imgui_fdc_storage_apply_switch(fi, drv, g_fdc_storage_switch_pending.target_mode);
             *p_open = false;
             g_fdc_storage_switch_pending.drive_id = -1;
             ImGui::CloseCurrentPopup();
@@ -126,7 +130,7 @@ void imgui_fdc_storage_switch_popup(bool *p_open)
         ImGui::SameLine();
         if (ImGui::Button(btn_discard, ImVec2(button_width, 0)))
         {
-            imgui_fdc_storage_apply_switch(drv, g_fdc_storage_switch_pending.target_mode);
+            imgui_fdc_storage_apply_switch(fi, drv, g_fdc_storage_switch_pending.target_mode);
             *p_open = false;
             g_fdc_storage_switch_pending.drive_id = -1;
             ImGui::CloseCurrentPopup();
@@ -144,15 +148,15 @@ void imgui_fdc_storage_switch_popup(bool *p_open)
     }
 }
 
-void SubmenuFDDriveImage(int drive_id)
+void SubmenuFDDriveImage(st_FDC *fdc, int drive_id)
 {
 #if CFG_HWEXT_HAVE_FDC
 
     GString *image_basename = g_string_new(NULL);
 
-    if (FDC_TEST_DRIVE_ID_MOUNTED(drive_id))
+    if (FDC_TEST_DRIVE_ID_MOUNTED(fdc, drive_id))
     {
-        const char *basename = g_path_get_basename(fdc_get_dsk_filepath(drive_id));
+        const char *basename = g_path_get_basename(fdc_get_dsk_filepath(fdc, drive_id));
         // pokud ma vice jak 20 znaku, tak zkratime a na konec pridame "..." - aby se veslo do menu
         if (strlen(basename) > 20)
         {
@@ -179,22 +183,22 @@ void SubmenuFDDriveImage(int drive_id)
     GString *umount_accel = g_string_new(NULL);
     g_string_append_printf(umount_accel, "Alt+Shift+%d", drive_id);
 
-    const char *mount_text = (!FDC_TEST_DRIVE_ID_MOUNTED(drive_id)) ? _("Mount...") : _("Re-Mount...");
+    const char *mount_text = (!FDC_TEST_DRIVE_ID_MOUNTED(fdc, drive_id)) ? _("Mount...") : _("Re-Mount...");
 
     if (ImGui::MenuItem(mount_text, mount_accel->str, false))
     {
-        fdc_ui_mount(drive_id);
+        fdc_ui_mount(fdc, drive_id);
     };
 
-    if (ImGui::MenuItem(_L("Umount"), umount_accel->str, false, FDC_TEST_DRIVE_ID_MOUNTED(drive_id)))
+    if (ImGui::MenuItem(_L("Umount"), umount_accel->str, false, FDC_TEST_DRIVE_ID_MOUNTED(fdc, drive_id)))
     {
-        fdc_umount(drive_id);
+        fdc_umount(fdc, drive_id);
     };
 
     /* --- Per-drive R/O + Storage mode --- */
-    bool is_mounted = FDC_TEST_DRIVE_ID_MOUNTED(drive_id);
-    bool fs_ro = fdc_drive_fs_readonly(drive_id) != 0;
-    int user_ro_cfg = fdc_cfg_get_readonly(drive_id);
+    bool is_mounted = FDC_TEST_DRIVE_ID_MOUNTED(fdc, drive_id);
+    bool fs_ro = fdc_drive_fs_readonly(fdc, drive_id) != 0;
+    int user_ro_cfg = fdc_cfg_get_readonly(fdc, drive_id);
 
     ImGui::Separator();
 
@@ -212,17 +216,17 @@ void SubmenuFDDriveImage(int drive_id)
         bool ro_pref = (user_ro_cfg != 0);
         if (ImGui::MenuItem(_L("Read-only"), NULL, &ro_pref, true))
         {
-            fdc_cfg_set_readonly(drive_id, ro_pref ? 1 : 0);
+            fdc_cfg_set_readonly(fdc, drive_id, ro_pref ? 1 : 0);
             /* Pro reflexi změny: pokud je drive aktuálně mounted, remount
              * aplikuje novou volbu. */
             if (is_mounted)
             {
-                char *path = (char *)fdc_get_dsk_filepath(drive_id);
+                char *path = (char *)fdc_get_dsk_filepath(fdc, drive_id);
                 if (path)
                 {
                     /* g_strdup aby nám remount nezneplatnil path. */
                     char *pathdup = g_strdup(path);
-                    fdc_mount_dskfile(drive_id, pathdup);
+                    fdc_mount_dskfile(fdc, drive_id, pathdup);
                     g_free(pathdup);
                 }
             }
@@ -230,7 +234,7 @@ void SubmenuFDDriveImage(int drive_id)
     }
 
     /* Storage mode: combo přes 3 radio položky. */
-    const char *mode_str = fdc_cfg_get_storage_mode(drive_id);
+    const char *mode_str = fdc_cfg_get_storage_mode(fdc, drive_id);
     bool mode_cached  = (strcmp(mode_str, "cached") == 0);
     bool mode_direct  = (strcmp(mode_str, "direct") == 0);
     bool mode_discard = (strcmp(mode_str, "discard") == 0);
@@ -242,14 +246,14 @@ void SubmenuFDDriveImage(int drive_id)
     auto try_switch = [&](const char *target) {
         bool needs_prompt = is_mounted && mode_discard
                             && (strcmp(target, "discard") != 0)
-                            && (fdc_drive_has_ram_changes(drive_id) != 0);
+                            && (fdc_drive_has_ram_changes(fdc, drive_id) != 0);
         if (needs_prompt)
         {
-            imgui_fdc_storage_switch_activate(drive_id, target);
+            imgui_fdc_storage_switch_activate((int)fdc->index, drive_id, target);
         }
         else
         {
-            imgui_fdc_storage_apply_switch(drive_id, target);
+            imgui_fdc_storage_apply_switch((int)fdc->index, drive_id, target);
         }
     };
 
@@ -270,10 +274,10 @@ void SubmenuFDDriveImage(int drive_id)
 
     /* Sync now - dostupné jen v cached s pending changes. */
     bool sync_enabled = is_mounted && mode_cached
-                        && (fdc_drive_has_unsaved_changes(drive_id) != 0);
+                        && (fdc_drive_has_unsaved_changes(fdc, drive_id) != 0);
     if (ImGui::MenuItem(_L("Sync now"), NULL, false, sync_enabled))
     {
-        fdc_sync_drive(drive_id);
+        fdc_sync_drive(fdc, drive_id);
     }
 
     g_string_free(image_basename, TRUE);
@@ -282,21 +286,23 @@ void SubmenuFDDriveImage(int drive_id)
 #endif
 }
 
-void SubmenuFDDrive(int drive_id)
+void SubmenuFDDrive(st_FDC *fdc, int drive_id)
 {
 #if CFG_HWEXT_HAVE_FDC
     GString *drive_name = g_string_new(_("FDD "));
     g_string_append_printf(drive_name, "%d", drive_id);
 
-    if (FDC_TEST_WD279X_CONNECTED && (!FDC_TEST_DRIVE_ID_MOUNTED(drive_id)))
+    bool fdc_connected = (fdc->connected == FDC_CONNECTED);
+
+    if (fdc_connected && (!FDC_TEST_DRIVE_ID_MOUNTED(fdc, drive_id)))
     {
         g_string_append(drive_name," ");
         g_string_append(drive_name, _("(Empty)"));
     };
 
-    if (ImGui::BeginMenu(drive_name->str, FDC_TEST_WD279X_CONNECTED))
+    if (ImGui::BeginMenu(drive_name->str, fdc_connected))
     {
-        SubmenuFDDriveImage(drive_id);
+        SubmenuFDDriveImage(fdc, drive_id);
         ImGui::EndMenu();
     };
     g_string_free(drive_name, TRUE);
@@ -312,25 +318,27 @@ void SubmenuFDDrive(int drive_id)
  *  - Radio bus_xlate (invert = Sharp default / passthrough = experimental).
  *
  * Změna se NEAPLIKUJE za běhu - obě volby jsou čtené při inicializaci
- * chipu. UI pouze přepíše hodnoty v `g_fdc.*` (které se uloží do INI
- * při exitu) a zobrazí "restart required" tooltip.
+ * chipu. UI pouze přepíše hodnoty v `fdc->*` dané instance (které se
+ * uloží do INI při exitu) a zobrazí "restart required" tooltip.
+ *
+ * @param fdc instance FDC řadiče, jehož HW volby se konfigurují.
  */
-static void SubmenuFDCHardwareOptions(void)
+static void SubmenuFDCHardwareOptions(st_FDC *fdc)
 {
     ImGui::SeparatorText(_("Hardware options"));
 
-    bool hd_patch = (g_fdc.hd_patch != 0);
+    bool hd_patch = (fdc->hd_patch != 0);
     if (ImGui::MenuItem(_L("HD Patch enabled"), NULL, &hd_patch, true))
     {
-        g_fdc.hd_patch = hd_patch ? 1 : 0;
+        fdc->hd_patch = hd_patch ? 1 : 0;
     };
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", _("Restart emulator to apply change."));
 
-    bool xlate_invert = (g_fdc.bus_xlate == FDC_BUS_XLATE_INVERT);
+    bool xlate_invert = (fdc->bus_xlate == FDC_BUS_XLATE_INVERT);
     if (MenuRadioItem(_("Bus translation: invert (Sharp)"), xlate_invert))
     {
-        g_fdc.bus_xlate = FDC_BUS_XLATE_INVERT;
+        fdc->bus_xlate = FDC_BUS_XLATE_INVERT;
     };
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", _("Sharp MZ default - XOR 0xFF between CPU bus and WD279x chip. "
@@ -338,7 +346,7 @@ static void SubmenuFDCHardwareOptions(void)
 
     if (MenuRadioItem(_("Bus translation: passthrough"), !xlate_invert))
     {
-        g_fdc.bus_xlate = FDC_BUS_XLATE_PASSTHROUGH;
+        fdc->bus_xlate = FDC_BUS_XLATE_PASSTHROUGH;
     };
     if (ImGui::IsItemHovered())
     {
@@ -353,32 +361,79 @@ static void SubmenuFDCHardwareOptions(void)
 }
 #endif
 
+#if CFG_HWEXT_HAVE_FDC
+/**
+ * @brief Vykreslí konfiguraci jedné instance FDC.
+ *
+ * Sekce "Floppy Drives" (4 mechaniky) a "Hardware options" pro daný
+ * řadič. Použito pro per-FDC submenu (FDC0 standard / FDC1 secondary).
+ *
+ * @param fdc instance FDC řadiče.
+ */
+static void SubmenuFDCInstance(st_FDC *fdc)
+{
+    ImGui::SeparatorText(_("Floppy Drives"));
+
+    for (int i = 0; i < 4; i++)
+    {
+        SubmenuFDDrive(fdc, i);
+    };
+
+    /* Sekce Hardware options - HD Patch + bus translation polarity. */
+    SubmenuFDCHardwareOptions(fdc);
+}
+#endif
+
 void imgui_menu_fdcontroller(void)
 {
     if (ImGui::BeginMenu(_L("FD Controller"), CFG_HWEXT_HAVE_FDC))
     {
 #if CFG_HWEXT_HAVE_FDC
-        /*
-         *
-         * Submenu FDC
-         *
-         */
+        /* Připojení řadičů - nezávislé přepínače. Umožňují všechny
+         * kombinace: nic / jen FDC0 / jen FDC1 / oba současně. */
+        bool fdc0_connected = (g_fdc[FDC0].connected == FDC_CONNECTED);
+        bool fdc1_connected = (g_fdc[FDC1].connected == FDC_CONNECTED);
 
-        if (MenuRadioItem(_("Not Connected"), FDC_TEST_NOT_CONNECTED))
+        /* Not Connected - vypne oba řadiče najednou. Zaškrtnuto, když je
+         * oba odpojené (= výchozí stav bez floppy). */
+        if (ImGui::MenuItem(_L("Not Connected"), NULL, (!fdc0_connected && !fdc1_connected)))
         {
-            FDC_SET_NOT_CONNECTED();
+            g_fdc[FDC0].connected = FDC_DISCONNECTED;
+            g_fdc[FDC1].connected = FDC_DISCONNECTED;
+            fdc0_connected = false;
+            fdc1_connected = false;
         };
 
-        if (MenuRadioItem(_("WD279x"), FDC_TEST_WD279X_CONNECTED))
+        ImGui::Separator();
+
+        if (ImGui::MenuItem(_L("WD279x (standard)"), NULL, &fdc0_connected, true))
         {
-            FDC_SET_WD279X_CONNECTED();
+            g_fdc[FDC0].connected = fdc0_connected ? FDC_CONNECTED : FDC_DISCONNECTED;
+        };
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", _("Default FDC on ports 0xD8 - 0xDF"));
+
+        if (ImGui::MenuItem(_L("WD279x (secondary)"), NULL, &fdc1_connected, true))
+        {
+            g_fdc[FDC1].connected = fdc1_connected ? FDC_CONNECTED : FDC_DISCONNECTED;
+        };
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", _("Unicard alternate FDC ports 0x58 - 0x5F"));
+
+        ImGui::Separator();
+
+        /* Per-FDC konfigurace (Floppy Drives + Hardware options). Submenu
+         * je aktivní jen pokud je daný řadič připojen. */
+        if (ImGui::BeginMenu(_L("FDC0 (standard)"), fdc0_connected))
+        {
+            SubmenuFDCInstance(&g_fdc[FDC0]);
+            ImGui::EndMenu();
         };
 
-        ImGui::SeparatorText(_("Floppy Drives"));
-
-        for (int i = 0; i < 4; i++)
+        if (ImGui::BeginMenu(_L("FDC1 (secondary)"), fdc1_connected))
         {
-            SubmenuFDDrive(i);
+            SubmenuFDCInstance(&g_fdc[FDC1]);
+            ImGui::EndMenu();
         };
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
@@ -389,9 +444,6 @@ void imgui_menu_fdcontroller(void)
             g_gui->showFdcStateWindow = !g_gui->showFdcStateWindow;
         };
 #endif
-
-        /* Sekce Hardware options - HD Patch + bus translation polarity. */
-        SubmenuFDCHardwareOptions();
 #endif
         ImGui::EndMenu();
     };

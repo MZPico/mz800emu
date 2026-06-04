@@ -170,13 +170,13 @@ static inline void iface_keyboard_keydown_hotkeys(SDL_Keycode scancode)
             int drive_id = scancode - SDL_SCANCODE_1;
             if (g_iface_kbdstate.lshift || g_iface_kbdstate.rshift)
             {
-                printf("Eject FD%d DSK image\n", drive_id);
-                fdc_umount(drive_id);
+                printf("Eject FDC0 FD%d DSK image\n", drive_id);
+                fdc_umount(&g_fdc[FDC0], drive_id);
             }
             else
             {
-                printf("Select FD%d DSK image for mount\n", drive_id);
-                fdc_ui_mount(drive_id);
+                printf("Select FDC0 FD%d DSK image for mount\n", drive_id);
+                fdc_ui_mount(&g_fdc[FDC0], drive_id);
             };
         }
         else if (scancode == SDL_SCANCODE_2)
@@ -187,13 +187,13 @@ static inline void iface_keyboard_keydown_hotkeys(SDL_Keycode scancode)
             int drive_id = scancode - SDL_SCANCODE_1;
             if (g_iface_kbdstate.lshift || g_iface_kbdstate.rshift)
             {
-                printf("Eject FD%d DSK image\n", drive_id);
-                fdc_umount(drive_id);
+                printf("Eject FDC0 FD%d DSK image\n", drive_id);
+                fdc_umount(&g_fdc[FDC0], drive_id);
             }
             else
             {
-                printf("Select FD%d DSK image for mount\n", drive_id);
-                fdc_ui_mount(drive_id);
+                printf("Select FDC0 FD%d DSK image for mount\n", drive_id);
+                fdc_ui_mount(&g_fdc[FDC0], drive_id);
             };
         }
         else if (scancode == SDL_SCANCODE_3)
@@ -204,13 +204,13 @@ static inline void iface_keyboard_keydown_hotkeys(SDL_Keycode scancode)
             int drive_id = scancode - SDL_SCANCODE_1;
             if (g_iface_kbdstate.lshift || g_iface_kbdstate.rshift)
             {
-                printf("Eject FD%d DSK image\n", drive_id);
-                fdc_umount(drive_id);
+                printf("Eject FDC0 FD%d DSK image\n", drive_id);
+                fdc_umount(&g_fdc[FDC0], drive_id);
             }
             else
             {
-                printf("Select FD%d DSK image for mount\n", drive_id);
-                fdc_ui_mount(drive_id);
+                printf("Select FDC0 FD%d DSK image for mount\n", drive_id);
+                fdc_ui_mount(&g_fdc[FDC0], drive_id);
             };
         }
         else if (scancode == SDL_SCANCODE_4)
@@ -221,13 +221,13 @@ static inline void iface_keyboard_keydown_hotkeys(SDL_Keycode scancode)
             int drive_id = scancode - SDL_SCANCODE_1;
             if (g_iface_kbdstate.lshift || g_iface_kbdstate.rshift)
             {
-                printf("Eject FD%d DSK image\n", drive_id);
-                fdc_umount(drive_id);
+                printf("Eject FDC0 FD%d DSK image\n", drive_id);
+                fdc_umount(&g_fdc[FDC0], drive_id);
             }
             else
             {
-                printf("Select FD%d DSK image for mount\n", drive_id);
-                fdc_ui_mount(drive_id);
+                printf("Select FDC0 FD%d DSK image for mount\n", drive_id);
+                fdc_ui_mount(&g_fdc[FDC0], drive_id);
             };
 #endif /* CFG_HWEXT_HAVE_FDC */
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED

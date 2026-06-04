@@ -288,13 +288,13 @@ void imgui_global_shortcuts(void)
             int drive_id = 0;
             if (io.KeyShift)
             {
-                printf("Eject FD%d DSK image\n", drive_id);
-                fdc_umount(drive_id);
+                printf("Eject FDC0 FD%d DSK image\n", drive_id);
+                fdc_umount(&g_fdc[FDC0], drive_id);
             }
             else
             {
-                printf("Select FD%d DSK image for mount\n", drive_id);
-                fdc_ui_mount(drive_id);
+                printf("Select FDC0 FD%d DSK image for mount\n", drive_id);
+                fdc_ui_mount(&g_fdc[FDC0], drive_id);
             };
         };
 
@@ -306,13 +306,13 @@ void imgui_global_shortcuts(void)
             int drive_id = 1;
             if (io.KeyShift)
             {
-                printf("Eject FD%d DSK image\n", drive_id);
-                fdc_umount(drive_id);
+                printf("Eject FDC0 FD%d DSK image\n", drive_id);
+                fdc_umount(&g_fdc[FDC0], drive_id);
             }
             else
             {
-                printf("Select FD%d DSK image for mount\n", drive_id);
-                fdc_ui_mount(drive_id);
+                printf("Select FDC0 FD%d DSK image for mount\n", drive_id);
+                fdc_ui_mount(&g_fdc[FDC0], drive_id);
             };
         };
 
@@ -324,13 +324,13 @@ void imgui_global_shortcuts(void)
             int drive_id = 2;
             if (io.KeyShift)
             {
-                printf("Eject FD%d DSK image\n", drive_id);
-                fdc_umount(drive_id);
+                printf("Eject FDC0 FD%d DSK image\n", drive_id);
+                fdc_umount(&g_fdc[FDC0], drive_id);
             }
             else
             {
-                printf("Select FD%d DSK image for mount\n", drive_id);
-                fdc_ui_mount(drive_id);
+                printf("Select FDC0 FD%d DSK image for mount\n", drive_id);
+                fdc_ui_mount(&g_fdc[FDC0], drive_id);
             };
         };
 
@@ -342,13 +342,13 @@ void imgui_global_shortcuts(void)
             int drive_id = 3;
             if (io.KeyShift)
             {
-                printf("Eject FD%d DSK image\n", drive_id);
-                fdc_umount(drive_id);
+                printf("Eject FDC0 FD%d DSK image\n", drive_id);
+                fdc_umount(&g_fdc[FDC0], drive_id);
             }
             else
             {
-                printf("Select FD%d DSK image for mount\n", drive_id);
-                fdc_ui_mount(drive_id);
+                printf("Select FDC0 FD%d DSK image for mount\n", drive_id);
+                fdc_ui_mount(&g_fdc[FDC0], drive_id);
             };
         };
 #endif /* CFG_HWEXT_HAVE_FDC */

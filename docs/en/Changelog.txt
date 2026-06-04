@@ -1,4 +1,14 @@
 
+	- Added support for a secondary FDC controller (WD279x) on ports 0x58 - 0x5F (supported by some types of Unicard).
+
+	- Unicard: new "Managed FDC" option (none / FDC0 / FDC1) selects which FDC controller the Unicard API manages when mounting DSK images; the change affects only future operations
+
+	- Debugger: the FDC State window has tabs for both controllers; the I/O Ports window shows the ports of both the standard and secondary controllers
+
+	- MCP server: FDC media slots now address both the controller and the drive - fdc0_fd0..3 (standard controller) and fdc1_fd0..3 (secondary controller). The original fdc0/fdc1 slots were removed (breaking change for MCP clients)
+
+	- BUGFIX: FDC - clicking Cancel in the DSK file browser no longer unmounts the current image (it stays unchanged)
+
 	- BUGFIX: Unicard - the GETCWD command returned a doubled leading slash for subdirectories (//dir)
 
 

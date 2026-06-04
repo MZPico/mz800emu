@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-01 22:39+0200\n"
+"POT-Creation-Date: 2026-06-04 14:14+0200\n"
 "PO-Revision-Date: 2026-03-11 21:00+0100\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -64,20 +64,20 @@ msgstr ""
 "Адреса = 0x%04x\n"
 "Інструкція = '%s'\n"
 
-#: src/emulator/emulator.c:290
+#: src/emulator/emulator.c:304
 #: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:421
 msgid "PAUSED"
 msgstr "ПРИЗУПИНЕНО"
 
-#: src/emulator/emulator.c:293
+#: src/emulator/emulator.c:307
 msgid "Max speed"
 msgstr "Максимальна швидкість"
 
-#: src/emulator/emulator.c:296
+#: src/emulator/emulator.c:310
 msgid "Custom speed"
 msgstr "Власна швидкість"
 
-#: src/emulator/emulator.c:298
+#: src/emulator/emulator.c:312
 msgid "Normal speed"
 msgstr "Нормальна швидкість"
 
@@ -105,10 +105,10 @@ msgstr "Виберіть CMT файл для відкриття"
 msgid "Select a MZF File"
 msgstr "Виберіть MZF файл"
 
-#: src/emulator/hw-generic/fdc/fdc.c:1007
+#: src/emulator/hw-generic/fdc/fdc.c:1128
 #, c-format
-msgid "Select DSK image file for drive FD%d"
-msgstr "Виберіть файл образу DSK для дисковода FD%d"
+msgid "Select DSK image file for FDC%u drive FD%d"
+msgstr "Виберіть файл образу DSK для FDC%u дисковод FD%d"
 
 #: src/emulator/hw-generic/qdisk/qdisk.c:816
 msgid "Select existing .MZQ file or create new QD image"
@@ -118,7 +118,7 @@ msgstr "Виберіть існуючий .MZQ файл або створіть 
 msgid "Select directory to mount as virtual Quick Disk"
 msgstr "Виберіть каталог для монтування як віртуальний Quick Disk"
 
-#: src/emulator/hw-generic/unicard/unicard.c:2080
+#: src/emulator/hw-generic/unicard/unicard.c:2175
 msgid "Select SD root directory for Unicard"
 msgstr "Виберіть кореневий каталог SD для Unicard"
 
@@ -548,7 +548,7 @@ msgid "Virtual CMT is not available!"
 msgstr "Віртуальний CMT недоступний!"
 
 #: src/ui-imgui/cmt/cmt_window.cpp:823
-#: src/ui-imgui/version_check/imgui_version_check.cpp:364
+#: src/ui-imgui/version_check/imgui_version_check.cpp:390
 msgid "Close"
 msgstr "Закрити"
 
@@ -2555,7 +2555,7 @@ msgid "Hide noise"
 msgstr "Сховати шум"
 
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1369
-#: src/ui-imgui/debugger/ioview/io_window.cpp:972
+#: src/ui-imgui/debugger/ioview/io_window.cpp:973
 #: src/ui-imgui/debugger/symbols/sym_window.cpp:618
 msgid "Clear filter"
 msgstr "Очистити фільтр"
@@ -2825,6 +2825,7 @@ msgstr ""
 
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2346
 #: src/ui-imgui/joy/joy_setup_window.cpp:415
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:284
 msgid "None"
 msgstr "Жодне"
 
@@ -3332,17 +3333,29 @@ msgstr "Пристрої"
 msgid "FDC State"
 msgstr "Стан FDC"
 
-#: src/ui-imgui/debugger/fdc_window.cpp:193
+#: src/ui-imgui/debugger/fdc_window.cpp:198
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:427
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:288
+msgid "FDC0 (standard)"
+msgstr "FDC0 (стандартний)"
+
+#: src/ui-imgui/debugger/fdc_window.cpp:199
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:433
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:292
+msgid "FDC1 (secondary)"
+msgstr "FDC1 (вторинний)"
+
+#: src/ui-imgui/debugger/fdc_window.cpp:202
 #, c-format
 msgid "Connected: %s"
 msgstr "Підключено: %s"
 
-#: src/ui-imgui/debugger/fdc_window.cpp:194
+#: src/ui-imgui/debugger/fdc_window.cpp:203
 #: src/ui-imgui/debugger/gdg_window_mz800.cpp:285
 msgid "yes"
 msgstr "так"
 
-#: src/ui-imgui/debugger/fdc_window.cpp:194
+#: src/ui-imgui/debugger/fdc_window.cpp:203
 #: src/ui-imgui/debugger/gdg_window_mz800.cpp:285
 msgid "no"
 msgstr "ні"
@@ -4010,11 +4023,11 @@ msgstr "Вікно переглядача пам'яті"
 msgid "Disassembler window"
 msgstr "Вікно Disassembleru"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:482
+#: src/ui-imgui/debugger/ioview/io_window.cpp:483
 msgid "(no bit-level decode available)"
 msgstr "(біт-level декодування не є k dispozici)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:637
+#: src/ui-imgui/debugger/ioview/io_window.cpp:638
 msgid ""
 "16-bit CRTC family port. Bus addr is 0x<RR>CF (Z80 OUT (C),A pattern with "
 "B=register index, C=0xCF). MZ notation 0xCF<RR> is human-readable display."
@@ -4022,52 +4035,52 @@ msgstr ""
 "16бітовий port rodiny CRTC. Шинна адреса je 0x<RR>CF (Z80 vzor OUT (C),A s "
 "B=index регістра, C=0xCF). MZ notace 0xCF<RR> je людині читабельне перегляд."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:655
+#: src/ui-imgui/debugger/ioview/io_window.cpp:656
 msgid "Add IORQ R BP##ioctx"
 msgstr "Додати IORQ R BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:658
+#: src/ui-imgui/debugger/ioview/io_window.cpp:659
 msgid "Add IORQ W BP##ioctx"
 msgstr "Додати IORQ W BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:662
+#: src/ui-imgui/debugger/ioview/io_window.cpp:663
 msgid "Add MEM R BP##ioctx"
 msgstr "Додати MEM R BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:665
+#: src/ui-imgui/debugger/ioview/io_window.cpp:666
 msgid "Add MEM W BP##ioctx"
 msgstr "Додати MEM W BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:670
+#: src/ui-imgui/debugger/ioview/io_window.cpp:671
 msgid "Reset activity counter##ioctx"
 msgstr "Reset лічильники aktivity##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:679
+#: src/ui-imgui/debugger/ioview/io_window.cpp:680
 msgid "Show in History tab##ioctx"
 msgstr "Показати у закладці Historie##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:716
+#: src/ui-imgui/debugger/ioview/io_window.cpp:717
 msgid "Show in Memory Map##ioctx"
 msgstr "Показати у Memory Map##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:811
+#: src/ui-imgui/debugger/ioview/io_window.cpp:812
 #, c-format
 msgid "Last cached value %u frames ago"
 msgstr "Останній кешована значення перед %u кадри"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:818
+#: src/ui-imgui/debugger/ioview/io_window.cpp:819
 msgid "No data captured (port has no mirror and no IORQ event yet)"
 msgstr "Жодна дані захоплено (port не має mirror a поки не має IORQ подія)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:847
+#: src/ui-imgui/debugger/ioview/io_window.cpp:848
 msgid "Hits per second over last 1s window (50 buckets)"
 msgstr "Звернень za sekundu у вікні останній 1 s (50 комірок)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:853
+#: src/ui-imgui/debugger/ioview/io_window.cpp:854
 msgid "Tracking disabled (panel closed or toggled off)"
 msgstr "Відстеження вимкнено (панель закритий або вимкнений)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:877
+#: src/ui-imgui/debugger/ioview/io_window.cpp:878
 msgid ""
 "MMIO events (0xE000-0xE008) are always recorded (per-port filter applies to "
 "8-bit IORQ space only)"
@@ -4075,7 +4088,7 @@ msgstr ""
 "MMIO події (0xE000-0xE008) jsou записуються завжди (фільтр per port себе "
 "vztahuje тільки на 8бітовий IORQ простір)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:891
+#: src/ui-imgui/debugger/ioview/io_window.cpp:892
 msgid ""
 "Record IORQ events for this port into History ring buffer. Uncheck to skip "
 "high-frequency ports and preserve ring capacity for events of interest."
@@ -4084,12 +4097,12 @@ msgstr ""
 "відмітку для пропуску високочастотних портів a збереження ємності bufferu "
 "для цікаві події."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:958
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1845
+#: src/ui-imgui/debugger/ioview/io_window.cpp:959
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1864
 msgid "Filter..."
 msgstr "Фільтр..."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:964
+#: src/ui-imgui/debugger/ioview/io_window.cpp:965
 msgid ""
 "Filter visible ports (case-insensitive substring match on name, address hex, "
 "or direction r/w/rw)."
@@ -4097,34 +4110,34 @@ msgstr ""
 "Фільтрovat видимі porty (збіг підрядки без врахування на розмір літер у "
 "назві, hex адресe або напрямку r/w/rw)."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:968
+#: src/ui-imgui/debugger/ioview/io_window.cpp:969
 msgid "Clear##io_clear_filter"
 msgstr "Очистити##io_clear_filter"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:978
+#: src/ui-imgui/debugger/ioview/io_window.cpp:979
 msgid "Reset Activity##io_reset_act"
 msgstr "Reset aktivity##io_reset_act"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:983
+#: src/ui-imgui/debugger/ioview/io_window.cpp:984
 msgid "Clear activity counters for all 256 ports"
 msgstr "Очистити лічильники aktivity для всеch 256 портів"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:989
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1955
+#: src/ui-imgui/debugger/ioview/io_window.cpp:990
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1974
 msgid "Capacity:"
 msgstr "Ємність:"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1022
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1985
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1023
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2004
 msgid "History buffer size. Resize discards existing events."
 msgstr "Розмір bufferu historie. Зміна розмірi відкине існуючий події."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1030
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1031
 msgid "Track##io_track"
 msgstr "Відстежувати##io_track"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1035
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2003
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1036
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2022
 msgid ""
 "Enable IORQ activity + history capture (gated). Default ON when panel is "
 "open. Toggle off to reduce overhead."
@@ -4132,76 +4145,76 @@ msgstr ""
 "Увімкнути захоплення IORQ aktivity + historie (керовані). За замовчуванням "
 "ON, коли je панель відкритий. Вимкніть для зменшення накладні витрати."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1050
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1051
 msgid "Heat...##io_heat_btn"
 msgstr "Heat...##io_heat_btn"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1055
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1056
 msgid "Configure activity heat coloring thresholds."
 msgstr "Встановити пороги heat забарвлення aktivity."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1058
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1059
 msgid "Heat coloring thresholds (hits/s):"
 msgstr "Пороги heat забарвлення (звернень/s):"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1061
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1062
 msgid "Text active (green)##io_heat_text"
 msgstr "Text активний (зелений)##io_heat_text"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1072
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1073
 msgid "Minimum hits/s to color row text green. Default 1."
 msgstr ""
 "Minimum звернень/s для забарвлення textu рядку зелено. За замовчуванням 1."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1075
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1076
 msgid "Bg hot tint (red)##io_heat_bg"
 msgstr "Фон гарячі (червоний)##io_heat_bg"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1086
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1087
 msgid ""
 "Minimum hits/s for red row background tint (bottleneck warn). Default 10000."
 msgstr ""
 "Minimum звернень/s для червоного тонування фон рядку (попередження вузького "
 "hrdla). За замовчуванням 10000."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1090
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1091
 msgid "Reset to defaults##io_heat_reset"
 msgstr "Скинути за замовчуванням##io_heat_reset"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1128
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1129
 msgid "No ports match filter"
 msgstr "Жодне porty не відповідають фільтра"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1604
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1623
 msgid "(no selection)"
 msgstr "(нічого не вибрано)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1605
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1624
 msgid "Click a row to see details"
 msgstr "Кліком на рядок покажете detaily"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1617
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1636
 msgid "Selected event:"
 msgstr "Вибрана подія:"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1651
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1670
 msgid "Focus to primary disassembly. Right-click for additional actions."
 msgstr "Сфокусувати на первинний Disasm. Правий клік для наступний дія."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1692
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1711
 msgid "Focus to..."
 msgstr "Сфокусувати на..."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1711
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1730
 #: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3319
 msgid "Add to bookmarks"
 msgstr "Додати до закладок"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1730
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1749
 msgid "Add breakpoint"
 msgstr "Додати breakpoint"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1851
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1870
 msgid ""
 "Filter syntax (boolean expression):\n"
 "Atoms (leaf tokens):\n"
@@ -4254,23 +4267,23 @@ msgstr ""
 "  (port:CE pc:42) | port:CF  група OR група\n"
 "  !(in | out)                ani IN ani OUT"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1877
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1896
 msgid "Clear##io_hist_clear"
 msgstr "Очистити##io_hist_clear"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1911
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1930
 msgid "Latest##io_hist_latest"
 msgstr "Найновіший##io_hist_latest"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1917
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1936
 msgid "Re-enable auto-follow and scroll to latest event"
 msgstr "Znovu увімкнути auto-follow a posunout на найновіший подія"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1921
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1940
 msgid "Auto-follow##io_hist_af"
 msgstr "Auto-follow##io_hist_af"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1933
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1952
 msgid ""
 "Auto-scroll History tab to latest event. User scroll up disables follow; "
 "click [Latest] re-enables."
@@ -4278,27 +4291,27 @@ msgstr ""
 "Автоматично posouvat закладку Historie на найновіший подія. Posun "
 "користувачем вгору vypne follow; клік на [Найновіший] jej znovu увімкне."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1939
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1958
 msgid "Clear history##io_hist_purge"
 msgstr "Очистити historii##io_hist_purge"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1946
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1965
 msgid "Discard all recorded IORQ events"
 msgstr "Відкинути всі записані IORQ події"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1991
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2010
 msgid "Track##io_hist_track"
 msgstr "Відстежувати##io_hist_track"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2010
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2029
 msgid "Filter error"
 msgstr "Помилка фільтра"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2149
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2168
 msgid "Filter actions for this event:"
 msgstr "Дія фільтра для tuto подія:"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2428
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2447
 msgid ""
 "Wraps the current filter in parentheses, then appends ' & token'. Use to AND-"
 "narrow an OR chain (parser precedence: & binds tighter than |)."
@@ -4306,7 +4319,7 @@ msgstr ""
 "Обгорне поточний фільтр дужками a додасть ' & token'. Використовуйте для "
 "звуження OR ланцюжка через AND (priorita parseru: & зв'язує сильніше ніж |)."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2432
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2451
 msgid ""
 "Wraps the current filter in parentheses, then appends ' | token'. Use when "
 "the current filter is itself an AND chain that should be OR-extended as a "
@@ -4316,15 +4329,15 @@ msgstr ""
 "je поточний фільтр сам AND ланцюжком, який має бути як celek розширено через "
 "OR."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2728
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2747
 msgid "I/O Ports###io_main"
 msgstr "I/O Porty###io_main"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2764
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2783
 msgid "Overview##io_tab_ov"
 msgstr "Огляд##io_tab_ov"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2778
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2797
 msgid "History##io_tab_hist"
 msgstr "Historie##io_tab_hist"
 
@@ -4362,7 +4375,7 @@ msgstr "Видалити"
 #: src/ui-imgui/rom/rom_settings_window.cpp:321
 #: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:137
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:174
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:95
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:99
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:93
 msgid "Cancel"
 msgstr "Скасувати"
@@ -4738,8 +4751,8 @@ msgstr "Приклад: \"AA BB CC\" або \"DEADBEEF\" - макс. 64 байт
 #: src/ui-imgui/debugger/membrowser/membrowser_fill_dialog.cpp:262
 #: src/ui-imgui/debugger/sections/dbg_focus_to.cpp:274
 #: src/ui-imgui/memext/memext_map_window.cpp:252
-#: src/ui-imgui/version_check/imgui_version_check.cpp:219
-#: src/ui-imgui/version_check/imgui_version_check.cpp:224
+#: src/ui-imgui/version_check/imgui_version_check.cpp:245
+#: src/ui-imgui/version_check/imgui_version_check.cpp:250
 msgid "Apply"
 msgstr "Застосувати"
 
@@ -5767,7 +5780,7 @@ msgstr "Підключити"
 #: src/ui-imgui/debugger/memmap/memmap_window.cpp:655
 #: src/ui-imgui/debugger/memmap/memmap_window.cpp:683
 #: src/ui-imgui/debugger/memmap/memmap_window.cpp:698
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:189
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:193
 msgid "Umount"
 msgstr "Демонтувати"
 
@@ -10122,107 +10135,107 @@ msgstr "Виправити термінатор FNAME"
 msgid "HW & Devices"
 msgstr "HW та пристрої"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:78
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:80
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:82
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:84
 msgid "FDC: Unsaved RAM changes"
 msgstr "FDC: незбережені зміни у RAM"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:83
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:87
 #, c-format
 msgid "Drive %d is in Discard mode and has unsaved RAM changes."
 msgstr "Пристрій %d je у режимu Discard a містить незбережені зміни у RAM."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:84
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:88
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:84
 #, c-format
 msgid "Switching to '%s' mode will close the current RAM buffer."
 msgstr "Перемикання до режимu '%s' закриє поточний RAM buffer."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:87
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:91
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:86
 msgid "What to do with the changes?"
 msgstr "Що виконати себе змінами?"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:93
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:97
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:91
 msgid "Save and switch"
 msgstr "Зберегти a перемикнути"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:94
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:98
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:92
 msgid "Switch and discard"
 msgstr "Перемикнути a відкинути"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:169
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:173
 #: src/ui-imgui/topmenu/devices/menu_ide8.cpp:40
 msgid "No image"
 msgstr "Немає образу"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:182
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:186
 msgid "Mount..."
 msgstr "Змонтувати..."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:182
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:186
 msgid "Re-Mount..."
 msgstr "Перемонтувати..."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:207
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:211
 msgid "Read-only (FS write-protected)"
 msgstr "Тільки для читання (файл захищено proti запису)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:213
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:217
 msgid "Read-only"
 msgstr "Тільки для читання"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:238
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:242
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:353
 msgid "Storage mode"
 msgstr "Режим сховище"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:256
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:260
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:375
 msgid "Cached (sync at reset/umount/exit)"
 msgstr "Cached (sync при скидання/відключення/кінці)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:261
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:265
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:380
 msgid "Direct (write-through to file)"
 msgstr "Direct (прямий запис до файлу)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:266
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:270
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:385
 msgid "Discard changes (in-RAM, no sync)"
 msgstr "Discard (тільки у RAM, без synchronizace)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:274
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:278
 msgid "Sync now"
 msgstr "Synchronizovat тепер"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:288
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:292
 msgid "FDD "
 msgstr "FDD "
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:294
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:300
 msgid "(Empty)"
 msgstr "(Порожньо)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:320
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:328
 msgid "Hardware options"
 msgstr "Налаштування hardwaru"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:323
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:331
 msgid "HD Patch enabled"
 msgstr "HD Патч povolen"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:328
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:336
 msgid "Restart emulator to apply change."
 msgstr "Перезапустіть емулятор для застосування зміни."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:331
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:339
 msgid "Bus translation: invert (Sharp)"
 msgstr "Переклад шина: invertovat (Sharp)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:336
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:344
 msgid ""
 "Sharp MZ default - XOR 0xFF between CPU bus and WD279x chip. Restart "
 "emulator to apply change."
@@ -10230,11 +10243,11 @@ msgstr ""
 "За замовчуванням для Sharp MZ - XOR 0xFF між CPU шиною a чипом WD279x. "
 "Перезапустіть емулятор для застосування зміни."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:339
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:347
 msgid "Bus translation: passthrough"
 msgstr "Переклад шина: passthrough"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:347
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:355
 msgid ""
 "NOT compatible with Sharp MZ - no inversion between CPU bus and WD279x chip. "
 "Reserved for future 'true bus' ROMs / experiments. Restart emulator to apply "
@@ -10244,31 +10257,43 @@ msgstr ""
 "Зарезервовано для майбутній 'true bus' ROM / experimenty. Перезапустіть "
 "емулятор для застосування зміни."
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:358
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:375
+msgid "Floppy Drives"
+msgstr "Дисководи"
+
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:389
 msgid "FD Controller"
 msgstr "Контролер FD"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:367
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:399
 #: src/ui-imgui/topmenu/devices/menu_memext.cpp:59
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:183
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:65
 msgid "Not Connected"
 msgstr "Не підключено"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:372
-msgid "WD279x"
-msgstr "WD279x"
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:409
+msgid "WD279x (standard)"
+msgstr "WD279x (стандартний)"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:377
-msgid "Floppy Drives"
-msgstr "Дисководи"
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:414
+msgid "Default FDC on ports 0xD8 - 0xDF"
+msgstr "Типовий FDC на портах 0xD8 - 0xDF"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:385
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:416
+msgid "WD279x (secondary)"
+msgstr "WD279x (вторинний)"
+
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:421
+msgid "Unicard alternate FDC ports 0x58 - 0x5F"
+msgstr "Альтернативні порти FDC Unicard 0x58 - 0x5F"
+
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:440
 #: src/ui-imgui/topmenu/menu_tools.cpp:29
 msgid "Tools"
 msgstr "Інструменти"
 
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:387
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:442
 msgid "FDC State (debugger)..."
 msgstr "Стан FDC (debugger)..."
 
@@ -10672,7 +10697,7 @@ msgstr "Unicard runtime перевстановлено s mgr V2.4 (uc1)."
 
 #: src/ui-imgui/topmenu/devices/menu_unicard.cpp:164
 #: src/ui-imgui/topmenu/devices/menu_unicard.cpp:180
-#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:307
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:349
 msgid "Unicard runtime reinitialization failed."
 msgstr "Переініціалізація Unicard runtime не вдалося."
 
@@ -10722,27 +10747,49 @@ msgstr ""
 msgid "Read-only SD"
 msgstr "SD тільки для читання"
 
-#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:270
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:274
+msgid "Managed FDC"
+msgstr "Керований FDC"
+
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:278
+msgid ""
+"Which FDC controller the Unicard API manages (DSK mount).\n"
+"'None' disables Unicard FDD commands.\n"
+"Change affects only future operations."
+msgstr ""
+"Яким контролером FDC керує Unicard API (монтування DSK).\n"
+"'Немає' вимикає команди FDD Unicard.\n"
+"Зміна впливає лише на майбутні операції."
+
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:305
 msgid "Set SD Root Directory..."
 msgstr "Встановити кореневий каталог SD..."
 
-#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:288
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:312
+msgid ""
+"Change the host directory used as the Unicard SD root.\n"
+"If connected, the Unicard is automatically reconnected to the new root."
+msgstr ""
+"Змінює хостовий каталог, що використовується як SD root Unicard.\n"
+"Якщо підключена, Unicard автоматично перепідключиться до нового root."
+
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:330
 msgid "Reinitialize Runtime..."
 msgstr "Переініціалізувати runtime..."
 
-#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:302
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:344
 msgid "Unicard runtime files in '{SD}/unicard/' have been reinitialized."
 msgstr "Файлy Unicard runtime у '{SD}/unicard/' byly переініціалізовано."
 
-#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:314
+#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:356
 msgid ""
 "Overwrites manager files in '{SD}/unicard/' (mgr.mzf, mgr800.mzf, "
-"mgr700.mzf, mgr1500.mzf) with the selected version.\nOn MZ-800 prompts for "
-"mgr V2.4 vs V2.11b."
+"mgr700.mzf, mgr1500.mzf) with the selected version.\n"
+"On MZ-800 prompts for mgr V2.4 vs V2.11b."
 msgstr ""
 "Перепише файлy менеджер у '{SD}/unicard/' (mgr.mzf, mgr800.mzf, mgr700.mzf, "
-"mgr1500.mzf) vybranou версій.\nНа MZ-800 себе запитає на вибір mgr V2.4 vs "
-"V2.11b."
+"mgr1500.mzf) vybranou версій.\n"
+"На MZ-800 себе запитає на вибір mgr V2.4 vs V2.11b."
 
 #: src/ui-imgui/topmenu/interface/language_window.cpp:32
 msgid "Language"
@@ -11186,19 +11233,19 @@ msgstr "MCP Activity##menu_mcp_activity"
 msgid "About..."
 msgstr "Про програму..."
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:94
+#: src/ui-imgui/version_check/imgui_version_check.cpp:90
 msgid "mz800emu - Version Check Setup"
 msgstr "mz800emu - Налаштування перевірки версії"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:107
+#: src/ui-imgui/version_check/imgui_version_check.cpp:133
 msgid "Enable online checking the latest version of the mz800emu."
 msgstr "Увімкнути онлайн-перевірку останньої версії mz800emu."
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:108
+#: src/ui-imgui/version_check/imgui_version_check.cpp:134
 msgid "If a new version is found, an information window will be displayed."
 msgstr "Якщо знайдено нову версію, буде показано інформаційне вікно."
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:109
+#: src/ui-imgui/version_check/imgui_version_check.cpp:135
 msgid ""
 "This option can be changed at any time in the version check setup from the "
 "Tools submenu."
@@ -11206,83 +11253,83 @@ msgstr ""
 "Цю опцію можна змінити в будь-який час у налаштуваннях перевірки версії з "
 "підменю Інструменти."
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:115
+#: src/ui-imgui/version_check/imgui_version_check.cpp:141
 msgid "never"
 msgstr "ніколи"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:116
+#: src/ui-imgui/version_check/imgui_version_check.cpp:142
 msgid "daily"
 msgstr "щоденно"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:117
+#: src/ui-imgui/version_check/imgui_version_check.cpp:143
 msgid "weekly"
 msgstr "щотижня"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:118
+#: src/ui-imgui/version_check/imgui_version_check.cpp:144
 msgid "monthly"
 msgstr "щомісяця"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:119
+#: src/ui-imgui/version_check/imgui_version_check.cpp:145
 msgid "sometimes"
 msgstr "іноді"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:143
+#: src/ui-imgui/version_check/imgui_version_check.cpp:169
 msgid "none"
 msgstr "немає"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:144
+#: src/ui-imgui/version_check/imgui_version_check.cpp:170
 msgid "from system environment"
 msgstr "з системного оточення"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:145
+#: src/ui-imgui/version_check/imgui_version_check.cpp:171
 msgid "manual"
 msgstr "вручну"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:152
+#: src/ui-imgui/version_check/imgui_version_check.cpp:178
 msgid "Check period"
 msgstr "Період перевірки"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:153
+#: src/ui-imgui/version_check/imgui_version_check.cpp:179
 msgid "Proxy server (optional)"
 msgstr "Проксі-сервер (необов'язково)"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:281
+#: src/ui-imgui/version_check/imgui_version_check.cpp:307
 msgid "MZ800 Emulator Version Check Report"
 msgstr "Звіт перевірки версії емулятора MZ800"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:292
+#: src/ui-imgui/version_check/imgui_version_check.cpp:318
 msgid "A new version of the mz800emu software is available"
 msgstr "Доступна нова версія програми mz800emu"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:292
+#: src/ui-imgui/version_check/imgui_version_check.cpp:318
 msgid "Your mz800emu software version is up to date"
 msgstr "Ваша версія програми mz800emu актуальна"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:307
+#: src/ui-imgui/version_check/imgui_version_check.cpp:333
 msgid "Running"
 msgstr "Поточна"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:308
+#: src/ui-imgui/version_check/imgui_version_check.cpp:334
 msgid "Available"
 msgstr "Доступна"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:324
+#: src/ui-imgui/version_check/imgui_version_check.cpp:350
 msgid "Tag"
 msgstr "Тег"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:325
+#: src/ui-imgui/version_check/imgui_version_check.cpp:351
 msgid "Version"
 msgstr "Версія"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:326
+#: src/ui-imgui/version_check/imgui_version_check.cpp:352
 msgid "Revision"
 msgstr "Ревізія"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:327
+#: src/ui-imgui/version_check/imgui_version_check.cpp:353
 msgid "Build date"
 msgstr "Дата збірки"
 
-#: src/ui-imgui/version_check/imgui_version_check.cpp:358
+#: src/ui-imgui/version_check/imgui_version_check.cpp:384
 msgid "Setup"
 msgstr "Налаштування"
 
@@ -11297,6 +11344,13 @@ msgstr "Віртуальна клавіатура MZ-1500"
 #: src/ui-imgui/vkbd_window.cpp:228
 msgid "MZ-800 Virtual Keyboard"
 msgstr "Віртуальна клавіатура MZ-800"
+
+#, c-format
+#~ msgid "Select DSK image file for drive FD%d"
+#~ msgstr "Виберіть файл образу DSK для дисковода FD%d"
+
+#~ msgid "WD279x"
+#~ msgstr "WD279x"
 
 #~ msgid "10-bit value 0..1023. f_out = GDGCLK_BASE / (32 * divider). <2 = DC."
 #~ msgstr ""
@@ -11365,11 +11419,3 @@ msgstr "Віртуальна клавіатура MZ-800"
 #~ msgstr ""
 #~ "Вмикає другий PSG (SN76489) на порті 0xF3, забезпечуючи стереозвук, "
 #~ "подібний до MZ-1500."
-
-#: src/ui-imgui/topmenu/devices/menu_unicard.cpp:281
-msgid ""
-"Change the host directory used as the Unicard SD root.\n"
-"If connected, the Unicard is automatically reconnected to the new root."
-msgstr ""
-"Змінює хостовий каталог, що використовується як SD root Unicard.\n"
-"Якщо підключена, Unicard автоматично перепідключиться до нового root."

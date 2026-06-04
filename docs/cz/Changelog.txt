@@ -1,4 +1,14 @@
 
+	- Přidána podpora sekundárního FDC řadiče WD279x na portech 0x58 - 0x5F (podporováno některými typy Unicard).
+
+	- Unicard: nová volba "Managed FDC" (žádný / FDC0 / FDC1) určuje, který FDC řadič spravuje Unicard API při mountování DSK obrazů; změna ovlivní jen budoucí operace
+
+	- Debugger: okno FDC State má záložky pro oba řadiče; okno I/O Ports zobrazuje porty standardního i sekundárního řadiče
+
+	- MCP server: media sloty pro FDC nově adresují řadič i mechaniku - fdc0_fd0..3 (standardní řadič) a fdc1_fd0..3 (sekundární řadič). Původní sloty fdc0/fdc1 byly zrušeny (breaking change pro MCP klienty)
+
+	- BUGFIX: FDC - kliknutí na Cancel ve filebrowseru pro výměnu DSK obrazu už neodmountuje stávající obraz (zůstane beze změny)
+
 	- BUGFIX: Unicard - příkaz GETCWD vracel u podadresářů dvojité úvodní lomítko (//adresar)
 
 

@@ -267,6 +267,37 @@ void imgui_menu_unicard(void)
 
         ImGui::Separator();
 
+        /* Managed FDC: který FDC řadič Unicard API spravuje (mount DSK do
+         * FDC). none = Unicard FDD příkazy se nepropagují. Změna ovlivní
+         * jen budoucí operace - aktuální mounty zůstávají. */
+        en_UNICARD_MANAGED_FDC managed_fdc = unicard_get_managed_fdc();
+        bool managed_fdc_menu_open = ImGui::BeginMenu(_L("Managed FDC"));
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("%s",
+                _("Which FDC controller the Unicard API manages (DSK mount).\n"
+                  "'None' disables Unicard FDD commands.\n"
+                  "Change affects only future operations."));
+        };
+        if (managed_fdc_menu_open)
+        {
+            if (ImGui::MenuItem(_L("None"), NULL, managed_fdc == UNICARD_MANAGED_FDC_NONE))
+            {
+                unicard_set_managed_fdc(UNICARD_MANAGED_FDC_NONE);
+            };
+            if (ImGui::MenuItem(_L("FDC0 (standard)"), NULL, managed_fdc == UNICARD_MANAGED_FDC_FDC0))
+            {
+                unicard_set_managed_fdc(UNICARD_MANAGED_FDC_FDC0);
+            };
+            if (ImGui::MenuItem(_L("FDC1 (secondary)"), NULL, managed_fdc == UNICARD_MANAGED_FDC_FDC1))
+            {
+                unicard_set_managed_fdc(UNICARD_MANAGED_FDC_FDC1);
+            };
+            ImGui::EndMenu();
+        };
+
+        ImGui::Separator();
+
         /* Změnu SD root adresáře lze provést za běhu i při připojené
          * Unicard - callback (unicard_ui_select_sd_root_directory_cb)
          * provede on-the-fly force disconnect + reconnect na nový root.

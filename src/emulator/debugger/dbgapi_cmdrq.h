@@ -2113,8 +2113,14 @@ typedef enum en_DBGAPI_MEDIA_SLOT
 {
     DBGAPI_MEDIA_SLOT_NONE = 0,   /**< Neuvedeno (pro LOAD_MZF / LOAD_BINARY / STATE). */
     DBGAPI_MEDIA_SLOT_CMT,        /**< CMT pásek. */
-    DBGAPI_MEDIA_SLOT_FDC0,       /**< FDC drive 0. */
-    DBGAPI_MEDIA_SLOT_FDC1,       /**< FDC drive 1. */
+    DBGAPI_MEDIA_SLOT_FDC0_FD0,   /**< Primární FDC (FDC0, porty 0xD8-0xDF), mechanika 0. */
+    DBGAPI_MEDIA_SLOT_FDC0_FD1,   /**< FDC0, mechanika 1. */
+    DBGAPI_MEDIA_SLOT_FDC0_FD2,   /**< FDC0, mechanika 2. */
+    DBGAPI_MEDIA_SLOT_FDC0_FD3,   /**< FDC0, mechanika 3. */
+    DBGAPI_MEDIA_SLOT_FDC1_FD0,   /**< Sekundární FDC (FDC1, porty 0x58-0x5F), mechanika 0. */
+    DBGAPI_MEDIA_SLOT_FDC1_FD1,   /**< FDC1, mechanika 1. */
+    DBGAPI_MEDIA_SLOT_FDC1_FD2,   /**< FDC1, mechanika 2. */
+    DBGAPI_MEDIA_SLOT_FDC1_FD3,   /**< FDC1, mechanika 3. */
     DBGAPI_MEDIA_SLOT_QD,         /**< Quick Disk. */
     DBGAPI_MEDIA_SLOT_IDE8,       /**< IDE8 master (drive 0). */
 } en_DBGAPI_MEDIA_SLOT;
@@ -2179,13 +2185,15 @@ typedef struct st_DBGAPI_MEDIA_SLOT_INFO
 /**
  * @brief Parametr pro DBGAPI_CMD_MEDIA_STATE.
  *
- * Pole `slots[]` má pevnou velikost 5 (= počet podporovaných slotů).
- * Handler vyplní `count` a obsah `slots[]` v pořadí CMT, FDC0, FDC1, QD, IDE8.
+ * Pole `slots[]` má pevnou velikost 11 (= počet podporovaných slotů:
+ * CMT, FDC0 mechaniky 0-3, FDC1 mechaniky 0-3, QD, IDE8).
+ * Handler vyplní `count` a obsah `slots[]` v pořadí CMT, fdc0_fd0..3,
+ * fdc1_fd0..3, QD, IDE8.
  */
 typedef struct st_DBGAPI_MEDIA_STATE_PARAM
 {
     int                       count;     /**< Počet validních záznamů v slots[]. */
-    st_DBGAPI_MEDIA_SLOT_INFO slots[5];
+    st_DBGAPI_MEDIA_SLOT_INFO slots[11];
 } st_DBGAPI_MEDIA_STATE_PARAM;
 
 

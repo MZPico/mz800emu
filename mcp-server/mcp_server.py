@@ -2935,7 +2935,8 @@ async def emu_profiler_get(limit: int = 50) -> str:
 
 # === V1.B.1 - Media Tools (5) ========================================
 # Sjednocený přístup k media operacím: CMT pásek, FDC, QD, IDE8 HDD a
-# raw memory load. Slot konvence: "cmt" | "fdc0" | "fdc1" | "qd" | "ide8".
+# raw memory load. Slot konvence: "cmt" | "fdc0_fd0".."fdc0_fd3" |
+# "fdc1_fd0".."fdc1_fd3" | "qd" | "ide8".
 # Pro CMT (load_mzf) je dostupná i CMT-hack instant variantra (= obejde
 # tape emulation, nahraje přímo do RAM).
 
@@ -3147,20 +3148,21 @@ async def emu_media_insert(
     the new image is attached (no prompt - silent replace).
 
     Slot values:
-        cmt   - CMT cassette tape (.mzf, .mzt, ...)
-        fdc0  - WD279x FDC drive 0 (.dsk)
-        fdc1  - WD279x FDC drive 1 (.dsk)
-        qd    - Quick Disk (.qd) - NOTE: insert via path is not
-                implemented in V1.B.1, will be added in V1.B.2 via
-                settings_set.
-        ide8  - IDE8 master HDD image (.img)
+        cmt          - CMT cassette tape (.mzf, .mzt, ...)
+        fdc0_fd0..3  - WD279x FDC0 (standard, ports 0xD8-0xDF) drive 0..3 (.dsk)
+        fdc1_fd0..3  - WD279x FDC1 (secondary, ports 0x58-0x5F) drive 0..3 (.dsk)
+        qd           - Quick Disk (.qd) - NOTE: insert via path is not
+                       implemented in V1.B.1, will be added in V1.B.2 via
+                       settings_set.
+        ide8         - IDE8 master HDD image (.img)
 
     Provide exactly one of ``path`` or ``bytes_b64``. The slot must be
     available in the current architecture build (e.g. FDC is only
     compiled on MZ-800).
 
     Args:
-        slot: One of 'cmt' | 'fdc0' | 'fdc1' | 'qd' | 'ide8'.
+        slot: One of 'cmt' | 'fdc0_fd0'..'fdc0_fd3' |
+            'fdc1_fd0'..'fdc1_fd3' | 'qd' | 'ide8'.
         path: Filesystem path.
         bytes_b64: Inline base64-encoded image (decoded to tmp file).
         ro: Read-only mount (informational, honored where supported).
@@ -3169,7 +3171,12 @@ async def emu_media_insert(
         JSON ``{"ok": true, "slot": str, "result_code": int}`` on
         success or ``{"error": "..."}`` on failure.
     """
-    valid_slots = ("cmt", "fdc0", "fdc1", "qd", "ide8")
+    valid_slots = (
+        "cmt",
+        "fdc0_fd0", "fdc0_fd1", "fdc0_fd2", "fdc0_fd3",
+        "fdc1_fd0", "fdc1_fd1", "fdc1_fd2", "fdc1_fd3",
+        "qd", "ide8",
+    )
     if slot not in valid_slots:
         return json.dumps(
             {"error": f"Invalid slot (allowed: {', '.join(valid_slots)})"})
@@ -3196,13 +3203,19 @@ async def emu_media_eject(slot: str) -> str:
     empty.
 
     Args:
-        slot: One of 'cmt' | 'fdc0' | 'fdc1' | 'qd' | 'ide8'.
+        slot: One of 'cmt' | 'fdc0_fd0'..'fdc0_fd3' |
+            'fdc1_fd0'..'fdc1_fd3' | 'qd' | 'ide8'.
 
     Returns:
         JSON ``{"ok": true, "slot": str}`` on success or
         ``{"error": "..."}`` on failure.
     """
-    valid_slots = ("cmt", "fdc0", "fdc1", "qd", "ide8")
+    valid_slots = (
+        "cmt",
+        "fdc0_fd0", "fdc0_fd1", "fdc0_fd2", "fdc0_fd3",
+        "fdc1_fd0", "fdc1_fd1", "fdc1_fd2", "fdc1_fd3",
+        "qd", "ide8",
+    )
     if slot not in valid_slots:
         return json.dumps(
             {"error": f"Invalid slot (allowed: {', '.join(valid_slots)})"})
@@ -3215,10 +3228,10 @@ async def emu_media_eject(slot: str) -> str:
 
 @mcp.tool()
 async def emu_media_state() -> str:
-    """Get the current state of all media slots (CMT, FDC0, FDC1, QD,
-    IDE8). Slots that are not compiled into the current architecture
-    build still appear in the response but with ``inserted=false`` and
-    ``path=""``.
+    """Get the current state of all media slots (CMT, FDC0 drives
+    fdc0_fd0..3, FDC1 drives fdc1_fd0..3, QD, IDE8). Slots that are not
+    compiled into the current architecture build still appear in the
+    response but with ``inserted=false`` and ``path=""``.
 
     Returns:
         JSON ``{"count": int, "slots": [{"slot": str, "inserted": bool,

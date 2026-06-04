@@ -36,8 +36,10 @@ Global keyboard shortcuts available across the entire emulator window.
 
 | Key                        | Action                                                                      |
 |----------------------------|-----------------------------------------------------------------------------|
-| `Alt + [1..4]`             | Mount FD image into drive 1..4 (and enable WD279x)                          |
-| `Alt + Shift + [1..4]`     | Eject FD image from drive 1..4                                              |
+| `Alt + [1..4]`             | Mount FD image into drive 1..4 of FDC0 (and enable WD279x)                  |
+| `Alt + Shift + [1..4]`     | Eject FD image from drive 1..4 of FDC0                                      |
+
+> Note: these hotkeys always operate on the primary controller **FDC0 (standard)**, ports 0xD8 - 0xDF. The secondary controller **FDC1** (ports 0x58 - 0x5F) is operated from the HW & Devices -> FD Controller menu.
 
 ## Cassette (CMT) and virtual keyboard
 

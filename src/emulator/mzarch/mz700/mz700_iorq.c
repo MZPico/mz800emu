@@ -125,9 +125,27 @@ uint8_t port_read_cb(z80_t *cpu, uint16_t addr, void *user_data)
     case 0xda:
     case 0xdb:
         /* cteme do WDC: 0xd8 - 0xdf */
-        if (g_fdc.connected)
+        if (g_fdc[FDC0].connected)
         {
-            fdc_read_byte(port_lsb, &retval);
+            fdc_read_byte(&g_fdc[FDC0], port_lsb, &retval);
+        }
+        else
+        {
+            retval = g_mzarch_main.regDBUS_latch;
+            TRACELOG_IORQ_MARK_UNCONNECTED();
+        };
+        break;
+#endif
+
+#ifdef CFG_HWEXT_HAVE_FDC
+    /* FDC1 (sekundární) - chip data porty 0x58 - 0x5b. */
+    case 0x58:
+    case 0x59:
+    case 0x5a:
+    case 0x5b:
+        if (g_fdc[FDC1].connected)
+        {
+            fdc_read_byte(&g_fdc[FDC1], port_lsb, &retval);
         }
         else
         {
@@ -294,9 +312,27 @@ void port_write_cb(z80_t *cpu, uint16_t addr, uint8_t value, void *user_data)
     case 0xde:
     case 0xdf:
         /* zapisujeme do WDC: 0xd8 - 0xdf */
-        if (g_fdc.connected)
+        if (g_fdc[FDC0].connected)
         {
-            fdc_write_byte(port_lsb, &value);
+            fdc_write_byte(&g_fdc[FDC0], port_lsb, &value);
+            TRACELOG_IORQ_MARK_HANDLED();
+        };
+        break;
+#endif
+
+#ifdef CFG_HWEXT_HAVE_FDC
+    /* FDC1 (sekundární) - porty 0x58 - 0x5f. */
+    case 0x58:
+    case 0x59:
+    case 0x5a:
+    case 0x5b:
+    case 0x5c:
+    case 0x5d:
+    case 0x5e:
+    case 0x5f:
+        if (g_fdc[FDC1].connected)
+        {
+            fdc_write_byte(&g_fdc[FDC1], port_lsb, &value);
             TRACELOG_IORQ_MARK_HANDLED();
         };
         break;

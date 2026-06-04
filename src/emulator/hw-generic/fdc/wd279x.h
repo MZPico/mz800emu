@@ -192,6 +192,14 @@ extern "C"
          * Nastavuje fdc_init() po init chipu. */
         struct st_FDDrive *drives; /**< Ukazatel na pole drives[FDC_NUM_DRIVES]. */
 
+        /* HD Patch konfigurace vlastnící instance st_FDC (= &st_FDC.hd_patch).
+         * Chip je instance-agnostic, ale HD Patch INT logika (port 0xDFh
+         * EINT) potřebuje znát, zda je HD Patch obvod osazen. Ukazatel
+         * nastavuje fdc_init() po init chipu (jako drives). NULL = HD Patch
+         * absent (EINT INT nikdy nefire). Není serializován ve snapshotu -
+         * obnovuje se při init. */
+        const int *hd_patch_ref; /**< &st_FDC.hd_patch vlastnící instance, nebo NULL. */
+
         /* TODO (fáze C): timing counters (step rate, spin-up, settling). */
         /* TODO (fáze C): live INDEX pulse timer (oscilace S1). */
     } st_WD279X;
@@ -230,7 +238,7 @@ extern "C"
      *
      * @param chip ukazatel na strukturu chipu.
      * @param drives ukazatel na první prvek pole st_FDDrive
-     *               (= `&g_fdc.drive[0]`).
+     *               (= `&g_fdc[i].drive[0]`).
      */
     extern void wd279x_attach_drives(st_WD279X *chip, struct st_FDDrive *drives);
 

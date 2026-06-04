@@ -82,25 +82,54 @@
 #endif
 
 /**
- * @brief Globální stav FDC subsystému.
+ * @brief Stav všech instancí FDC subsystému.
  *
+ * Pole `FDC_INSTANCE_COUNT` řadičů (FDC0 = primární, FDC1 = sekundární).
  * Default `bus_xlate` je `INVERT` (Sharp), `hd_patch` je 1 (on) -
  * typický stav reálné Sharp MZ-800 sestavy s instalovaným HD Patch
  * obvodem (= port 0xDF EINT logika připojená). User který používá
  * raw / unpatched FDC vypne v menu Devices -> FDC -> "HD Patch enabled".
- * Pole se přepíše cfgfile + CLI v `fdc_init`. Zbývající fields (wd279x,
- * drive[]) se nulují v `fdc_init` přes memset.
+ * Pole FDC0 se přepíše cfgfile + CLI v `fdc_init`. Zbývající fields
+ * (wd279x, drive[]) se nulují v `fdc_init` přes memset.
+ *
+ * @note Etapa 1: aktivní je pouze FDC0; FDC1 je inertní placeholder
+ *       (disconnected) - zatím bez napojení na IORQ/menu/konfiguraci.
  */
-st_FDC g_fdc = {
-    .connected = FDC_DISCONNECTED,
-    .hd_patch = 1,
-    .bus_xlate = FDC_BUS_XLATE_INVERT
+st_FDC g_fdc[FDC_INSTANCE_COUNT] = {
+    [FDC0] = {
+        .index = FDC0,
+        .connected = FDC_DISCONNECTED,
+        .hd_patch = 1,
+        .bus_xlate = FDC_BUS_XLATE_INVERT
+    },
+    [FDC1] = {
+        .index = FDC1,
+        .connected = FDC_DISCONNECTED,
+        .hd_patch = 1,
+        .bus_xlate = FDC_BUS_XLATE_INVERT
+    }
 };
 
 /* Forward declarations: pomocné funkce implementované v Drives / Mount
  * sekci níže. */
-static void fdc_drive_close(unsigned drive_id);
+static void fdc_drive_close(st_FDC *fdc, unsigned drive_id);
 static int fdc_drive_flush_to_file(st_FDDrive *drv);
+
+/**
+ * @brief Vrátí název cfgfile sekce pro danou instanci FDC.
+ *
+ * FDC0 používá historickou sekci "FDC" (beze změny kvůli zpětné
+ * kompatibilitě INI). FDC1 používá novou sekci "FDC1".
+ *
+ * @param fdc instance FDC řadiče (NULL = vrátí "FDC").
+ * @return statický C-string s názvem sekce, nikdy NULL.
+ */
+static const char *fdc_cfg_section_name(const st_FDC *fdc)
+{
+    if (fdc && fdc->index == FDC1)
+        return "FDC1";
+    return "FDC";
+}
 
 /* ------------------------------------------------------------------ */
 /* cfgfile registrace a CLI override                                  */
@@ -134,76 +163,96 @@ static const char *fdc_bus_xlate_to_string(en_FDC_BUS_XLATE x)
     return (x == FDC_BUS_XLATE_PASSTHROUGH) ? "passthrough" : "invert";
 }
 
-const char *fdc_dskpath_keyname(unsigned drive_id)
+const char *fdc_dskpath_keyname(st_FDC *fdc, unsigned drive_id)
 {
-    static const char *names[4] = {
+    /* Per-instance klíče. FDC0 zachovává historické "wd279x_fddX_dskpath"
+     * kvůli zpětné kompatibilitě INI; FDC1 má vlastní namespace "fdc1_...". */
+    static const char *names_fdc0[4] = {
         "wd279x_fdd0_dskpath",
         "wd279x_fdd1_dskpath",
         "wd279x_fdd2_dskpath",
         "wd279x_fdd3_dskpath"
     };
-    if (drive_id >= 4)
+    static const char *names_fdc1[4] = {
+        "fdc1_fdd0_dskpath",
+        "fdc1_fdd1_dskpath",
+        "fdc1_fdd2_dskpath",
+        "fdc1_fdd3_dskpath"
+    };
+    if (!fdc || drive_id >= 4)
         return NULL;
-    return names[drive_id];
+    return (fdc->index == FDC1) ? names_fdc1[drive_id] : names_fdc0[drive_id];
 }
 
-const char *fdc_readonly_keyname(unsigned drive_id)
+const char *fdc_readonly_keyname(st_FDC *fdc, unsigned drive_id)
 {
-    static const char *names[4] = {
+    static const char *names_fdc0[4] = {
         "wd279x_fdd0_readonly",
         "wd279x_fdd1_readonly",
         "wd279x_fdd2_readonly",
         "wd279x_fdd3_readonly"
     };
-    if (drive_id >= 4)
+    static const char *names_fdc1[4] = {
+        "fdc1_fdd0_readonly",
+        "fdc1_fdd1_readonly",
+        "fdc1_fdd2_readonly",
+        "fdc1_fdd3_readonly"
+    };
+    if (!fdc || drive_id >= 4)
         return NULL;
-    return names[drive_id];
+    return (fdc->index == FDC1) ? names_fdc1[drive_id] : names_fdc0[drive_id];
 }
 
-int fdc_cfg_get_readonly(unsigned drive_id)
+int fdc_cfg_get_readonly(st_FDC *fdc, unsigned drive_id)
 {
-    if (drive_id >= 4)
+    if (!fdc || drive_id >= 4)
         return 0;
-    CFGMOD *cmod = cfgroot_get_module_by_name(g_cfgmain, "FDC");
+    CFGMOD *cmod = cfgroot_get_module_by_name(g_cfgmain, (char *)fdc_cfg_section_name(fdc));
     if (!cmod) return 0;
-    const char *keyname = fdc_readonly_keyname(drive_id);
+    const char *keyname = fdc_readonly_keyname(fdc, drive_id);
     if (!keyname) return 0;
     CFGELM *elm = cfgmodule_get_element_by_name(cmod, (char *)keyname);
     if (!elm) return 0;
     return cfgelement_get_bool_value(elm) ? 1 : 0;
 }
 
-void fdc_cfg_set_readonly(unsigned drive_id, int value)
+void fdc_cfg_set_readonly(st_FDC *fdc, unsigned drive_id, int value)
 {
-    if (drive_id >= 4) return;
-    CFGMOD *cmod = cfgroot_get_module_by_name(g_cfgmain, "FDC");
+    if (!fdc || drive_id >= 4) return;
+    CFGMOD *cmod = cfgroot_get_module_by_name(g_cfgmain, (char *)fdc_cfg_section_name(fdc));
     if (!cmod) return;
-    const char *keyname = fdc_readonly_keyname(drive_id);
+    const char *keyname = fdc_readonly_keyname(fdc, drive_id);
     if (!keyname) return;
     CFGELM *elm = cfgmodule_get_element_by_name(cmod, (char *)keyname);
     if (!elm) return;
     cfgelement_set_bool_value(elm, value ? 1 : 0);
 }
 
-const char *fdc_storage_mode_keyname(unsigned drive_id)
+const char *fdc_storage_mode_keyname(st_FDC *fdc, unsigned drive_id)
 {
-    static const char *names[4] = {
+    static const char *names_fdc0[4] = {
         "wd279x_fdd0_storage_mode",
         "wd279x_fdd1_storage_mode",
         "wd279x_fdd2_storage_mode",
         "wd279x_fdd3_storage_mode"
     };
-    if (drive_id >= 4)
+    static const char *names_fdc1[4] = {
+        "fdc1_fdd0_storage_mode",
+        "fdc1_fdd1_storage_mode",
+        "fdc1_fdd2_storage_mode",
+        "fdc1_fdd3_storage_mode"
+    };
+    if (!fdc || drive_id >= 4)
         return NULL;
-    return names[drive_id];
+    return (fdc->index == FDC1) ? names_fdc1[drive_id] : names_fdc0[drive_id];
 }
 
-const char *fdc_cfg_get_storage_mode(unsigned drive_id)
+const char *fdc_cfg_get_storage_mode(st_FDC *fdc, unsigned drive_id)
 {
-    if (drive_id >= 4) return "cached";
-    CFGMOD *cmod = cfgroot_get_module_by_name(g_cfgmain, "FDC");
+    if (!fdc || drive_id >= 4) return "cached";
+    CFGMOD *cmod = cfgroot_get_module_by_name(g_cfgmain, (char *)fdc_cfg_section_name(fdc));
     if (!cmod) return "cached";
-    const char *keyname = fdc_storage_mode_keyname(drive_id);
+    const char *keyname = fdc_storage_mode_keyname(fdc, drive_id);
     if (!keyname) return "cached";
     char *v = cfgmodule_get_element_text_value_by_name(cmod, (char *)keyname);
     if (!v || !*v) return "cached";
@@ -213,13 +262,13 @@ const char *fdc_cfg_get_storage_mode(unsigned drive_id)
     return "cached";
 }
 
-void fdc_cfg_set_storage_mode(unsigned drive_id, const char *value)
+void fdc_cfg_set_storage_mode(st_FDC *fdc, unsigned drive_id, const char *value)
 {
-    if (drive_id >= 4) return;
+    if (!fdc || drive_id >= 4) return;
     if (!value) value = "cached";
-    CFGMOD *cmod = cfgroot_get_module_by_name(g_cfgmain, "FDC");
+    CFGMOD *cmod = cfgroot_get_module_by_name(g_cfgmain, (char *)fdc_cfg_section_name(fdc));
     if (!cmod) return;
-    const char *keyname = fdc_storage_mode_keyname(drive_id);
+    const char *keyname = fdc_storage_mode_keyname(fdc, drive_id);
     if (!keyname) return;
     CFGELM *elm = cfgmodule_get_element_by_name(cmod, (char *)keyname);
     if (!elm) return;
@@ -233,19 +282,20 @@ void fdc_cfg_set_storage_mode(unsigned drive_id, const char *value)
  * se mount perzistoval do INI při exitu. Pokud sekce nebo klíč nejsou
  * registrované, funkce je no-op.
  *
+ * @param fdc      instance FDC řadiče (NULL = no-op).
  * @param drive_id index mechaniky (0..3).
  * @param value    C-string s cestou (prázdný řetězec = umounted).
  */
-void fdc_cfg_set_dskpath(unsigned drive_id, const char *value)
+void fdc_cfg_set_dskpath(st_FDC *fdc, unsigned drive_id, const char *value)
 {
-    if (drive_id >= 4)
+    if (!fdc || drive_id >= 4)
         return;
 
-    CFGMOD *cmod = cfgroot_get_module_by_name(g_cfgmain, "FDC");
+    CFGMOD *cmod = cfgroot_get_module_by_name(g_cfgmain, (char *)fdc_cfg_section_name(fdc));
     if (!cmod)
         return;
 
-    const char *keyname = fdc_dskpath_keyname(drive_id);
+    const char *keyname = fdc_dskpath_keyname(fdc, drive_id);
     if (!keyname)
         return;
 
@@ -257,59 +307,69 @@ void fdc_cfg_set_dskpath(unsigned drive_id, const char *value)
 }
 
 /**
- * @brief Zaregistruje cfgfile sekci `[FDC]` a klíče.
+ * @brief Zaregistruje cfgfile sekci dané instance FDC a její klíče.
  *
- * Vytvoří modul `[FDC]` v g_cfgmain a registruje klíče:
- *  - `hd_patch` (BOOL) - 0/1
+ * Vytvoří modul sekce `fdc_cfg_section_name(fdc)` v g_cfgmain (FDC0 =
+ * `[FDC]`, FDC1 = `[FDC1]`) a registruje klíče:
+ *  - `hd_patch` (BOOL) - 0/1, handler bind na `fdc->hd_patch`
  *  - `bus_xlate` (TEXT) - "invert" / "passthrough"
- *  - `wd279x_fdd0_dskpath` .. `wd279x_fdd3_dskpath` (TEXT) - cesty
- *    k DSK obrazům per drive.
- *  - `wd279x_fdd0_readonly` .. `wd279x_fdd3_readonly` (BOOL) - persistent
+ *  - `<prefix>_fdd0_dskpath` .. `_fdd3_dskpath` (TEXT) - cesty k DSK
+ *    obrazům per drive (prefix dle fdc_dskpath_keyname).
+ *  - `<prefix>_fdd0_readonly` .. `_fdd3_readonly` (BOOL) - persistent
  *    user R/O toggle.
- *  - `wd279x_fdd0_storage_mode` .. `wd279x_fdd3_storage_mode` (TEXT) -
+ *  - `<prefix>_fdd0_storage_mode` .. `_fdd3_storage_mode` (TEXT) -
  *    "cached" | "direct" | "discard".
  *
+ * @param fdc instance FDC řadiče (určuje sekci i prefix klíčů).
  * @return ukazatel na modul (nikdy NULL - chyba alokace = abort).
  */
-static CFGMOD *fdc_register_cfgmodule(void)
+static CFGMOD *fdc_register_cfgmodule(st_FDC *fdc, unsigned connected_default)
 {
-    CFGMOD *cmod = cfgroot_register_new_module(g_cfgmain, "FDC");
+    CFGMOD *cmod = cfgroot_register_new_module(g_cfgmain, (char *)fdc_cfg_section_name(fdc));
 
     CFGELM *elm;
+
+    /* connected - BOOL, default připojen pro FDC0, odpojen pro FDC1.
+     * Persistuje stav připojení řadiče přes restart (dřív se nastavoval
+     * natvrdo a uživatelská volba se zapomněla). Handler bind na
+     * fdc->connected -> menu toggle se uloží do INI při exitu. */
+    elm = cfgmodule_register_new_element(cmod, "connected", CFGENTYPE_BOOL,
+                                         connected_default ? 1 : 0);
+    cfgelement_set_handlers(elm, (void *)&fdc->connected, (void *)&fdc->connected);
 
     /* hd_patch - BOOL, default 1 (= HD Patch obvod osazen, typický stav
      * Sharp MZ-800 sestavy). User vypne pro raw / unpatched FDC. */
     elm = cfgmodule_register_new_element(cmod, "hd_patch", CFGENTYPE_BOOL, 1);
-    cfgelement_set_handlers(elm, (void *)&g_fdc.hd_patch, (void *)&g_fdc.hd_patch);
+    cfgelement_set_handlers(elm, (void *)&fdc->hd_patch, (void *)&fdc->hd_patch);
 
     /* bus_xlate - TEXT, default "invert". */
     elm = cfgmodule_register_new_element(cmod, "bus_xlate", CFGENTYPE_TEXT, "invert");
     (void)elm;
 
-    /* wd279x_fddX_dskpath - TEXT, default "". Bez handlerů / propagate_cb -
+    /* <prefix>_fddX_dskpath - TEXT, default "". Bez handlerů / propagate_cb -
      * implementace si je čte manuálně po cfgmodule_parse(). */
     for (unsigned i = 0; i < 4; i++)
     {
-        elm = cfgmodule_register_new_element(cmod, (char *)fdc_dskpath_keyname(i), CFGENTYPE_TEXT, "");
+        elm = cfgmodule_register_new_element(cmod, (char *)fdc_dskpath_keyname(fdc, i), CFGENTYPE_TEXT, "");
         (void)elm;
     }
 
-    /* wd279x_fddX_readonly - BOOL, default 0. Persistent user preference.
+    /* <prefix>_fddX_readonly - BOOL, default 0. Persistent user preference.
      * Když ON, chip odmítá WRITE bez ohledu na FS atributy souboru. */
     for (unsigned i = 0; i < 4; i++)
     {
-        elm = cfgmodule_register_new_element(cmod, (char *)fdc_readonly_keyname(i), CFGENTYPE_BOOL, 0);
+        elm = cfgmodule_register_new_element(cmod, (char *)fdc_readonly_keyname(fdc, i), CFGENTYPE_BOOL, 0);
         (void)elm;
     }
 
-    /* wd279x_fddX_storage_mode - TEXT, default "cached". Hodnoty:
+    /* <prefix>_fddX_storage_mode - TEXT, default "cached". Hodnoty:
      *  - "cached"  = DSK obraz v RAM, sync při reset/umount/exit/manual
      *  - "direct"  = file_driver, immediate writes do souboru
      *  - "discard" = DSK obraz v RAM, NIKDY se nesynchronizuje
      */
     for (unsigned i = 0; i < 4; i++)
     {
-        elm = cfgmodule_register_new_element(cmod, (char *)fdc_storage_mode_keyname(i), CFGENTYPE_TEXT, "cached");
+        elm = cfgmodule_register_new_element(cmod, (char *)fdc_storage_mode_keyname(fdc, i), CFGENTYPE_TEXT, "cached");
         (void)elm;
     }
 
@@ -317,28 +377,37 @@ static CFGMOD *fdc_register_cfgmodule(void)
 }
 
 /**
- * @brief Aplikuje cfgfile + CLI override na `g_fdc.bus_xlate` a `g_fdc.hd_patch`.
+ * @brief Aplikuje cfgfile + CLI override na `fdc->bus_xlate` a `fdc->hd_patch`.
  *
  * Volá se po `cfgmodule_parse()`. Vytahuje TEXT hodnoty z cfgfile
  * (bus_xlate) a přeloží je na enum. CLI flagy mají prioritu - pokud
  * jsou zadány, přepíší hodnotu z cfgfile i samotný cfgfile záznam,
  * aby se volba persistovala při exitu.
  *
- * @param cmod registrovaný FDC modul.
+ * CLI flagy `--fdc-bus-xlate` / `--fdc-hd-patch` se aplikují pouze na
+ * FDC0; FDC1 zatím vlastní CLI flagy nemá (konfiguruje se jen přes INI
+ * sekci `[FDC1]`).
+ *
+ * @param cmod registrovaný cfg modul dané instance.
+ * @param fdc  instance FDC řadiče.
  */
-static void fdc_apply_cfg_and_cli(CFGMOD *cmod)
+static void fdc_apply_cfg_and_cli(CFGMOD *cmod, st_FDC *fdc)
 {
     /* === bus_xlate === */
     char *xlate_str = cfgmodule_get_element_text_value_by_name(cmod, "bus_xlate");
-    g_fdc.bus_xlate = fdc_parse_bus_xlate_string(xlate_str);
+    fdc->bus_xlate = fdc_parse_bus_xlate_string(xlate_str);
+
+    /* CLI override jen pro FDC0 (FDC1 nemá registrované --fdc1-* flagy). */
+    if (fdc->index != FDC0)
+        return;
 
     const char *cli_xlate = sdlapp_option_value("--fdc-bus-xlate");
     if (cli_xlate)
     {
-        g_fdc.bus_xlate = fdc_parse_bus_xlate_string(cli_xlate);
+        fdc->bus_xlate = fdc_parse_bus_xlate_string(cli_xlate);
         CFGELM *e = cfgmodule_get_element_by_name(cmod, "bus_xlate");
         if (e)
-            cfgelement_set_text_value(e, fdc_bus_xlate_to_string(g_fdc.bus_xlate));
+            cfgelement_set_text_value(e, fdc_bus_xlate_to_string(fdc->bus_xlate));
     }
 
     /* === hd_patch === BOOL je propagován přes set_handlers automaticky.
@@ -348,7 +417,7 @@ static void fdc_apply_cfg_and_cli(CFGMOD *cmod)
     {
         /* sdlapp_options validátor BOOL_ON_OFF zaručil přesně "on" | "off". */
         int v = (strcmp(cli_hd, "on") == 0) ? 1 : 0;
-        g_fdc.hd_patch = v;
+        fdc->hd_patch = v;
         CFGELM *e = cfgmodule_get_element_by_name(cmod, "hd_patch");
         if (e)
             cfgelement_set_bool_value(e, v);
@@ -359,69 +428,101 @@ static void fdc_apply_cfg_and_cli(CFGMOD *cmod)
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
 
-void fdc_init(void)
+/**
+ * @brief Inicializuje jednu instanci FDC řadiče.
+ *
+ * Registruje cfg sekci instance, naparsuje konfiguraci, inicializuje
+ * chip + mechaniky, napojí HD Patch ref a auto-mountne DSK obrazy z INI.
+ *
+ * @param fdc               instance FDC řadiče.
+ * @param default_connected výchozí stav connected (FDC_CONNECTED /
+ *                          FDC_DISCONNECTED) - použije se jako default
+ *                          cfg klíče `connected`, pokud INI hodnotu nemá.
+ *                          Uživatelská volba z menu persistuje přes restart.
+ */
+static void fdc_init_instance(st_FDC *fdc, unsigned default_connected)
 {
-    /* Krok 1: registrace [FDC] sekce. */
-    CFGMOD *cmod = fdc_register_cfgmodule();
+    /* Krok 1: registrace cfg sekce instance ([FDC] / [FDC1]). Default
+     * connect stavu (FDC0 on / FDC1 off) je defaultní hodnota cfg klíče. */
+    CFGMOD *cmod = fdc_register_cfgmodule(fdc, default_connected);
 
     /* Krok 2: parse cfgfile + propagate hodnot do bind variables
-     * (hd_patch jde přes set_handlers). */
+     * (connected, hd_patch jdou přes set_handlers). */
     cfgmodule_parse(cmod);
     cfgmodule_propagate(cmod);
 
     /* Krok 3: dotáhnout TEXT klíče (bus_xlate) ručně + CLI override. */
-    fdc_apply_cfg_and_cli(cmod);
+    fdc_apply_cfg_and_cli(cmod, fdc);
 
     /* Krok 4: vynuluj wd279x a drive[] (cfg fields hd_patch/bus_xlate
      * už jsou nastavené, ostatní stav začíná z čistého). */
-    memset(&g_fdc.wd279x, 0, sizeof(g_fdc.wd279x));
-    memset(&g_fdc.drive[0], 0, sizeof(g_fdc.drive));
+    memset(&fdc->wd279x, 0, sizeof(fdc->wd279x));
+    memset(&fdc->drive[0], 0, sizeof(fdc->drive));
 
-    wd279x_init(&g_fdc.wd279x);
+    wd279x_init(&fdc->wd279x);
 
     /* Drives: vše umounted. memset výše už struct vynuloval; tyto
      * explicit zápisy slouží jako čitelná dokumentace invariantů. */
     for (unsigned i = 0; i < FDC_NUM_DRIVES; i++)
     {
-        g_fdc.drive[i].mounted = 0;
-        g_fdc.drive[i].handler_valid = 0;
-        g_fdc.drive[i].geometry_valid = 0;
-        g_fdc.drive[i].readonly = 0;
-        g_fdc.drive[i].filename[0] = 0x00;
+        fdc->drive[i].mounted = 0;
+        fdc->drive[i].handler_valid = 0;
+        fdc->drive[i].geometry_valid = 0;
+        fdc->drive[i].readonly = 0;
+        fdc->drive[i].filename[0] = 0x00;
     }
 
     /* Napoj chip na drives array - chip potřebuje přístup pro READ/WRITE
      * SECTOR. Musí být po init, protože init si pamatuje původní pointer. */
-    wd279x_attach_drives(&g_fdc.wd279x, &g_fdc.drive[0]);
+    wd279x_attach_drives(&fdc->wd279x, &fdc->drive[0]);
 
-    /* FDC je defaultně připojen. Hot-path call sites pak směrují IORQ
-     * na FDC a UI dialog mount otevře file chooser. */
-    g_fdc.connected = FDC_CONNECTED;
+    /* Napoj per-instance HD Patch konfiguraci na chip (port 0xDFh EINT
+     * INT logika). Musí být po wd279x_init (ten ref přežívá memset). */
+    fdc->wd279x.hd_patch_ref = &fdc->hd_patch;
 
-    /* Auto-mount z cfgfile: pro každou mechaniku vytáhni `wd279x_fddX_dskpath`
-     * TEXT klíč a pokud není prázdný, otevři DSK obraz.
+    /* Connect stav: nastaven už v Kroku 2 přes cfg propagate klíče
+     * `connected` (persistuje uživatelskou volbu z menu přes restart;
+     * memset wd279x/drive[] výše se ho netýká). */
+
+    /* Auto-mount z cfgfile: pro každou mechaniku vytáhni `<prefix>_fddX_dskpath`
+     * TEXT klíč a pokud není prázdný, otevři DSK obraz. Mount je nezávislý
+     * na connect stavu (obrazy jsou připravené, jakmile user řadič připojí).
      * Při neúspěchu open zůstane drive umounted a chyba se vypíše na stderr. */
     for (unsigned i = 0; i < FDC_NUM_DRIVES && i < 4; i++)
     {
-        char *path = cfgmodule_get_element_text_value_by_name(cmod, (char *)fdc_dskpath_keyname(i));
+        char *path = cfgmodule_get_element_text_value_by_name(cmod, (char *)fdc_dskpath_keyname(fdc, i));
         if (path && path[0] != 0x00)
         {
-            fdc_mount_dskfile(i, path);
+            fdc_mount_dskfile(fdc, i, path);
         }
     }
+}
+
+void fdc_init(void)
+{
+    /* FDC0 (primární, porty 0xD8h-0xDFh) - defaultně připojen. */
+    fdc_init_instance(&g_fdc[FDC0], FDC_CONNECTED);
+
+    /* FDC1 (sekundární, porty 0x58h-0x5Fh) - defaultně odpojen; uživatel
+     * jej připojí v menu Devices -> FD Controller. */
+    fdc_init_instance(&g_fdc[FDC1], FDC_DISCONNECTED);
 }
 
 void fdc_reset(void)
 {
     /* HW reset emulovaného stroje - před resetem chipu sync cached
      * DSK obrazů na disk. User očekává, že reset nezahodí už zapsaná
-     * data (sync se děje při reset, umount, exit, manual). */
-    for (unsigned i = 0; i < FDC_NUM_DRIVES; i++)
+     * data (sync se děje při reset, umount, exit, manual). Aplikuje se
+     * na všechny instance. */
+    for (unsigned n = 0; n < FDC_INSTANCE_COUNT; n++)
     {
-        (void)fdc_drive_flush_to_file(&g_fdc.drive[i]);
+        st_FDC *fdc = &g_fdc[n];
+        for (unsigned i = 0; i < FDC_NUM_DRIVES; i++)
+        {
+            (void)fdc_drive_flush_to_file(&fdc->drive[i]);
+        }
+        wd279x_reset(&fdc->wd279x);
     }
-
-    wd279x_reset(&g_fdc.wd279x);
     /* Pozn.: HW reset nezavírá DSK obrazy - mount zůstává. */
 }
 
@@ -429,12 +530,15 @@ void fdc_exit(void)
 {
     /* Zavři handlery všech mechanik = uvolní RAM buffery s obsahem
      * DSK obrazů (případně zavře FILE* u DIRECT módu). NEvoláme
-     * `fdc_umount()` - ten by smazal INI klíče `wd279x_fddX_dskpath`,
+     * `fdc_umount()` - ten by smazal INI klíče `<prefix>_fddX_dskpath`,
      * čímž by se persistovaný mount stav ztratil pro příští start.
-     * Lifecycle exit zavírá jen runtime stav. */
-    for (unsigned i = 0; i < FDC_NUM_DRIVES; i++)
+     * Lifecycle exit zavírá jen runtime stav. Pokrývá všechny instance. */
+    for (unsigned n = 0; n < FDC_INSTANCE_COUNT; n++)
     {
-        fdc_drive_close(i);
+        for (unsigned i = 0; i < FDC_NUM_DRIVES; i++)
+        {
+            fdc_drive_close(&g_fdc[n], i);
+        }
     }
 }
 
@@ -459,18 +563,18 @@ static inline int fdc_offset_is_chip_port(int offset)
     return (offset >= 0 && offset <= 3) ? 1 : 0;
 }
 
-int fdc_read_byte(int i_addroffset, uint8_t *io_data)
+int fdc_read_byte(st_FDC *fdc, int i_addroffset, uint8_t *io_data)
 {
-    if (!io_data)
+    if (!fdc || !io_data)
         return 0;
 
     uint8_t chip_value = 0xFF;
-    int rc = wd279x_read_byte(&g_fdc.wd279x, i_addroffset, &chip_value);
+    int rc = wd279x_read_byte(&fdc->wd279x, i_addroffset, &chip_value);
 
     /* BUS xlate inverze: aplikuje se jen na chip porty (offsety 0..3).
      * Externí Sharp logic porty (4..7) jdou bez inverze. Viz file-level
      * komentář, sekce "Inverze konvence". */
-    int do_invert = (g_fdc.bus_xlate == FDC_BUS_XLATE_INVERT)
+    int do_invert = (fdc->bus_xlate == FDC_BUS_XLATE_INVERT)
                     && fdc_offset_is_chip_port(i_addroffset & 0x07);
     if (do_invert)
     {
@@ -487,9 +591,9 @@ int fdc_read_byte(int i_addroffset, uint8_t *io_data)
     return rc;
 }
 
-int fdc_write_byte(int i_addroffset, uint8_t *io_data)
+int fdc_write_byte(st_FDC *fdc, int i_addroffset, uint8_t *io_data)
 {
-    if (!io_data)
+    if (!fdc || !io_data)
         return 0;
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
@@ -512,7 +616,7 @@ int fdc_write_byte(int i_addroffset, uint8_t *io_data)
     /* BUS xlate inverze: aplikuje se jen na chip porty (offsety 0..3).
      * Externí Sharp logic porty (4..7) jdou bez inverze. Viz file-level
      * komentář, sekce "Inverze konvence". */
-    int do_invert = (g_fdc.bus_xlate == FDC_BUS_XLATE_INVERT)
+    int do_invert = (fdc->bus_xlate == FDC_BUS_XLATE_INVERT)
                     && fdc_offset_is_chip_port(i_addroffset & 0x07);
     if (do_invert)
     {
@@ -544,9 +648,9 @@ int fdc_write_byte(int i_addroffset, uint8_t *io_data)
             wd279x_decode_command_type(chip_value);
         uint8_t cmd_payload[6] = {
             (uint8_t) cmd_type,
-            (uint8_t)(g_fdc.wd279x.SIDE & 0x01),
-            g_fdc.wd279x.regTRACK,
-            g_fdc.wd279x.regSECTOR,
+            (uint8_t)(fdc->wd279x.SIDE & 0x01),
+            fdc->wd279x.regTRACK,
+            fdc->wd279x.regSECTOR,
             (uint8_t)(chip_value & 0x0F),
             chip_value
         };
@@ -554,7 +658,7 @@ int fdc_write_byte(int i_addroffset, uint8_t *io_data)
     }
 #endif
 
-    int rc = wd279x_write_byte(&g_fdc.wd279x, i_addroffset, &chip_value);
+    int rc = wd279x_write_byte(&fdc->wd279x, i_addroffset, &chip_value);
 
     /* Po I/O na FDC se může změnit stav /INT (HD Patch EINT režim);
      * notifikuj mzarch interrupt manager. */
@@ -566,7 +670,7 @@ int fdc_write_byte(int i_addroffset, uint8_t *io_data)
      * (level/edge). */
     if (g_bp_event_active[BP_EVENT_IRQ_FDC])
     {
-        int cur_irq = wd279x_get_interrupt_state(&g_fdc.wd279x) ? 1 : 0;
+        int cur_irq = wd279x_get_interrupt_state(&fdc->wd279x) ? 1 : 0;
         bp_event_fire(BP_EVENT_IRQ_FDC, cur_irq);
     }
 #endif
@@ -575,7 +679,15 @@ int fdc_write_byte(int i_addroffset, uint8_t *io_data)
 
 int fdc_get_interrupt_state(void)
 {
-    return wd279x_get_interrupt_state(&g_fdc.wd279x);
+    /* /INT linka je sdílená - agreguj (OR) přes všechny připojené
+     * instance. Odpojený řadič na linku nepřispívá. */
+    int state = 0;
+    for (unsigned n = 0; n < FDC_INSTANCE_COUNT; n++)
+    {
+        if (g_fdc[n].connected)
+            state |= wd279x_get_interrupt_state(&g_fdc[n].wd279x);
+    }
+    return state;
 }
 
 /* ------------------------------------------------------------------ */
@@ -739,32 +851,32 @@ static int fdc_drive_flush_to_file(st_FDDrive *drv)
     return 1;
 }
 
-int fdc_sync_drive(unsigned drive_id)
+int fdc_sync_drive(st_FDC *fdc, unsigned drive_id)
 {
-    if (drive_id >= FDC_NUM_DRIVES)
+    if (!fdc || drive_id >= FDC_NUM_DRIVES)
         return 0;
-    return fdc_drive_flush_to_file(&g_fdc.drive[drive_id]);
+    return fdc_drive_flush_to_file(&fdc->drive[drive_id]);
 }
 
-int fdc_drive_has_unsaved_changes(unsigned drive_id)
+int fdc_drive_has_unsaved_changes(st_FDC *fdc, unsigned drive_id)
 {
-    if (drive_id >= FDC_NUM_DRIVES)
+    if (!fdc || drive_id >= FDC_NUM_DRIVES)
         return 0;
-    return drive_has_unsaved_changes_internal(&g_fdc.drive[drive_id]);
+    return drive_has_unsaved_changes_internal(&fdc->drive[drive_id]);
 }
 
-int fdc_drive_fs_readonly(unsigned drive_id)
+int fdc_drive_fs_readonly(st_FDC *fdc, unsigned drive_id)
 {
-    if (drive_id >= FDC_NUM_DRIVES)
+    if (!fdc || drive_id >= FDC_NUM_DRIVES)
         return 0;
-    return g_fdc.drive[drive_id].fs_readonly ? 1 : 0;
+    return fdc->drive[drive_id].fs_readonly ? 1 : 0;
 }
 
-int fdc_drive_has_ram_changes(unsigned drive_id)
+int fdc_drive_has_ram_changes(st_FDC *fdc, unsigned drive_id)
 {
-    if (drive_id >= FDC_NUM_DRIVES)
+    if (!fdc || drive_id >= FDC_NUM_DRIVES)
         return 0;
-    st_FDDrive *drv = &g_fdc.drive[drive_id];
+    st_FDDrive *drv = &fdc->drive[drive_id];
     if (!drv->handler_valid)
         return 0;
     if (drv->handler.type != HANDLER_TYPE_MEMORY)
@@ -772,11 +884,11 @@ int fdc_drive_has_ram_changes(unsigned drive_id)
     return drv->handler.spec.memspec.updated ? 1 : 0;
 }
 
-int fdc_drive_force_save_to_file(unsigned drive_id)
+int fdc_drive_force_save_to_file(st_FDC *fdc, unsigned drive_id)
 {
-    if (drive_id >= FDC_NUM_DRIVES)
+    if (!fdc || drive_id >= FDC_NUM_DRIVES)
         return 0;
-    st_FDDrive *drv = &g_fdc.drive[drive_id];
+    st_FDDrive *drv = &fdc->drive[drive_id];
     if (!drv->handler_valid)
         return 0;
     if (drv->handler.type != HANDLER_TYPE_MEMORY)
@@ -803,11 +915,15 @@ int fdc_drive_force_save_to_file(unsigned drive_id)
  *
  * Idempotentní - opakované volání na již umounted drive je no-op.
  *
+ * @param fdc instance FDC řadiče (NULL = no-op).
  * @param drive_id index mechaniky (0..FDC_NUM_DRIVES-1).
  */
-static void fdc_drive_close(unsigned drive_id)
+static void fdc_drive_close(st_FDC *fdc, unsigned drive_id)
 {
-    st_FDDrive *drv = &g_fdc.drive[drive_id];
+    if (!fdc || drive_id >= FDC_NUM_DRIVES)
+        return;
+
+    st_FDDrive *drv = &fdc->drive[drive_id];
 
     if (drv->handler_valid)
     {
@@ -830,22 +946,22 @@ static void fdc_drive_close(unsigned drive_id)
      * a další open ji přepíše. */
 }
 
-void fdc_mount_dskfile(unsigned drive_id, char *filename)
+void fdc_mount_dskfile(st_FDC *fdc, unsigned drive_id, char *filename)
 {
-    if (drive_id >= FDC_NUM_DRIVES)
+    if (!fdc || drive_id >= FDC_NUM_DRIVES)
         return;
     if (!filename)
         return;
 
-    st_FDDrive *drv = &g_fdc.drive[drive_id];
+    st_FDDrive *drv = &fdc->drive[drive_id];
 
     /* Remount: nejdřív zavřít předchozí mount (uvolní RAM buffer). */
-    fdc_drive_close(drive_id);
+    fdc_drive_close(fdc, drive_id);
 
     if (filename[0] == 0x00)
     {
         /* Prázdné jméno = umount. Stav je už vyresetovaný, jen UI a INI. */
-        fdc_cfg_set_dskpath(drive_id, "");
+        fdc_cfg_set_dskpath(fdc, drive_id, "");
         ui_fdc_set_dsk(drive_id, drv->filename);
         return;
     }
@@ -856,7 +972,7 @@ void fdc_mount_dskfile(unsigned drive_id, char *filename)
     drv->filename[maxlen] = 0x00;
 
     /* Načti konfiguraci storage_mode + user_readonly. */
-    const char *mode_str = fdc_cfg_get_storage_mode(drive_id);
+    const char *mode_str = fdc_cfg_get_storage_mode(fdc, drive_id);
     if (strcmp(mode_str, "direct") == 0)
         drv->storage_mode = FDC_STORAGE_DIRECT;
     else if (strcmp(mode_str, "discard") == 0)
@@ -864,7 +980,7 @@ void fdc_mount_dskfile(unsigned drive_id, char *filename)
     else
         drv->storage_mode = FDC_STORAGE_CACHED;
 
-    drv->user_readonly = fdc_cfg_get_readonly(drive_id) ? 1 : 0;
+    drv->user_readonly = fdc_cfg_get_readonly(fdc, drive_id) ? 1 : 0;
     drv->fs_readonly = (g_access(drv->filename, W_OK) == 0) ? 0 : 1;
     drv->readonly = (drv->user_readonly || drv->fs_readonly) ? 1 : 0;
 
@@ -896,7 +1012,7 @@ void fdc_mount_dskfile(unsigned drive_id, char *filename)
                 generic_driver_error_message(&drv->handler, driver));
         /* Při neúspěchu vrátíme drive do umounted stavu. INI vyčistíme. */
         drv->filename[0] = 0x00;
-        fdc_cfg_set_dskpath(drive_id, "");
+        fdc_cfg_set_dskpath(fdc, drive_id, "");
         ui_fdc_set_dsk(drive_id, drv->filename);
         return;
     }
@@ -921,8 +1037,8 @@ void fdc_mount_dskfile(unsigned drive_id, char *filename)
                 dsk_error_message(&drv->handler, driver));
         /* Geometrie selhala - obraz považujeme za nepoužitelný. Zavřeme
          * handler a vrátíme se do umounted stavu. INI vyčistíme. */
-        fdc_drive_close(drive_id);
-        fdc_cfg_set_dskpath(drive_id, "");
+        fdc_drive_close(fdc, drive_id);
+        fdc_cfg_set_dskpath(fdc, drive_id, "");
         ui_fdc_set_dsk(drive_id, drv->filename);
         return;
     }
@@ -932,20 +1048,20 @@ void fdc_mount_dskfile(unsigned drive_id, char *filename)
     /* Úspěšný mount - aktualizuj INI klíč. Při auto-mount z init flow
      * zapisujeme tu samou hodnotu (idempotent), při ručním UI mount
      * persistujeme novou cestu pro příští spuštění. */
-    fdc_cfg_set_dskpath(drive_id, drv->filename);
+    fdc_cfg_set_dskpath(fdc, drive_id, drv->filename);
     ui_fdc_set_dsk(drive_id, drv->filename);
 }
 
-void fdc_umount(unsigned drive_id)
+void fdc_umount(st_FDC *fdc, unsigned drive_id)
 {
-    if (drive_id >= FDC_NUM_DRIVES)
+    if (!fdc || drive_id >= FDC_NUM_DRIVES)
         return;
 
-    fdc_drive_close(drive_id);
+    fdc_drive_close(fdc, drive_id);
     /* Vyčisti INI klíč - umount se má persistovat (jinak by se při dalším
      * startu obraz znovu auto-mountnul z perzistentní cesty). */
-    fdc_cfg_set_dskpath(drive_id, "");
-    ui_fdc_set_dsk(drive_id, g_fdc.drive[drive_id].filename);
+    fdc_cfg_set_dskpath(fdc, drive_id, "");
+    ui_fdc_set_dsk(drive_id, fdc->drive[drive_id].filename);
 }
 
 /**
@@ -954,6 +1070,10 @@ void fdc_umount(unsigned drive_id)
  * Předaný `user_data` je drive_id zabalený přes `GINT_TO_POINTER`.
  * Po výběru souboru zavolá `fdc_mount_dskfile` který filename uloží
  * a otevře DSK image.
+ *
+ * @note user_data nese zabalený identifikátor `(fdc_index << 8) | drive_id`
+ *       (viz fdc_ui_mount) - callback tak ví, do které instance FDC a
+ *       mechaniky mountovat.
  */
 static void fdc_ui_mount_cb(baseui_fchooser_t *fch)
 {
@@ -963,27 +1083,37 @@ static void fdc_ui_mount_cb(baseui_fchooser_t *fch)
         return;
     };
 
-    unsigned drive_id = GPOINTER_TO_INT(fch->user_data);
-
-    if (!g_fdc.connected)
+    int packed = GPOINTER_TO_INT(fch->user_data);
+    unsigned fdc_index = ((unsigned)packed >> 8) & 0xFF;
+    unsigned drive_id = (unsigned)packed & 0xFF;
+    if (fdc_index >= FDC_INSTANCE_COUNT)
     {
-        baseui_show_message(0, "Can't mount DSK image into FD%d, because FD controller is not connected.", drive_id);
+        baseui_filechooser_destroy(fch);
+        return;
+    }
+    st_FDC *fdc = &g_fdc[fdc_index];
+
+    if (!fdc->connected)
+    {
+        baseui_show_message(0, "Can't mount DSK image into FDC%u FD%d, because the FD controller is not connected.", fdc_index, drive_id);
         baseui_filechooser_destroy(fch);
         return;
     };
 
     if (fch->state != BASEUI_FCHOOSER_STATE_CLOSED_OK)
     {
+        /* Cancel / zavření dialogu bez výběru - mount necháváme BEZE ZMĚNY
+         * (dřív se zde volal umount, takže Cancel omylem odmountoval
+         * stávající obraz). */
         baseui_filechooser_destroy(fch);
-        fdc_mount_dskfile(drive_id, "");
         return;
     };
 
     char *filename = fch->selected_filePathName;
 
-    if (strlen(filename) < sizeof(g_fdc.drive[drive_id].filename))
+    if (strlen(filename) < sizeof(fdc->drive[drive_id].filename))
     {
-        fdc_mount_dskfile(drive_id, filename);
+        fdc_mount_dskfile(fdc, drive_id, filename);
     }
     else
     {
@@ -995,17 +1125,23 @@ static void fdc_ui_mount_cb(baseui_fchooser_t *fch)
     emulator_measuring_frame_timing_reset();
 }
 
-void fdc_ui_mount(unsigned drive_id)
+void fdc_ui_mount(st_FDC *fdc, unsigned drive_id)
 {
-    if (!g_fdc.connected)
+    if (!fdc || drive_id >= FDC_NUM_DRIVES)
+        return;
+
+    if (!fdc->connected)
     {
-        baseui_show_message(0, "Can't mount DSK image into FD%d, because FD controller is not connected.", drive_id);
+        baseui_show_message(0, "Can't mount DSK image into FDC%u FD%d, because the FD controller is not connected.", fdc->index, drive_id);
         return;
     };
 
     GString *str = g_string_new(NULL);
-    g_string_append_printf(str, _("Select DSK image file for drive FD%d"), drive_id);
-    baseui_fchooser_t *fch = baseui_filechooser_open_file(str->str, ".dsk", NULL, NULL, g_fdc.drive[drive_id].filename, fdc_ui_mount_cb, GINT_TO_POINTER(drive_id));
+    g_string_append_printf(str, _("Select DSK image file for FDC%u drive FD%d"), fdc->index, drive_id);
+    /* user_data nese zabalený (fdc_index << 8) | drive_id - callback tak ví,
+     * do které instance FDC mountovat (jinak má jen drive_id). */
+    int packed = (int)((fdc->index << 8) | drive_id);
+    baseui_fchooser_t *fch = baseui_filechooser_open_file(str->str, ".dsk", NULL, NULL, fdc->drive[drive_id].filename, fdc_ui_mount_cb, GINT_TO_POINTER(packed));
     if (!fch)
     {
         fprintf(stderr, "%s(%d): filechooser error\n", __FILE__, __LINE__);
@@ -1013,18 +1149,18 @@ void fdc_ui_mount(unsigned drive_id)
     g_string_free(str, TRUE);
 }
 
-const char *fdc_get_dsk_filepath(unsigned drive_id)
+const char *fdc_get_dsk_filepath(st_FDC *fdc, unsigned drive_id)
 {
-    if (drive_id >= FDC_NUM_DRIVES)
+    if (!fdc || drive_id >= FDC_NUM_DRIVES)
         return NULL;
-    return g_fdc.drive[drive_id].filename;
+    return fdc->drive[drive_id].filename;
 }
 
-int fdc_test_drive_id_mounted(unsigned drive_id)
+int fdc_test_drive_id_mounted(st_FDC *fdc, unsigned drive_id)
 {
-    if (drive_id >= FDC_NUM_DRIVES)
+    if (!fdc || drive_id >= FDC_NUM_DRIVES)
         return 0;
-    return (int)g_fdc.drive[drive_id].mounted;
+    return (int)fdc->drive[drive_id].mounted;
 }
 
 /* ------------------------------------------------------------------ */

@@ -3037,15 +3037,21 @@ void test_media_load_binary_addr_validation(void) {
 
 
 void test_media_insert_each_slot(void) {
-    /* Pro každý ze 5 slotů insert s path - stub vrátí success a
+    /* Pro každý z 11 slotů insert s path - stub vrátí success a
      * zachytí slot enum. */
     dispatch_stub_reset();
     static const struct { const char *name; int enum_val; } slots[] = {
-        { "cmt",  DBGAPI_MEDIA_SLOT_CMT  },
-        { "fdc0", DBGAPI_MEDIA_SLOT_FDC0 },
-        { "fdc1", DBGAPI_MEDIA_SLOT_FDC1 },
-        { "qd",   DBGAPI_MEDIA_SLOT_QD   },
-        { "ide8", DBGAPI_MEDIA_SLOT_IDE8 },
+        { "cmt",      DBGAPI_MEDIA_SLOT_CMT      },
+        { "fdc0_fd0", DBGAPI_MEDIA_SLOT_FDC0_FD0 },
+        { "fdc0_fd1", DBGAPI_MEDIA_SLOT_FDC0_FD1 },
+        { "fdc0_fd2", DBGAPI_MEDIA_SLOT_FDC0_FD2 },
+        { "fdc0_fd3", DBGAPI_MEDIA_SLOT_FDC0_FD3 },
+        { "fdc1_fd0", DBGAPI_MEDIA_SLOT_FDC1_FD0 },
+        { "fdc1_fd1", DBGAPI_MEDIA_SLOT_FDC1_FD1 },
+        { "fdc1_fd2", DBGAPI_MEDIA_SLOT_FDC1_FD2 },
+        { "fdc1_fd3", DBGAPI_MEDIA_SLOT_FDC1_FD3 },
+        { "qd",       DBGAPI_MEDIA_SLOT_QD       },
+        { "ide8",     DBGAPI_MEDIA_SLOT_IDE8     },
     };
     for (size_t i = 0; i < sizeof(slots) / sizeof(slots[0]); i++) {
         g_stub_state.media_fake_result = 0;
@@ -3095,7 +3101,7 @@ void test_media_eject_lifecycle(void) {
     /* Insert */
     st_JSONL_MESSAGE *req1 = _make_request(
         "{\"type\":\"request\",\"id\":1121,\"cmd\":\"media_insert\","
-        "\"data\":{\"slot\":\"fdc0\",\"path\":\"/tmp/a.dsk\"}}");
+        "\"data\":{\"slot\":\"fdc0_fd0\",\"path\":\"/tmp/a.dsk\"}}");
     char *resp1 = NULL;
     TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK,
                            mcp_dispatch_request(req1, &resp1));
@@ -3107,34 +3113,35 @@ void test_media_eject_lifecycle(void) {
     /* Eject */
     st_JSONL_MESSAGE *req2 = _make_request(
         "{\"type\":\"request\",\"id\":1122,\"cmd\":\"media_eject\","
-        "\"data\":{\"slot\":\"fdc0\"}}");
+        "\"data\":{\"slot\":\"fdc0_fd0\"}}");
     char *resp2 = NULL;
     TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK,
                            mcp_dispatch_request(req2, &resp2));
     TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_MEDIA_EJECT,
                            g_stub_state.media_last_cmd);
-    TEST_ASSERT_EQUAL_INT(DBGAPI_MEDIA_SLOT_FDC0,
+    TEST_ASSERT_EQUAL_INT(DBGAPI_MEDIA_SLOT_FDC0_FD0,
                            g_stub_state.media_last_slot);
-    TEST_ASSERT_TRUE(strstr(resp2, "\"slot\":\"fdc0\"") != NULL);
+    TEST_ASSERT_TRUE(strstr(resp2, "\"slot\":\"fdc0_fd0\"") != NULL);
     free(resp2);
     jsonl_msg_free(req2);
 }
 
 
 void test_media_state_returns_all_slots(void) {
-    /* Stub naplní 5 slot info; response musí obsahovat slot strings
-     * a count=5. */
+    /* Stub naplní 11 slot info; response musí obsahovat slot strings
+     * a count=11. */
     dispatch_stub_reset();
-    g_stub_state.media_state_fake_count = 5;
+    g_stub_state.media_state_fake_count = 11;
     st_JSONL_MESSAGE *req = _make_request(
         "{\"type\":\"request\",\"id\":1130,\"cmd\":\"media_state\"}");
     char *resp = NULL;
     en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
     TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
     TEST_ASSERT_EQUAL_INT(1, g_stub_state.media_state_calls);
-    TEST_ASSERT_TRUE(strstr(resp, "\"count\":5") != NULL);
+    TEST_ASSERT_TRUE(strstr(resp, "\"count\":11") != NULL);
     TEST_ASSERT_TRUE(strstr(resp, "\"slot\":\"cmt\"") != NULL);
-    TEST_ASSERT_TRUE(strstr(resp, "\"slot\":\"fdc0\"") != NULL);
+    TEST_ASSERT_TRUE(strstr(resp, "\"slot\":\"fdc0_fd0\"") != NULL);
+    TEST_ASSERT_TRUE(strstr(resp, "\"slot\":\"fdc1_fd0\"") != NULL);
     TEST_ASSERT_TRUE(strstr(resp, "\"slot\":\"ide8\"") != NULL);
     free(resp);
     jsonl_msg_free(req);

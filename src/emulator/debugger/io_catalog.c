@@ -689,7 +689,7 @@ static uint8_t read_mmio_e008_status(void)
 static uint8_t read_fdc_status(void)
 {
     if (FDC_TEST_NOT_CONNECTED) return 0xFFu;
-    return wd279x_mirror_status_get(&g_fdc.wd279x);
+    return wd279x_mirror_status_get(&g_fdc[FDC0].wd279x);
 }
 
 /**
@@ -699,7 +699,7 @@ static uint8_t read_fdc_status(void)
 static uint8_t read_fdc_track(void)
 {
     if (FDC_TEST_NOT_CONNECTED) return 0xFFu;
-    return wd279x_mirror_track_get(&g_fdc.wd279x);
+    return wd279x_mirror_track_get(&g_fdc[FDC0].wd279x);
 }
 
 /**
@@ -709,7 +709,7 @@ static uint8_t read_fdc_track(void)
 static uint8_t read_fdc_sector(void)
 {
     if (FDC_TEST_NOT_CONNECTED) return 0xFFu;
-    return wd279x_mirror_sector_get(&g_fdc.wd279x);
+    return wd279x_mirror_sector_get(&g_fdc[FDC0].wd279x);
 }
 
 /**
@@ -724,7 +724,7 @@ static uint8_t read_fdc_sector(void)
 static uint8_t read_fdc_motor(void)
 {
     if (FDC_TEST_NOT_CONNECTED) return 0xFFu;
-    return g_fdc.wd279x.MOTOR;
+    return g_fdc[FDC0].wd279x.MOTOR;
 }
 
 /**
@@ -738,7 +738,7 @@ static uint8_t read_fdc_motor(void)
 static uint8_t read_fdc_side(void)
 {
     if (FDC_TEST_NOT_CONNECTED) return 0xFFu;
-    return g_fdc.wd279x.SIDE;
+    return g_fdc[FDC0].wd279x.SIDE;
 }
 
 /**
@@ -751,14 +751,14 @@ static uint8_t read_fdc_side(void)
 static uint8_t read_fdc_density(void)
 {
     if (FDC_TEST_NOT_CONNECTED) return 0xFFu;
-    return g_fdc.wd279x.DENSITY;
+    return g_fdc[FDC0].wd279x.DENSITY;
 }
 
 /**
  * Read FDC HD Patch EINT latch (0xDF W-only).
  *
  * HD Patch je MZ-800 specific external logic. Když je obvod nainstalován
- * (= g_fdc.hd_patch == 1), port 0xDF kontroluje interrupt enable pin.
+ * (= g_fdc[FDC0].hd_patch == 1), port 0xDF kontroluje interrupt enable pin.
  * Side-effect free.
  *
  * @return EINT latch byte, 0xFF pokud FDC odpojen
@@ -766,7 +766,54 @@ static uint8_t read_fdc_density(void)
 static uint8_t read_fdc_eint(void)
 {
     if (FDC_TEST_NOT_CONNECTED) return 0xFFu;
-    return g_fdc.wd279x.EINT;
+    return g_fdc[FDC0].wd279x.EINT;
+}
+
+/* ===== FDC1 (sekundární) mirror gettery - čtou g_fdc[FDC1] ===== */
+
+/** Test: FDC1 není připojen (analogie FDC_TEST_NOT_CONNECTED pro FDC0). */
+#define FDC1_TEST_NOT_CONNECTED (g_fdc[FDC1].connected != FDC_CONNECTED)
+
+static uint8_t read_fdc1_status(void)
+{
+    if (FDC1_TEST_NOT_CONNECTED) return 0xFFu;
+    return wd279x_mirror_status_get(&g_fdc[FDC1].wd279x);
+}
+
+static uint8_t read_fdc1_track(void)
+{
+    if (FDC1_TEST_NOT_CONNECTED) return 0xFFu;
+    return wd279x_mirror_track_get(&g_fdc[FDC1].wd279x);
+}
+
+static uint8_t read_fdc1_sector(void)
+{
+    if (FDC1_TEST_NOT_CONNECTED) return 0xFFu;
+    return wd279x_mirror_sector_get(&g_fdc[FDC1].wd279x);
+}
+
+static uint8_t read_fdc1_motor(void)
+{
+    if (FDC1_TEST_NOT_CONNECTED) return 0xFFu;
+    return g_fdc[FDC1].wd279x.MOTOR;
+}
+
+static uint8_t read_fdc1_side(void)
+{
+    if (FDC1_TEST_NOT_CONNECTED) return 0xFFu;
+    return g_fdc[FDC1].wd279x.SIDE;
+}
+
+static uint8_t read_fdc1_density(void)
+{
+    if (FDC1_TEST_NOT_CONNECTED) return 0xFFu;
+    return g_fdc[FDC1].wd279x.DENSITY;
+}
+
+static uint8_t read_fdc1_eint(void)
+{
+    if (FDC1_TEST_NOT_CONNECTED) return 0xFFu;
+    return g_fdc[FDC1].wd279x.EINT;
 }
 #endif /* CFG_HWEXT_HAVE_FDC */
 
@@ -1309,12 +1356,12 @@ static const st_IO_BIT_DESC bits_fdc_density[] = {
 /**
  * FDC HD Patch EINT latch (port 0xDF) - bit popisky.
  *
- * Bit 0 = EINT (interrupt enable). Aktivni jen pokud g_fdc.hd_patch == 1
+ * Bit 0 = EINT (interrupt enable). Aktivni jen pokud g_fdc[FDC0].hd_patch == 1
  * (= HD Patch obvod je osazen). Bez HD Patch porta 0xDF neexistuje na HW
  * urovni, ale latch v emu se stale zaznamenava.
  */
 static const st_IO_BIT_DESC bits_fdc_eint[] = {
-    { 0, 1, "EINT", "Interrupt enable (only when g_fdc.hd_patch == 1)" }
+    { 0, 1, "EINT", "Interrupt enable (only when g_fdc[FDC0].hd_patch == 1)" }
 };
 #endif /* CFG_HWEXT_HAVE_FDC */
 
@@ -1852,7 +1899,7 @@ const st_IO_PORT_DESC g_io_ports[] = {
      * en_FDCPORT_OFFSET (FDCPORT_MOTOR..FDCPORT_EINT). */
     {
         0x00DC, "FDC - Motor / Drive select (W)",
-        "Motor on/off + drive select (Sharp external logic, not WD279x); mirror from g_fdc.wd279x.MOTOR latch",
+        "Motor on/off + drive select (Sharp external logic, not WD279x); mirror from g_fdc[FDC0].wd279x.MOTOR latch",
         IO_PORT_DIR_W,
 #if CFG_HWEXT_HAVE_FDC
         bits_fdc_motor, sizeof(bits_fdc_motor) / sizeof(bits_fdc_motor[0]),
@@ -1865,7 +1912,7 @@ const st_IO_PORT_DESC g_io_ports[] = {
     },
     {
         0x00DD, "FDC - Side (W)",
-        "Side select (Sharp inverts value vs standard logic); mirror from g_fdc.wd279x.SIDE latch",
+        "Side select (Sharp inverts value vs standard logic); mirror from g_fdc[FDC0].wd279x.SIDE latch",
         IO_PORT_DIR_W,
 #if CFG_HWEXT_HAVE_FDC
         bits_fdc_side, sizeof(bits_fdc_side) / sizeof(bits_fdc_side[0]),
@@ -1878,7 +1925,7 @@ const st_IO_PORT_DESC g_io_ports[] = {
     },
     {
         0x00DE, "FDC - Density (W)",
-        "Density select (single/double); mirror from g_fdc.wd279x.DENSITY latch",
+        "Density select (single/double); mirror from g_fdc[FDC0].wd279x.DENSITY latch",
         IO_PORT_DIR_W,
 #if CFG_HWEXT_HAVE_FDC
         bits_fdc_density, sizeof(bits_fdc_density) / sizeof(bits_fdc_density[0]),
@@ -1891,11 +1938,107 @@ const st_IO_PORT_DESC g_io_ports[] = {
     },
     {
         0x00DF, "FDC - HD Patch EINT (W)",
-        "HD Patch external interrupt enable (Sharp HD/PATCH mod); mirror from g_fdc.wd279x.EINT latch",
+        "HD Patch external interrupt enable (Sharp HD/PATCH mod); mirror from g_fdc[FDC0].wd279x.EINT latch",
         IO_PORT_DIR_W,
 #if CFG_HWEXT_HAVE_FDC
         bits_fdc_eint, sizeof(bits_fdc_eint) / sizeof(bits_fdc_eint[0]),
         read_fdc_eint, NULL,
+#else
+        NULL, 0,
+        NULL, NULL,
+#endif
+        MZ_AVAIL_ALL
+    },
+
+    /* ===== FDC1 (sekundární) 0x58-0x5F - Unicard-suppressed řadič =====
+     * Stejný layout jako FDC0 (0xD8-0xDF), jen na portech 0x58-0x5F.
+     * Mirror gettery čtou g_fdc[FDC1]. Bit deskriptory sdílené s FDC0. */
+    {
+        0x0058, "FDC1 - Status / Command (R/W)", "WD279x status (R) / command (W) - sekundarni FDC",
+        IO_PORT_DIR_RW,
+        NULL, 0,
+#if CFG_HWEXT_HAVE_FDC
+        read_fdc1_status, NULL,
+#else
+        NULL, NULL,
+#endif
+        MZ_AVAIL_ALL
+    },
+    {
+        0x0059, "FDC1 - Track (R/W)", "WD279x track register - sekundarni FDC",
+        IO_PORT_DIR_RW,
+        NULL, 0,
+#if CFG_HWEXT_HAVE_FDC
+        read_fdc1_track, NULL,
+#else
+        NULL, NULL,
+#endif
+        MZ_AVAIL_ALL
+    },
+    {
+        0x005A, "FDC1 - Sector (R/W)", "WD279x sector register - sekundarni FDC",
+        IO_PORT_DIR_RW,
+        NULL, 0,
+#if CFG_HWEXT_HAVE_FDC
+        read_fdc1_sector, NULL,
+#else
+        NULL, NULL,
+#endif
+        MZ_AVAIL_ALL
+    },
+    {
+        0x005B, "FDC1 - Data (R/W)", "WD279x data register (Sharp invertuje data + side) - sekundarni FDC",
+        IO_PORT_DIR_RW,
+        NULL, 0,
+        NULL, NULL,
+        MZ_AVAIL_ALL
+    },
+    {
+        0x005C, "FDC1 - Motor / Drive select (W)",
+        "Motor on/off + drive select (Sharp external logic, not WD279x); mirror from g_fdc[FDC1].wd279x.MOTOR latch",
+        IO_PORT_DIR_W,
+#if CFG_HWEXT_HAVE_FDC
+        bits_fdc_motor, sizeof(bits_fdc_motor) / sizeof(bits_fdc_motor[0]),
+        read_fdc1_motor, NULL,
+#else
+        NULL, 0,
+        NULL, NULL,
+#endif
+        MZ_AVAIL_ALL
+    },
+    {
+        0x005D, "FDC1 - Side (W)",
+        "Side select (Sharp inverts value vs standard logic); mirror from g_fdc[FDC1].wd279x.SIDE latch",
+        IO_PORT_DIR_W,
+#if CFG_HWEXT_HAVE_FDC
+        bits_fdc_side, sizeof(bits_fdc_side) / sizeof(bits_fdc_side[0]),
+        read_fdc1_side, NULL,
+#else
+        NULL, 0,
+        NULL, NULL,
+#endif
+        MZ_AVAIL_ALL
+    },
+    {
+        0x005E, "FDC1 - Density (W)",
+        "Density select (single/double); mirror from g_fdc[FDC1].wd279x.DENSITY latch",
+        IO_PORT_DIR_W,
+#if CFG_HWEXT_HAVE_FDC
+        bits_fdc_density, sizeof(bits_fdc_density) / sizeof(bits_fdc_density[0]),
+        read_fdc1_density, NULL,
+#else
+        NULL, 0,
+        NULL, NULL,
+#endif
+        MZ_AVAIL_ALL
+    },
+    {
+        0x005F, "FDC1 - HD Patch EINT (W)",
+        "HD Patch external interrupt enable (Sharp HD/PATCH mod); mirror from g_fdc[FDC1].wd279x.EINT latch",
+        IO_PORT_DIR_W,
+#if CFG_HWEXT_HAVE_FDC
+        bits_fdc_eint, sizeof(bits_fdc_eint) / sizeof(bits_fdc_eint[0]),
+        read_fdc1_eint, NULL,
 #else
         NULL, 0,
         NULL, NULL,

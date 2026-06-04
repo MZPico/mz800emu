@@ -34,10 +34,10 @@ extern "C"
 
 #if CFG_HWEXT_HAVE_FDC
 
-/** Render _new_ chip state. */
-static void render_new_chip_state(void)
+/** Render chip state dané instance FDC. */
+static void render_new_chip_state(st_FDC *fdc)
 {
-    const st_WD279X *c = &g_fdc.wd279x;
+    const st_WD279X *c = &fdc->wd279x;
 
     if (ImGui::CollapsingHeader(_L("Registers (true-bus)"), ImGuiTreeNodeFlags_DefaultOpen))
     {
@@ -142,12 +142,12 @@ static void render_new_chip_state(void)
     {
         for (unsigned i = 0; i < FDC_NUM_DRIVES; i++)
         {
-            const st_FDDrive *d = &g_fdc.drive[i];
+            const st_FDDrive *d = &fdc->drive[i];
             char hdr[64];
-            snprintf(hdr, sizeof(hdr), "FDD %u %s%s###fdc_drv_%u", i,
+            snprintf(hdr, sizeof(hdr), "FDD %u %s%s###fdc%u_drv_%u", i,
                      d->mounted ? "(mounted)" : "(empty)",
                      d->readonly ? " [R/O]" : "",
-                     i);
+                     fdc->index, i);
             if (!ImGui::TreeNode(hdr))
                 continue;
 
@@ -190,11 +190,24 @@ void imgui_fdc_state_window(bool *p_open)
         return;
     }
 
-    ImGui::Text(_("Connected: %s"),
-                FDC_TEST_WD279X_CONNECTED ? _("yes") : _("no"));
-    ImGui::Separator();
-
-    render_new_chip_state();
+    /* Záložka pro každou instanci FDC (FDC0 standard / FDC1 secondary). */
+    if (ImGui::BeginTabBar("##fdc_state_tabs"))
+    {
+        for (unsigned n = 0; n < FDC_INSTANCE_COUNT; n++)
+        {
+            const char *tab_label = (n == FDC0) ? _L("FDC0 (standard)")
+                                                 : _L("FDC1 (secondary)");
+            if (ImGui::BeginTabItem(tab_label))
+            {
+                ImGui::Text(_("Connected: %s"),
+                            (g_fdc[n].connected == FDC_CONNECTED) ? _("yes") : _("no"));
+                ImGui::Separator();
+                render_new_chip_state(&g_fdc[n]);
+                ImGui::EndTabItem();
+            }
+        }
+        ImGui::EndTabBar();
+    }
 
     ImGui::End();
 #else

@@ -36,8 +36,10 @@ Globální klávesové zkratky dostupné napříč celým oknem emulátoru.
 
 | Klávesa                    | Akce                                                                        |
 |----------------------------|-----------------------------------------------------------------------------|
-| `Alt + [1..4]`             | Připojit FD obraz do mechaniky 1..4 (a aktivovat WD279x)                    |
-| `Alt + Shift + [1..4]`     | Odpojit FD obraz z mechaniky 1..4                                           |
+| `Alt + [1..4]`             | Připojit FD obraz do mechaniky 1..4 řadiče FDC0 (a aktivovat WD279x)        |
+| `Alt + Shift + [1..4]`     | Odpojit FD obraz z mechaniky 1..4 řadiče FDC0                               |
+
+> Pozn.: tyto klávesové zkratky pracují vždy s primárním řadičem **FDC0 (standard)**, porty 0xD8 - 0xDF. Sekundární řadič **FDC1** (porty 0x58 - 0x5F) se obsluhuje přes menu HW & Devices -> FD Controller.
 
 ## Magnetofon (CMT) a virtuální klávesnice
 
