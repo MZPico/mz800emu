@@ -154,6 +154,8 @@ void cmthack_result(en_LOADRET result)
 void cmthack_load_file(void)
 {
     iface_audio_pause_emulation(1);
+    /* CMT-hack stall: file chooser dialog + IO stojí emulaci - vyloučit z benchmarku */
+    emulator_measuring_maxspeed_stall_begin();
     framebuffer_flush_full_screen();
 
     char *filename = baseui_filechooser_open_file_wait(_("Select a MZF File"), ".mzf, .m12, .*", NULL, NULL, g_cmthack.last_filename, NULL);
@@ -164,6 +166,7 @@ void cmthack_load_file(void)
         cmthack_result(LOADRET_BREAK);
         iface_audio_pause_emulation(0);
         emulator_measuring_frame_timing_reset();
+        emulator_measuring_maxspeed_stall_end();
         return;
     };
 
@@ -182,6 +185,7 @@ void cmthack_load_file(void)
     g_free(filename);
     iface_audio_pause_emulation(0);
     emulator_measuring_frame_timing_reset();
+    emulator_measuring_maxspeed_stall_end();
 }
 
 void cmthack_load_mzf_filename(const char *filename)
@@ -278,6 +282,8 @@ void cmthack_read_mzf_body(void)
     unsigned reg_bc;
 
     iface_audio_pause_emulation(1);
+    /* CMT-hack stall: čtení MZF body z disku stojí emulaci - vyloučit z benchmarku */
+    emulator_measuring_maxspeed_stall_begin();
 
     /* Mame otevren nejaky MZF? */
     if (!(g_cmthack.mzf_handler.status & HANDLER_STATUS_READY))
@@ -286,6 +292,7 @@ void cmthack_read_mzf_body(void)
         cmthack_result(LOADRET_BREAK);
         iface_audio_pause_emulation(0);
         emulator_measuring_frame_timing_reset();
+        emulator_measuring_maxspeed_stall_end();
         return;
     };
 
@@ -303,6 +310,7 @@ void cmthack_read_mzf_body(void)
         cmthack_result(LOADRET_ERROR);
         iface_audio_pause_emulation(0);
         emulator_measuring_frame_timing_reset();
+        emulator_measuring_maxspeed_stall_end();
         return;
     };
 
@@ -315,4 +323,5 @@ void cmthack_read_mzf_body(void)
     cmthack_result(LOADRET_OK);
     iface_audio_pause_emulation(0);
     emulator_measuring_frame_timing_reset();
+    emulator_measuring_maxspeed_stall_end();
 }

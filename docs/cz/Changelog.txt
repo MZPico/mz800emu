@@ -1,4 +1,6 @@
 
+	- Přidán MAX SPEED benchmark: měření efektivity emulace v režimu MAX SPEED (kolik času skutečného MZ-800 se stihne vykonat za reálnou sekundu, 100 % = rychlost reálného HW). Okno přes menu Emulator -> MAX SPEED Benchmark..., klávesa Alt+T vypíše report na konzoli, Alt+Shift+T resetuje. Pro headless měření volba --maxspeed-bench. Měření je aktivní jen v MAX SPEED a nezahrnuje pauzu ani blokující operace (CMT-hack).
+
 	- Přidána podpora sekundárního FDC řadiče WD279x na portech 0x58 - 0x5F (podporováno některými typy Unicard).
 
 	- Unicard: nová volba "Managed FDC" (žádný / FDC0 / FDC1) určuje, který FDC řadič spravuje Unicard API při mountování DSK obrazů; změna ovlivní jen budoucí operace

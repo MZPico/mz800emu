@@ -98,6 +98,7 @@ jsou odmítnuty s chybou - pro vygenerovaný výpis použijte `--help`.
 | `--no-save-ini` | - | Nezapisovat `.ini` soubor při ukončení. CLI override pak platí jen pro aktuální session. |
 | `--no-first-run-windows` | - | Potlačit automatické otevření oken About + Version Check Setup při prvním spuštění (kdy neexistuje `.ini` soubor). Užitečné pro headless / scriptované spouštění. |
 | `--headless` | - | Spustit emulátor bez GUI okna a bez audio výstupu. SDL3 video a audio subsystémy běží v no-op módu (žádné SDL okno, žádný audio device se neotevírá). Framebuffer se stále renderuje do paměti (= připraveno pro pozdější MCP frame Resources). Určeno pro CI / batch / subprocess scénáře bez displeje nebo audio zařízení. Proces běží do SIGINT (Ctrl+C) nebo SDL quit eventu. Doporučeno kombinovat s `--no-first-run-windows`. |
+| `--maxspeed-bench` | - | Spustit rovnou v MAX SPEED a periodicky (každých 5 s) vypisovat report MAX SPEED benchmarku na konzoli (efektivita %, throughput, FB-FPS, distribuce). Určeno pro headless měření efektivity emulace. Kombinujte s `--headless` a `--run-mzf`. Viz [`maxspeed-benchmark.md`](maxspeed-benchmark.md). |
 
 ### Layout CDL exportu
 
@@ -233,6 +234,17 @@ Shorthand options `--all-traces-mode` a `--all-traces-dir` aplikují
 hodnotu na všechny 4 subsystémy najednou. Per-subsystém option
 (`--cputrack-mode`, `--iorqlog-dir`, ...) má vždy precedenci - shorthand
 vyplní pouze ty subsystémy, kde uživatel per-subsys option nepředal.
+
+
+## MAX SPEED benchmark
+
+Měření efektivity emulace v režimu MAX SPEED - kolik "času skutečného MZ-800"
+se stihne vykonat za jednu reálnou sekundu (100 % = rychlost reálného hardwaru).
+Okno otevřete přes menu **Emulator -> MAX SPEED Benchmark...**, klávesa `Alt + T`
+vypíše report na konzoli a `Alt + Shift + T` měření resetuje. Pro headless měření
+slouží volba `--maxspeed-bench`.
+
+Podrobnosti viz [`maxspeed-benchmark.md`](maxspeed-benchmark.md).
 
 
 ## Známé problémy

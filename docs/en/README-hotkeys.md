@@ -31,6 +31,8 @@ Global keyboard shortcuts available across the entire emulator window.
 | `Alt + Down`               | Decrease Custom speed (step 1 % of Normal speed)                            |
 | `Alt + Shift + Down`       | Decrease Custom speed (step 10 % of Normal speed)                           |
 | `Alt + Pg_Down`            | Decrease Custom speed (step 100 % of Normal speed)                          |
+| `Alt + T`                  | MAX SPEED benchmark: print the emulation efficiency report to the console   |
+| `Alt + Shift + T`          | MAX SPEED benchmark: reset the measurement                                  |
 
 ## Floppy disk (FDC)
 

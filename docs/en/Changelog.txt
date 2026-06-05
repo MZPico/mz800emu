@@ -1,4 +1,6 @@
 
+	- Added a MAX SPEED benchmark: measures emulation efficiency in MAX SPEED mode (how much real MZ-800 time gets executed per one real second, 100 % = real HW speed). Window via the Emulator -> MAX SPEED Benchmark... menu, the Alt+T key prints the report to the console, Alt+Shift+T resets it. For headless measurement use the --maxspeed-bench option. Measurement is active only in MAX SPEED and excludes pause and blocking operations (CMT hack).
+
 	- Added support for a secondary FDC controller (WD279x) on ports 0x58 - 0x5F (supported by some types of Unicard).
 
 	- Unicard: new "Managed FDC" option (none / FDC0 / FDC1) selects which FDC controller the Unicard API manages when mounting DSK images; the change affects only future operations

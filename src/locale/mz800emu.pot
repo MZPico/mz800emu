@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-04 14:14+0200\n"
+"POT-Creation-Date: 2026-06-05 14:03+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -59,20 +59,20 @@ msgid ""
 "Instruction = '%s'\n"
 msgstr ""
 
-#: src/emulator/emulator.c:304
+#: src/emulator/emulator.c:320
 #: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:421
 msgid "PAUSED"
 msgstr ""
 
-#: src/emulator/emulator.c:307
+#: src/emulator/emulator.c:323
 msgid "Max speed"
 msgstr ""
 
-#: src/emulator/emulator.c:310
+#: src/emulator/emulator.c:326
 msgid "Custom speed"
 msgstr ""
 
-#: src/emulator/emulator.c:312
+#: src/emulator/emulator.c:328
 msgid "Normal speed"
 msgstr ""
 
@@ -96,11 +96,11 @@ msgstr ""
 msgid "Select CMT file to open"
 msgstr ""
 
-#: src/emulator/hw-generic/cmt/cmthack.c:159
+#: src/emulator/hw-generic/cmt/cmthack.c:161
 msgid "Select a MZF File"
 msgstr ""
 
-#: src/emulator/hw-generic/fdc/fdc.c:1128
+#: src/emulator/hw-generic/fdc/fdc.c:1140
 #, c-format
 msgid "Select DSK image file for FDC%u drive FD%d"
 msgstr ""
@@ -710,7 +710,7 @@ msgstr ""
 
 #: src/ui-imgui/debugger/bookmarks/bm_window.cpp:414
 #: src/ui-imgui/debugger/bookmarks/bm_window.cpp:485
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1635
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1644
 #: src/ui-imgui/debugger/symbols/sym_window.cpp:801
 #: src/ui-imgui/debugger/vars/vars_window.cpp:831
 #: src/ui-imgui/memext/memext_save_dialog.cpp:168
@@ -1010,7 +1010,7 @@ msgid ""
 msgstr ""
 
 #: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1497
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1632
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1641
 #: src/ui-imgui/debugger/sections/dbg_focus_to.cpp:211
 #: src/ui-imgui/debugger/watch/watch_window.cpp:464
 msgid "Address:"
@@ -4027,7 +4027,7 @@ msgid "Focus to..."
 msgstr ""
 
 #: src/ui-imgui/debugger/ioview/io_window.cpp:1730
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3319
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3328
 msgid "Add to bookmarks"
 msgstr ""
 
@@ -4656,8 +4656,8 @@ msgstr ""
 
 #: src/ui-imgui/debugger/membrowser/membrowser_char_inserter.cpp:231
 #: src/ui-imgui/debugger/membrowser/membrowser_char_inserter.cpp:276
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1674
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1678
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1683
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1687
 msgid "Target:"
 msgstr ""
 
@@ -4835,6 +4835,7 @@ msgstr ""
 
 #: src/ui-imgui/debugger/membrowser/membrowser_layers.cpp:497
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:135
+#: src/ui-imgui/maxspeed_bench_window.cpp:156
 #: src/ui-imgui/topmenu/topmenu.cpp:41
 msgid "Reset"
 msgstr ""
@@ -6866,206 +6867,206 @@ msgstr ""
 msgid "OK"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1434
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1443
 msgid "History of already executed instructions"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1541
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1548
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1550
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1557
 msgid "T-states:"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1544
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1553
 msgid "taken/not taken"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1559
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1568
 msgid "Flags:"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1630
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1639
 msgid "Symbol:"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1639
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1648
 msgid "Module:"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1694
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1698
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1703
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1707
 msgid "Mem:"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1732
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1737
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1741
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1746
 msgid "Focus to"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1807
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1816
 msgid "enabled"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1807
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1816
 msgid "disabled"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1826
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1846
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1835
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1855
 msgid "addr"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1829
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1838
 msgid "range"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1833
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1842
 msgid "mask"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1841
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1850
 msgid "(no address - condition-based)"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1853
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1862
 msgid "cond"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1859
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1868
 msgid "hits"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1921
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1930
 #: src/ui-imgui/topmenu/menu_debugger.cpp:112
 #: src/ui-imgui/topmenu/menu_debugger.cpp:324
 msgid "Breakpoints"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1935
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1944
 msgid "Double-click a row or start typing to open the inline assembler."
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1936
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1945
 msgid "Right-click for context menu."
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:2498
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:2507
 msgid "Address or symbol"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:2513
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:2522
 msgid "Follow PC"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:2519
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:2528
 msgid "T-states"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:2977
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:2986
 msgid "Set Breakpoint"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:2990
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:2999
 msgid "Remove Breakpoint"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:2997
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3006
 msgid "Disable Breakpoint"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3002
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3011
 msgid "Enable Breakpoint"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3007
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3016
 msgid "Edit Breakpoint..."
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3023
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3032
 #, c-format
 msgid "Show %d Breakpoints at 0x%04X in BP List"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3032
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3041
 msgid "Quick action on..."
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3049
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3058
 msgid "Disable"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3054
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3063
 msgid "Enable"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3060
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3069
 msgid "Edit..."
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3065
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3074
 msgid "Remove"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3079
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3088
 msgid "Disable all at this address"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3088
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3097
 msgid "Enable all at this address"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3097
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3106
 msgid "Add another Execution Breakpoint"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3108
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3117
 msgid "Set as PC"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3140
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3149
 msgid "Focus To..."
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3152
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3161
 msgid "Focus to PC"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3168
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3177
 msgid "Focus to register"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3274
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3283
 msgid "Show in"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3282
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3291
 msgid "Disassembly #1"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3290
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3299
 #: src/ui-imgui/topmenu/menu_debugger.cpp:177
 #: src/ui-imgui/topmenu/menu_debugger.cpp:458
 msgid "Disassembly #2"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3291
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3300
 #: src/ui-imgui/topmenu/menu_debugger.cpp:182
 #: src/ui-imgui/topmenu/menu_debugger.cpp:463
 msgid "Disassembly #3"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3292
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3301
 #: src/ui-imgui/topmenu/menu_debugger.cpp:187
 #: src/ui-imgui/topmenu/menu_debugger.cpp:468
 msgid "Disassembly #4"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3293
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3302
 #: src/ui-imgui/topmenu/menu_debugger.cpp:192
 #: src/ui-imgui/topmenu/menu_debugger.cpp:473
 msgid "Disassembly #5"
 msgstr ""
 
-#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3337
+#: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3346
 msgid "Edit row"
 msgstr ""
 
@@ -8908,6 +8909,67 @@ msgstr ""
 msgid "Joystick"
 msgstr ""
 
+#: src/ui-imgui/maxspeed_bench_window.cpp:56
+msgid "MAX SPEED Benchmark"
+msgstr ""
+
+#: src/ui-imgui/maxspeed_bench_window.cpp:66
+msgid "Not in MAX SPEED (Alt+M to enable)"
+msgstr ""
+
+#: src/ui-imgui/maxspeed_bench_window.cpp:70
+msgid "Measuring (MAX SPEED active)"
+msgstr ""
+
+#: src/ui-imgui/maxspeed_bench_window.cpp:74
+msgid "MAX SPEED paused / stalled"
+msgstr ""
+
+#: src/ui-imgui/maxspeed_bench_window.cpp:81
+msgid "No MAX SPEED time measured yet."
+msgstr ""
+
+#: src/ui-imgui/maxspeed_bench_window.cpp:114
+#: src/ui-imgui/measuring_gdg_window.cpp:93
+msgid "Measured time:"
+msgstr ""
+
+#: src/ui-imgui/maxspeed_bench_window.cpp:117
+msgid "Emulated pxCLK:"
+msgstr ""
+
+#: src/ui-imgui/maxspeed_bench_window.cpp:120
+msgid "Throughput:"
+msgstr ""
+
+#: src/ui-imgui/maxspeed_bench_window.cpp:123
+msgid "Efficiency:"
+msgstr ""
+
+#: src/ui-imgui/maxspeed_bench_window.cpp:126
+msgid "FB-FPS:"
+msgstr ""
+
+#: src/ui-imgui/maxspeed_bench_window.cpp:139
+msgid "Samples:"
+msgstr ""
+
+#: src/ui-imgui/maxspeed_bench_window.cpp:142
+msgid "Eff. min / max:"
+msgstr ""
+
+#: src/ui-imgui/maxspeed_bench_window.cpp:145
+msgid "Eff. mean / median:"
+msgstr ""
+
+#: src/ui-imgui/maxspeed_bench_window.cpp:148
+msgid "Eff. stddev:"
+msgstr ""
+
+#: src/ui-imgui/maxspeed_bench_window.cpp:161
+msgid "Print to console"
+msgstr ""
+
 #: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:324
 msgid "MCP Activity###mcp_activity_window"
 msgstr ""
@@ -8968,7 +9030,7 @@ msgstr ""
 msgid "Description##mcp_act_col_desc"
 msgstr ""
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:514
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:521
 msgid "Open the related window"
 msgstr ""
 
@@ -9198,10 +9260,6 @@ msgstr ""
 
 #: src/ui-imgui/measuring_gdg_window.cpp:63
 msgid "Accuracy of GDG"
-msgstr ""
-
-#: src/ui-imgui/measuring_gdg_window.cpp:93
-msgid "Measured time:"
 msgstr ""
 
 #: src/ui-imgui/measuring_gdg_window.cpp:104
@@ -9495,7 +9553,7 @@ msgid "Created"
 msgstr ""
 
 #: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:191
-#: src/ui-imgui/topmenu/menu_emulator.cpp:23
+#: src/ui-imgui/topmenu/menu_emulator.cpp:24
 msgid "Emulator"
 msgstr ""
 
@@ -10674,19 +10732,23 @@ msgstr ""
 msgid "Events"
 msgstr ""
 
-#: src/ui-imgui/topmenu/menu_emulator.cpp:25
+#: src/ui-imgui/topmenu/menu_emulator.cpp:26
 msgid "Measuring of GDG Speed..."
 msgstr ""
 
-#: src/ui-imgui/topmenu/menu_emulator.cpp:30
+#: src/ui-imgui/topmenu/menu_emulator.cpp:31
 msgid "Frame Timing Accuracy..."
 msgstr ""
 
-#: src/ui-imgui/topmenu/menu_emulator.cpp:41
+#: src/ui-imgui/topmenu/menu_emulator.cpp:40
+msgid "MAX SPEED Benchmark..."
+msgstr ""
+
+#: src/ui-imgui/topmenu/menu_emulator.cpp:47
 msgid "Development Mode"
 msgstr ""
 
-#: src/ui-imgui/topmenu/menu_emulator.cpp:50
+#: src/ui-imgui/topmenu/menu_emulator.cpp:56
 msgid "ImGui Demo"
 msgstr ""
 

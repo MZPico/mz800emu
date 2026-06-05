@@ -16,6 +16,7 @@
 #include "emulator.h"
 #include "emulator_measuring.h"
 #include "cfgmain.h"
+#include "libs/sdlapp/sdlapp_options.h"
 #include "display.h"
 #include "mzarch/mzarch_platform_functions.h"
 #include "mzarch/mzarch.h"
@@ -200,6 +201,15 @@ gpointer emulator_thread(gpointer ptr)
         };
 
         emulator_measuring_init();
+
+        /* --maxspeed-bench: headless A/B režim - spusť v MAX SPEED a nech
+         * sampling thread periodicky tisknout report na konzoli. */
+        if (sdlapp_option_present("--maxspeed-bench"))
+        {
+            g_emulator_measuring.maxspeed.console_output_enabled = true;
+            emulator_max_speed(true);
+        };
+
         mzarch_main();
     }
     else
@@ -251,6 +261,9 @@ void emulator_max_speed(bool value)
         };
     };
 
+    // MAX SPEED benchmark: otevři/uzavři měřený segment podle nové rychlosti
+    emulator_measuring_maxspeed_update_segment();
+
     iface_audio_update_buffer_state();
 }
 
@@ -268,6 +281,9 @@ void emulator_pause(bool value)
     };
 
     g_emulator.paused = value;
+
+    // MAX SPEED benchmark: pauza ukončuje měřený segment, unpauza jej (v MAX SPEED) obnoví
+    emulator_measuring_maxspeed_update_segment();
 
     iface_audio_pause_emulation(g_emulator.paused);
 

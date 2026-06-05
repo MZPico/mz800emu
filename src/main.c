@@ -181,6 +181,11 @@ static const st_SDLAPP_OPTION_DEF g_known_options[] = {
       "Resources). Intended for CI / batch / subprocess scenarios where no "
       "display or audio device is available. Implies --no-first-run-windows. "
       "The process keeps running until SIGINT (Ctrl+C) or SDL quit event." },
+    { "--maxspeed-bench",   SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
+      "Start in MAX SPEED and periodically print the MAX SPEED benchmark report "
+      "(efficiency %, throughput, FB-FPS, distribution) to the console. Works in "
+      "both full and NO_DEBUGGER builds. Intended for headless A/B efficiency "
+      "measurement - combine with --headless and --run-mzf." },
     { "--home-dir",         SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<dirpath>",
       "Override the home directory (where the binary's read-only assets live: "
       "ui_resources/, locale/, certs/). Default: auto-detected from the binary "

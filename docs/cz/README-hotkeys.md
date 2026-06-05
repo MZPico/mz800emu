@@ -31,6 +31,8 @@ Globální klávesové zkratky dostupné napříč celým oknem emulátoru.
 | `Alt + Down`               | Snížit Custom rychlost (krok 1 % normální rychlosti)                        |
 | `Alt + Shift + Down`       | Snížit Custom rychlost (krok 10 % normální rychlosti)                       |
 | `Alt + Pg_Down`            | Snížit Custom rychlost (krok 100 % normální rychlosti)                      |
+| `Alt + T`                  | MAX SPEED benchmark: vypsat report efektivity emulace na konzoli            |
+| `Alt + Shift + T`          | MAX SPEED benchmark: resetovat měření                                       |
 
 ## Disketové mechaniky (FDC)
 

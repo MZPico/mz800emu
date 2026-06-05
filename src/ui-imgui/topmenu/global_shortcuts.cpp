@@ -11,6 +11,7 @@
 
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "emulator.h"
+#include "emulator_measuring.h"
 #include "mzarch/mzarch_config.h"
 #include "mzarch/mzarch_platform_functions.h"
 #include "iface/iface_video.h"
@@ -152,6 +153,28 @@ void imgui_global_shortcuts(void)
         if (ImGui::IsKeyPressed(ImGuiKey_N, false))
         {
             emulator_switch_to_normal_speed();
+        };
+
+        /*
+         * Alt + T: MAX SPEED benchmark - výpis reportu na konzoli
+         * Alt + Shift + T: reset benchmarku
+         *
+         * Benchmark měří efektivitu emulace pouze v MAX SPEED, nezávisle na
+         * debuggeru (funguje i v NO_DEBUGGER buildu). Shift se kontroluje pred
+         * prostym Alt+T aby combo varianta nebyla "snenita" prostou variantou
+         * (pattern shoda s Alt+Shift+M / +C / +W).
+         */
+        if (ImGui::IsKeyPressed(ImGuiKey_T, false))
+        {
+            if (io.KeyShift)
+            {
+                emulator_measuring_maxspeed_reset();
+                printf("MAX SPEED benchmark: reset.\n");
+            }
+            else
+            {
+                emulator_measuring_maxspeed_print();
+            };
         };
 
         /*

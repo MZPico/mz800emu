@@ -17,6 +17,7 @@ extern "C"
     void imgui_fps_measurement(bool *p_open);
     void imgui_measuring_frame_timing(bool *p_open);
     void imgui_measuring_gdg(bool *p_open);
+    void imgui_maxspeed_bench(bool *p_open);
     void imgui_audio(bool *p_open);
     void imgui_file_chooser_window(void);
     void imgui_vkbd(bool *p_open);

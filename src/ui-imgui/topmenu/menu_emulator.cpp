@@ -5,6 +5,7 @@
 #include <glib.h>
 
 #include "libs/imgui/imgui.h"
+#include "ui-imgui/bootstrap/myimgui.h"
 
 // Lokalizace
 #include "i18n.h"
@@ -34,6 +35,11 @@ void imgui_menu_emulator(void)
                 emulator_measuring_frame_timing_reset();
             }
             EMULATOR_MEASURING_SET_FRAME_TIMING_ENABLED(!EMULATOR_MEASURING_TEST_FRAME_TIMING_ENABLED);
+        };
+
+        if (ImGui::MenuItem(_L("MAX SPEED Benchmark..."), NULL, g_gui->showMaxSpeedBenchWindow))
+        {
+            g_gui->showMaxSpeedBenchWindow = !g_gui->showMaxSpeedBenchWindow;
         };
 
         ImGui::Separator();

@@ -42,6 +42,7 @@ typedef struct MyImGui
     bool showVersionCheckResultWindow;
     bool showAboutWindow;
     bool showVideoIfaceMeasurementWindow;
+    bool showMaxSpeedBenchWindow;        /**< MAX SPEED benchmark okno. */
     bool showAudioWindow;
     bool showVirtualCmtWindow;
     bool showCmtFixMzfsizeWindow;

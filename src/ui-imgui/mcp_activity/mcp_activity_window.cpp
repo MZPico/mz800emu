@@ -489,6 +489,12 @@ extern "C" void mcp_activity_window_render(bool *p_open)
                 {
                     switch (entry.entity_kind)
                     {
+/* Routing do cílových debugger oken (BP/Watch/Symbol/Bookmark) existuje
+ * jen v buildu s debuggerem. Bez něj (MZ800EMU_NO_DEBUGGER) jsou definující
+ * překladové jednotky vyřazeny - bpt_window_focus_id by selhal při linkování,
+ * watch/sym/bm už při kompilaci (jejich hlavičky deklarace guardují). Bez
+ * debuggeru nemá kam routovat, takže je to korektní no-op. */
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
                         case DBGAPI_ENTITY_KIND_BP:
                             bpt_window_focus_id((int)entry.entity_id);
                             break;
@@ -503,6 +509,7 @@ extern "C" void mcp_activity_window_render(bool *p_open)
                         case DBGAPI_ENTITY_KIND_BOOKMARK:
                             bm_window_focus_id((uint32_t)entry.entity_id);
                             break;
+#endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */
                         case DBGAPI_ENTITY_KIND_NONE:
                         default:
                             /* No-op - tento řádek nemá routing target. */

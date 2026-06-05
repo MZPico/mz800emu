@@ -254,6 +254,8 @@ void imgui_main_window(GLuint texture)
     if (EMULATOR_MEASURING_TEST_GDG_ENABLED)
         imgui_measuring_gdg(EMULATOR_MEASURING_GDG_ENABLED_PTR);
 
+    imgui_maxspeed_bench(&g_gui->showMaxSpeedBenchWindow);
+
     if (g_gui->showAudioWindow)
         imgui_audio(&g_gui->showAudioWindow);
 

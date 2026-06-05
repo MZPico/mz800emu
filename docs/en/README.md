@@ -98,6 +98,7 @@ are rejected with an error - use `--help` for a generated listing.
 | `--no-save-ini` | - | Do not write the `.ini` file at exit. CLI overrides become session-only. |
 | `--no-first-run-windows` | - | Suppress automatic opening of About + Version Check Setup windows on first run (when no `.ini` file exists). Useful for headless / scripted launches. |
 | `--headless` | - | Run the emulator without a GUI window and without audio output. The SDL3 video and audio subsystems run in no-op mode (no SDL window, no audio device opened). The framebuffer is still rendered into memory (ready for later MCP frame Resources). Intended for CI / batch / subprocess scenarios with no display or audio device available. The process keeps running until SIGINT (Ctrl+C) or an SDL quit event. Recommended to combine with `--no-first-run-windows`. |
+| `--maxspeed-bench` | - | Start directly in MAX SPEED and periodically (every 5 s) print the MAX SPEED benchmark report to the console (efficiency %, throughput, FB-FPS, distribution). Intended for headless emulation efficiency measurement. Combine with `--headless` and `--run-mzf`. See [`maxspeed-benchmark.md`](maxspeed-benchmark.md). |
 
 ### CDL export layout
 
@@ -221,6 +222,17 @@ mz800emu --all-traces-mode always --hwlog-mode off
 mz800emu --cputrack-mode always \
          --cputrack-chunk-mb 32 --cputrack-max-total-mb 512
 ```
+
+
+## MAX SPEED benchmark
+
+Measuring emulation efficiency in MAX SPEED mode - how much "real MZ-800 time"
+gets executed per one real second (100 % = real hardware speed). Open the window
+from the **Emulator -> MAX SPEED Benchmark...** menu; the `Alt + T` key prints the
+report to the console and `Alt + Shift + T` resets the measurement. For headless
+measurement use the `--maxspeed-bench` option.
+
+For details see [`maxspeed-benchmark.md`](maxspeed-benchmark.md).
 
 
 ## Known issues
