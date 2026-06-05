@@ -11,6 +11,8 @@
 
 	- BUGFIX: Unicard - příkaz GETCWD vracel u podadresářů dvojité úvodní lomítko (//adresar)
 
+	- BUGFIX: Debugger Main, Instruction History zobrazovala u krátkých instrukcí přebytečné bajty
+
 
 2026-06-02 - Released version 2.0.3 - preview
 

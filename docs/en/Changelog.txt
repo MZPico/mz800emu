@@ -11,6 +11,8 @@
 
 	- BUGFIX: Unicard - the GETCWD command returned a doubled leading slash for subdirectories (//dir)
 
+	- BUGFIX: Debugger Main, Instruction History showed extra bytes for short instructions
+
 
 2026-06-02 - Released version 2.0.3 - preview
 

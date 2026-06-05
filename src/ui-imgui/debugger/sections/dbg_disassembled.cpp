@@ -1253,21 +1253,30 @@ static void read_debugger_history(DisassembledView *self, st_DEBUGGER_HISTORY db
          * bufferu) a interně se kombinací s bytovým offsetem dostane na
          * správný uložený byte. */
         uint8_t hist_pos = idx;
-        z80_dasm(&out->inst, debugger_dasm_history_read_cb, &hist_pos, hrow->addr);
+        int hlen = z80_dasm(&out->inst, debugger_dasm_history_read_cb,
+                            &hist_pos, hrow->addr);
 
         /* Formát s aktuálně synchronizovaným symtab (bridge na sym_db) */
         z80_dasm_format_t fmt = make_default_dasm_format();
         z80_dasm_to_str_sym(out->mnemonic, sizeof(out->mnemonic),
                             &out->inst, &fmt, get_dasm_symtab());
 
-        /* Zkopírujeme bytekódy z historie (= autoritativní zdroj, instr.bytes
-         * by mohl rozejít při přepisu paměti mezi exec a render). */
-        out->num_bytes = 0;
-        for (int b = 0; b < DEBUGGER_MAX_INSTR_BYTES; b++)
+        /* Délka je autoritativně z disassembly (= z80_dasm návratová hodnota,
+         * shodná s inst.length, invariant 1-4), NIKDY heuristikou
+         * "poslední nenulový bajt = konec". Ring buffer historie totiž při
+         * M1 čistí jen byte[0]; byte[1..3] krátké instrukce nepřepíše a drží
+         * fosilie po delší instrukci, která slot obývala dříve. Heuristika
+         * by je vykreslila jako součást instrukce (a opačně by usekla
+         * legitimní 0x00 operandy, např. LD BC,#0000 = 01 00 00).
+         * Bajty kopírujeme z historie (= autoritativní pro reálně přečtené,
+         * instr.bytes by se mohl rozejít při přepisu paměti mezi exec a
+         * render), ale jen num_bytes z nich. */
+        out->num_bytes = (hlen > DEBUGGER_MAX_INSTR_BYTES)
+                             ? DEBUGGER_MAX_INSTR_BYTES
+                             : hlen;
+        for (int b = 0; b < out->num_bytes; b++)
         {
             out->bytes[b] = hrow->byte[b];
-            if (b == 0 || hrow->byte[b] != 0)
-                out->num_bytes = b + 1;
         };
 
         self->hist_cached_count++;
