@@ -528,63 +528,89 @@ void imgui_menu_debugger(en_DBG_MENU_CALLER caller)
         ImGui::Separator();
 
         /*
-         * Per-chip-panels mutant: per-chip detail okna pro CTC 8253, PPI
-         * 8255, Z80 PIO, PSG SN76489. CTC a PPI jsou ve všech 3 archech,
-         * Z80 PIO a PSG jen v MZ-800 / MZ-1500. Shortcuts Alt+Shift+C /
-         * +I / +Z / +G obsluhuje global_shortcuts.cpp.
+         * Submenu "Chips" - per-chip detail (state) okna integrovanych LSI:
+         * CTC 8253, PPI 8255, Z80 PIO, PSG SN76489, GDG video LSI. CTC a PPI
+         * jsou ve vsech 3 archech, Z80 PIO a PSG jen v MZ-800 / MZ-1500, GDG
+         * vsude. Shortcuts Alt+Shift+C / +I / +Z / +G / +A / +V obsluhuje
+         * global_shortcuts.cpp (funguji i kdyz je okno v submenu).
          */
-        if (ImGui::MenuItem(_L("CTC State"), "Alt+Shift+C", g_gui->showCtcStateWindow))
+        if (ImGui::BeginMenu(_L("Chips")))
         {
-            g_gui->showCtcStateWindow = !g_gui->showCtcStateWindow;
-        };
-        if (ImGui::MenuItem(_L("PPI State"), "Alt+Shift+I", g_gui->showPpiStateWindow))
-        {
-            g_gui->showPpiStateWindow = !g_gui->showPpiStateWindow;
-        };
+            if (ImGui::MenuItem(_L("CTC State"), "Alt+Shift+C", g_gui->showCtcStateWindow))
+            {
+                g_gui->showCtcStateWindow = !g_gui->showCtcStateWindow;
+            };
+            if (ImGui::MenuItem(_L("PPI State"), "Alt+Shift+I", g_gui->showPpiStateWindow))
+            {
+                g_gui->showPpiStateWindow = !g_gui->showPpiStateWindow;
+            };
 #if HAVE_PIOZ80
-        if (ImGui::MenuItem(_L("Z80 PIO State"), "Alt+Shift+Z", g_gui->showPiozStateWindow))
-        {
-            g_gui->showPiozStateWindow = !g_gui->showPiozStateWindow;
-        };
+            if (ImGui::MenuItem(_L("Z80 PIO State"), "Alt+Shift+Z", g_gui->showPiozStateWindow))
+            {
+                g_gui->showPiozStateWindow = !g_gui->showPiozStateWindow;
+            };
 #endif
 #if HAVE_PSG >= 1
-        if (ImGui::MenuItem(_L("PSG State"), "Alt+Shift+G", g_gui->showPsgStateWindow))
-        {
-            g_gui->showPsgStateWindow = !g_gui->showPsgStateWindow;
-        };
-        /* psg-audio-scope mutant F1: PSG Audio Scope - samostatné okno
-         * pro dynamickou audio analýzu (oscilloscope + plánované
-         * envelope / piano roll). Shortcut Alt+Shift+A = Audio. */
-        if (ImGui::MenuItem(_L("PSG Audio Scope"), "Alt+Shift+A", g_gui->showPsgAudioScopeWindow))
-        {
-            g_gui->showPsgAudioScopeWindow = !g_gui->showPsgAudioScopeWindow;
-        };
+            if (ImGui::MenuItem(_L("PSG State"), "Alt+Shift+G", g_gui->showPsgStateWindow))
+            {
+                g_gui->showPsgStateWindow = !g_gui->showPsgStateWindow;
+            };
+            /* psg-audio-scope mutant F1: PSG Audio Scope - samostatné okno
+             * pro dynamickou audio analýzu (oscilloscope + plánované
+             * envelope / piano roll). Shortcut Alt+Shift+A = Audio. */
+            if (ImGui::MenuItem(_L("PSG Audio Scope"), "Alt+Shift+A", g_gui->showPsgAudioScopeWindow))
+            {
+                g_gui->showPsgAudioScopeWindow = !g_gui->showPsgAudioScopeWindow;
+            };
 #endif
-        /* gdg-panel F1 scaffold: GDG inspector toggle. V = Video / GDG.
-         * GDG je ve všech 3 archech (MZ-700/MZ-800/MZ-1500), žádný guard. */
-        if (ImGui::MenuItem(_L("GDG State"), "Alt+Shift+V", g_gui->showGdgStateWindow))
-        {
-            g_gui->showGdgStateWindow = !g_gui->showGdgStateWindow;
+            /* gdg-panel F1 scaffold: GDG inspector toggle. V = Video / GDG.
+             * GDG je ve všech 3 archech (MZ-700/MZ-800/MZ-1500), žádný guard. */
+            if (ImGui::MenuItem(_L("GDG State"), "Alt+Shift+V", g_gui->showGdgStateWindow))
+            {
+                g_gui->showGdgStateWindow = !g_gui->showGdgStateWindow;
+            };
+
+            ImGui::EndMenu();
         };
 
         /*
-         * Storage chip state okna. Tyto MenuItems jsou duplicitní k položkám
-         * v sekci HW (menu_fdcontroller.cpp, menu_qdisk.cpp); záměr je mít
-         * je dostupné i z Debugger menu vedle ostatních chip state oken.
-         * Toggle stejných g_gui flagů, takže obě cesty udržují stejný stav.
+         * Submenu "Storage" - state okna ulozistovych radicu/zarizeni:
+         * FDC (WD279x), QDisk (MZ-1F11), Memory Disk (ramdisky MR-1R18 +
+         * Pezik), IDE8 (HDD radic). Tyto MenuItems jsou duplicitni k polozkam
+         * v sekci HW (menu_fdcontroller.cpp, menu_qdisk.cpp, menu_ramdisk.cpp,
+         * menu_ide8.cpp); zamer je mit je dostupne i z Debugger menu vedle
+         * ostatnich state oken. Toggle stejnych g_gui flagu, takze obe cesty
+         * udrzuji stejny stav.
          */
-#if CFG_HWEXT_HAVE_FDC
-        if (ImGui::MenuItem(_L("FDC State"), NULL, g_gui->showFdcStateWindow))
+        if (ImGui::BeginMenu(_L("Storage")))
         {
-            g_gui->showFdcStateWindow = !g_gui->showFdcStateWindow;
-        };
+#if CFG_HWEXT_HAVE_FDC
+            if (ImGui::MenuItem(_L("FDC State"), NULL, g_gui->showFdcStateWindow))
+            {
+                g_gui->showFdcStateWindow = !g_gui->showFdcStateWindow;
+            };
 #endif
 #if CFG_HWEXT_HAVE_QDISK
-        if (ImGui::MenuItem(_L("QDisk State"), NULL, g_gui->showQdiskStateWindow))
-        {
-            g_gui->showQdiskStateWindow = !g_gui->showQdiskStateWindow;
-        };
+            if (ImGui::MenuItem(_L("QDisk State"), NULL, g_gui->showQdiskStateWindow))
+            {
+                g_gui->showQdiskStateWindow = !g_gui->showQdiskStateWindow;
+            };
 #endif
+#if CFG_HWEXT_HAVE_RAMDISK
+            if (ImGui::MenuItem(_L("Memory Disk State"), NULL, g_gui->showRamdiskStateWindow))
+            {
+                g_gui->showRamdiskStateWindow = !g_gui->showRamdiskStateWindow;
+            };
+#endif
+#if CFG_HWEXT_HAVE_IDE8
+            if (ImGui::MenuItem(_L("IDE8 State"), NULL, g_gui->showIde8StateWindow))
+            {
+                g_gui->showIde8StateWindow = !g_gui->showIde8StateWindow;
+            };
+#endif
+
+            ImGui::EndMenu();
+        };
 
         ImGui::EndMenu();
     };

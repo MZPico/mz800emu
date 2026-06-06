@@ -7,6 +7,8 @@
 
 	- Debugger: the FDC State window has tabs for both controllers; the I/O Ports window shows the ports of both the standard and secondary controllers
 
+	- Debugger: added device status details for Memory Disks and IDE8 Disks
+
 	- MCP server: FDC media slots now address both the controller and the drive - fdc0_fd0..3 (standard controller) and fdc1_fd0..3 (secondary controller). The original fdc0/fdc1 slots were removed (breaking change for MCP clients)
 
 	- BUGFIX: FDC - clicking Cancel in the DSK file browser no longer unmounts the current image (it stays unchanged)

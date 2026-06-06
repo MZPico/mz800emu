@@ -59,6 +59,8 @@ typedef struct MyImGui
     bool showFdcStateWindow;
     bool showQdiskStorageSwitchWindow;   /**< QD: switch storage mode popup (Faze 3) */
     bool showQdiskStateWindow;           /**< QD: debugger state inspector okno (Faze 6) */
+    bool showRamdiskStateWindow;         /**< Memory Disk State: stav vsech ramdisku (STD + Pezik E8/68) */
+    bool showIde8StateWindow;            /**< IDE8 State: stav IDE8 radice (Master + Slave) */
     bool showCtcStateWindow;             /**< Per-chip-panels: CTC 8253 state inspector (F1 scaffold) */
     bool showPpiStateWindow;             /**< Per-chip-panels: PPI 8255 state inspector (F1 scaffold) */
     bool showPiozStateWindow;            /**< Per-chip-panels: Z80 PIO state inspector (F1 scaffold) */

@@ -9,6 +9,7 @@
 #include "i18n.h"
 
 #include "ui-imgui/topmenu/topmenu.h"
+#include "ui-imgui/bootstrap/myimgui.h"
 
 #include "emulator/hw-generic/ide8/ide8.h"
 #include "baseui/baseui_filechooser.h"
@@ -136,6 +137,16 @@ void imgui_menu_ide8(void)
         {
             imgui_ide8_open_file(IDE8_DRIVE_SLAVE);
         };
+
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+        /* memory-disk-state: debugger okno se stavem IDE8 radice. */
+        ImGui::Separator();
+        if (ImGui::MenuItem(_L("IDE8 State (debugger)..."), NULL,
+                            g_gui->showIde8StateWindow, true))
+        {
+            g_gui->showIde8StateWindow = !g_gui->showIde8StateWindow;
+        };
+#endif
 
         ImGui::EndMenu();
     };

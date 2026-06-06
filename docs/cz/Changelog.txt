@@ -7,6 +7,8 @@
 
 	- Debugger: okno FDC State má záložky pro oba řadiče; okno I/O Ports zobrazuje porty standardního i sekundárního řadiče
 
+	- Debugger: vytvořeny device status detaily pro Memory Disks a IDE8 Disks
+
 	- MCP server: media sloty pro FDC nově adresují řadič i mechaniku - fdc0_fd0..3 (standardní řadič) a fdc1_fd0..3 (sekundární řadič). Původní sloty fdc0/fdc1 byly zrušeny (breaking change pro MCP klienty)
 
 	- BUGFIX: FDC - kliknutí na Cancel ve filebrowseru pro výměnu DSK obrazu už neodmountuje stávající obraz (zůstane beze změny)

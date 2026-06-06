@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-05 14:03+0200\n"
+"POT-Creation-Date: 2026-06-06 14:38+0200\n"
 "PO-Revision-Date: 2026-03-11 21:00+0100\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -3319,7 +3319,7 @@ msgid "Drives"
 msgstr "Mechaniky"
 
 #: src/ui-imgui/debugger/fdc_window.cpp:187
-#: src/ui-imgui/topmenu/menu_debugger.cpp:577
+#: src/ui-imgui/topmenu/menu_debugger.cpp:588
 msgid "FDC State"
 msgstr "FDC State"
 
@@ -4007,6 +4007,23 @@ msgstr "Okno prehliadača pamäte"
 #: src/ui-imgui/debugger/iconbar/dbg_iconbar.cpp:310
 msgid "Disassembler window"
 msgstr "Okno Disassemblera"
+
+#: src/ui-imgui/debugger/ide8_window.cpp:123
+#: src/ui-imgui/topmenu/menu_debugger.cpp:606
+msgid "IDE8 State"
+msgstr "Stav IDE8"
+
+#: src/ui-imgui/debugger/ide8_window.cpp:130
+msgid "Controller"
+msgstr "Radič"
+
+#: src/ui-imgui/debugger/ide8_window.cpp:143
+msgid "Drive Master"
+msgstr "Mechanika Master"
+
+#: src/ui-imgui/debugger/ide8_window.cpp:149
+msgid "Drive Slave"
+msgstr "Mechanika Slave"
 
 #: src/ui-imgui/debugger/ioview/io_window.cpp:483
 msgid "(no bit-level decode available)"
@@ -6758,7 +6775,7 @@ msgid "PSG (chip 0)###PSGMonoHdr"
 msgstr "PSG (chip 0)###PSGMonoHdr"
 
 #: src/ui-imgui/debugger/qdisk_window.cpp:147
-#: src/ui-imgui/topmenu/menu_debugger.cpp:583
+#: src/ui-imgui/topmenu/menu_debugger.cpp:594
 msgid "QDisk State"
 msgstr "Stav QDisk"
 
@@ -6783,6 +6800,25 @@ msgstr "Mechanika / úložisko"
 #: src/ui-imgui/debugger/qdisk_window.cpp:220
 msgid "Virtual mode"
 msgstr "Virtuálny režim"
+
+#: src/ui-imgui/debugger/ramdisk_window.cpp:139
+#: src/ui-imgui/topmenu/menu_debugger.cpp:600
+msgid "Memory Disk State"
+msgstr "Stav pamäťového disku"
+
+#: src/ui-imgui/debugger/ramdisk_window.cpp:146
+msgid "MR-1R18 (Standard)"
+msgstr "MR-1R18 (Štandard)"
+
+#: src/ui-imgui/debugger/ramdisk_window.cpp:153
+#: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:96
+msgid "Pezik 0xE8 - 0xEF"
+msgstr "Pezik 0xE8 - 0xEF"
+
+#: src/ui-imgui/debugger/ramdisk_window.cpp:160
+#: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:108
+msgid "Pezik 0x68 - 0x6F"
+msgstr "Pezik 0x68 - 0x6F"
 
 #: src/ui-imgui/debugger/sections/dbg_callstack.cpp:255
 msgid "Active###cs_active"
@@ -10185,7 +10221,7 @@ msgid "Switch and discard"
 msgstr "Prepnúť a zahodiť"
 
 #: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:173
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:40
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:41
 msgid "No image"
 msgstr "Bez obrazu"
 
@@ -10315,38 +10351,42 @@ msgstr "Nástroje"
 msgid "FDC State (debugger)..."
 msgstr "Stav FDC (debugger)..."
 
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:83
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:84
 msgid "Select IDE8 HDD0 image file to open"
 msgstr "Vyberte súbor obrazu IDE8 HDD0"
 
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:83
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:84
 msgid "Select IDE8 HDD1 image file to open"
 msgstr "Vyberte súbor obrazu IDE8 HDD1"
 
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:94
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:95
 msgid "IDE8"
 msgstr "IDE8"
 
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:96
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:97
 msgid "IDE8 Master: "
 msgstr "IDE8 Master: "
 
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:103
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:126
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:104
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:127
 msgid "Disconnected"
 msgstr "Odpojené"
 
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:112
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:113
 msgid "Set HDD0 Image..."
 msgstr "Nastaviť obraz HDD0..."
 
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:119
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:120
 msgid "IDE8 Slave: "
 msgstr "IDE8 Slave: "
 
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:135
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:136
 msgid "Set HDD1 Image..."
 msgstr "Nastaviť obraz HDD1..."
+
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:144
+msgid "IDE8 State (debugger)..."
+msgstr "Stav IDE8 (debugger)..."
 
 #: src/ui-imgui/topmenu/devices/menu_memext.cpp:45
 msgid "Select FLASH image file to open"
@@ -10556,14 +10596,6 @@ msgstr "Pamäťový disk"
 msgid "MR-1R18 Compatible"
 msgstr "MR-1R18 kompatibilný"
 
-#: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:96
-msgid "Pezik 0xE8 - 0xEF"
-msgstr "Pezik 0xE8 - 0xEF"
-
-#: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:108
-msgid "Pezik 0x68 - 0x6F"
-msgstr "Pezik 0x68 - 0x6F"
-
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:116
 msgid "Pezik Settings..."
 msgstr "Nastavenia Pezik..."
@@ -10607,6 +10639,10 @@ msgstr "ROM Disk"
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:173
 msgid "RAM Disk File..."
 msgstr "Súbor RAM Disku..."
+
+#: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:181
+msgid "Memory Disk State (debugger)..."
+msgstr "Stav pamäťového disku (debugger)..."
 
 #: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:22
 msgid "Rear DIP Switch"
@@ -11086,32 +11122,32 @@ msgid "Variables"
 msgstr "Premenné"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:202
-#: src/ui-imgui/topmenu/menu_debugger.cpp:536
+#: src/ui-imgui/topmenu/menu_debugger.cpp:539
 msgid "CTC State"
 msgstr "Stav CTC"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:207
-#: src/ui-imgui/topmenu/menu_debugger.cpp:540
+#: src/ui-imgui/topmenu/menu_debugger.cpp:543
 msgid "PPI State"
 msgstr "Stav PPI"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:215
-#: src/ui-imgui/topmenu/menu_debugger.cpp:545
+#: src/ui-imgui/topmenu/menu_debugger.cpp:548
 msgid "Z80 PIO State"
 msgstr "Stav Z80 PIO"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:224
-#: src/ui-imgui/topmenu/menu_debugger.cpp:551
+#: src/ui-imgui/topmenu/menu_debugger.cpp:554
 msgid "PSG State"
 msgstr "Stav PSG"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:231
-#: src/ui-imgui/topmenu/menu_debugger.cpp:558
+#: src/ui-imgui/topmenu/menu_debugger.cpp:561
 msgid "PSG Audio Scope"
 msgstr "PSG Audio Scope"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:238
-#: src/ui-imgui/topmenu/menu_debugger.cpp:565
+#: src/ui-imgui/topmenu/menu_debugger.cpp:568
 msgid "GDG State"
 msgstr "GDG State"
 
@@ -11146,6 +11182,14 @@ msgstr "I/O porty"
 #: src/ui-imgui/topmenu/menu_debugger.cpp:518
 msgid "Events"
 msgstr "Udalosti"
+
+#: src/ui-imgui/topmenu/menu_debugger.cpp:537
+msgid "Chips"
+msgstr "Čipy"
+
+#: src/ui-imgui/topmenu/menu_debugger.cpp:585
+msgid "Storage"
+msgstr "Úložisko"
 
 #: src/ui-imgui/topmenu/menu_emulator.cpp:26
 msgid "Measuring of GDG Speed..."

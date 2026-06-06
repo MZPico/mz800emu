@@ -17,6 +17,7 @@ extern "C"
     void imgui_fdc_state_window(bool *p_open);
     void imgui_menu_cmt(void);
     void imgui_menu_ramdisk(void);
+    void imgui_ramdisk_state_window(bool *p_open);
     void imgui_menu_qdisk(void);
     void imgui_qdisk_storage_switch_popup(bool *p_open);
     void imgui_qdisk_state_window(bool *p_open);
@@ -24,6 +25,7 @@ extern "C"
     void imgui_unicard_runtime_mismatch_dialog(void);
     void imgui_unicard_reinit_choice_dialog(void);
     void imgui_menu_ide8(void);
+    void imgui_ide8_state_window(bool *p_open);
     void imgui_menu_memext(void);
     void imgui_menu_rom(void);
     void imgui_menu_centronics(void);

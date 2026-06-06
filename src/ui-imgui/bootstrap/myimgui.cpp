@@ -440,6 +440,14 @@ gboolean myimgui_init_cb(SdlAppWindow *win, gpointer user_data)
      * Debugger -> GDG State nebo zkratku Alt+Shift+V (V = Video). */
     gui->showGdgStateWindow = false;
 
+    /* memory-disk-state: storage state inspector okna. Memory Disk State
+     * ukazuje stav vsech ramdisku (MR-1R18 STD + Pezik E8/68), IDE8 State
+     * stav IDE8 radice (Master + Slave). Side-effect free read, default
+     * closed, user otevira pres menu Debugger nebo Devices. Visibilita se
+     * nepersistuje (= konzistentni s FDC State / QDisk State). */
+    gui->showRamdiskStateWindow = false;
+    gui->showIde8StateWindow = false;
+
     /* PSG Audio Scope (psg-audio-scope mutant F1) - samostatné okno pro
      * dynamickou audio analýzu PSG (oscilloscope, plánovaný envelope /
      * piano roll v dalších F-fázích). Default closed, user otevírá přes

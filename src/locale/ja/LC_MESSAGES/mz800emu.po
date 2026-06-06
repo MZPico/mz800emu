@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-05 14:03+0200\n"
+"POT-Creation-Date: 2026-06-06 14:38+0200\n"
 "PO-Revision-Date: 2026-03-11 22:00+0100\n"
 "Last-Translator: Claude Code\n"
 "Language-Team: 日本語\n"
@@ -3323,7 +3323,7 @@ msgid "Drives"
 msgstr "ドライブ"
 
 #: src/ui-imgui/debugger/fdc_window.cpp:187
-#: src/ui-imgui/topmenu/menu_debugger.cpp:577
+#: src/ui-imgui/topmenu/menu_debugger.cpp:588
 msgid "FDC State"
 msgstr "FDC State"
 
@@ -4010,6 +4010,23 @@ msgstr "メモリブラウザウィンドウ"
 #: src/ui-imgui/debugger/iconbar/dbg_iconbar.cpp:310
 msgid "Disassembler window"
 msgstr "Disassemblerウィンドウ"
+
+#: src/ui-imgui/debugger/ide8_window.cpp:123
+#: src/ui-imgui/topmenu/menu_debugger.cpp:606
+msgid "IDE8 State"
+msgstr "IDE8 State"
+
+#: src/ui-imgui/debugger/ide8_window.cpp:130
+msgid "Controller"
+msgstr "コントローラ"
+
+#: src/ui-imgui/debugger/ide8_window.cpp:143
+msgid "Drive Master"
+msgstr "ドライブ Master"
+
+#: src/ui-imgui/debugger/ide8_window.cpp:149
+msgid "Drive Slave"
+msgstr "ドライブ Slave"
 
 #: src/ui-imgui/debugger/ioview/io_window.cpp:483
 msgid "(no bit-level decode available)"
@@ -6749,7 +6766,7 @@ msgid "PSG (chip 0)###PSGMonoHdr"
 msgstr "PSG (chip 0)###PSGMonoHdr"
 
 #: src/ui-imgui/debugger/qdisk_window.cpp:147
-#: src/ui-imgui/topmenu/menu_debugger.cpp:583
+#: src/ui-imgui/topmenu/menu_debugger.cpp:594
 msgid "QDisk State"
 msgstr "QDisk State"
 
@@ -6774,6 +6791,25 @@ msgstr "ドライブ / ストレージ"
 #: src/ui-imgui/debugger/qdisk_window.cpp:220
 msgid "Virtual mode"
 msgstr "仮想モード"
+
+#: src/ui-imgui/debugger/ramdisk_window.cpp:139
+#: src/ui-imgui/topmenu/menu_debugger.cpp:600
+msgid "Memory Disk State"
+msgstr "Memory Disk State"
+
+#: src/ui-imgui/debugger/ramdisk_window.cpp:146
+msgid "MR-1R18 (Standard)"
+msgstr "MR-1R18 (標準)"
+
+#: src/ui-imgui/debugger/ramdisk_window.cpp:153
+#: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:96
+msgid "Pezik 0xE8 - 0xEF"
+msgstr "Pezik 0xE8 - 0xEF"
+
+#: src/ui-imgui/debugger/ramdisk_window.cpp:160
+#: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:108
+msgid "Pezik 0x68 - 0x6F"
+msgstr "Pezik 0x68 - 0x6F"
 
 #: src/ui-imgui/debugger/sections/dbg_callstack.cpp:255
 msgid "Active###cs_active"
@@ -10160,7 +10196,7 @@ msgid "Switch and discard"
 msgstr "切り替えて破棄"
 
 #: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:173
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:40
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:41
 msgid "No image"
 msgstr "イメージなし"
 
@@ -10289,38 +10325,42 @@ msgstr "ツール"
 msgid "FDC State (debugger)..."
 msgstr "FDC State (debugger)..."
 
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:83
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:84
 msgid "Select IDE8 HDD0 image file to open"
 msgstr "開くIDE8 HDD0イメージファイルを選択"
 
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:83
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:84
 msgid "Select IDE8 HDD1 image file to open"
 msgstr "開くIDE8 HDD1イメージファイルを選択"
 
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:94
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:95
 msgid "IDE8"
 msgstr "IDE8"
 
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:96
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:97
 msgid "IDE8 Master: "
 msgstr "IDE8 Master: "
 
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:103
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:126
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:104
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:127
 msgid "Disconnected"
 msgstr "切断済み"
 
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:112
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:113
 msgid "Set HDD0 Image..."
 msgstr "HDD0イメージを設定..."
 
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:119
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:120
 msgid "IDE8 Slave: "
 msgstr "IDE8 Slave: "
 
-#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:135
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:136
 msgid "Set HDD1 Image..."
 msgstr "HDD1イメージを設定..."
+
+#: src/ui-imgui/topmenu/devices/menu_ide8.cpp:144
+msgid "IDE8 State (debugger)..."
+msgstr "IDE8 State (debugger)..."
 
 #: src/ui-imgui/topmenu/devices/menu_memext.cpp:45
 msgid "Select FLASH image file to open"
@@ -10528,14 +10568,6 @@ msgstr "メモリディスク"
 msgid "MR-1R18 Compatible"
 msgstr "MR-1R18互換"
 
-#: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:96
-msgid "Pezik 0xE8 - 0xEF"
-msgstr "Pezik 0xE8 - 0xEF"
-
-#: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:108
-msgid "Pezik 0x68 - 0x6F"
-msgstr "Pezik 0x68 - 0x6F"
-
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:116
 msgid "Pezik Settings..."
 msgstr "Pezik設定..."
@@ -10579,6 +10611,10 @@ msgstr "ROMディスク"
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:173
 msgid "RAM Disk File..."
 msgstr "RAMディスクファイル..."
+
+#: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:181
+msgid "Memory Disk State (debugger)..."
+msgstr "Memory Disk State (debugger)..."
 
 #: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:22
 msgid "Rear DIP Switch"
@@ -11055,32 +11091,32 @@ msgid "Variables"
 msgstr "変数"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:202
-#: src/ui-imgui/topmenu/menu_debugger.cpp:536
+#: src/ui-imgui/topmenu/menu_debugger.cpp:539
 msgid "CTC State"
 msgstr "CTC 状態"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:207
-#: src/ui-imgui/topmenu/menu_debugger.cpp:540
+#: src/ui-imgui/topmenu/menu_debugger.cpp:543
 msgid "PPI State"
 msgstr "PPI 状態"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:215
-#: src/ui-imgui/topmenu/menu_debugger.cpp:545
+#: src/ui-imgui/topmenu/menu_debugger.cpp:548
 msgid "Z80 PIO State"
 msgstr "Z80 PIO 状態"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:224
-#: src/ui-imgui/topmenu/menu_debugger.cpp:551
+#: src/ui-imgui/topmenu/menu_debugger.cpp:554
 msgid "PSG State"
 msgstr "PSG 状態"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:231
-#: src/ui-imgui/topmenu/menu_debugger.cpp:558
+#: src/ui-imgui/topmenu/menu_debugger.cpp:561
 msgid "PSG Audio Scope"
 msgstr "PSG オーディオスコープ"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:238
-#: src/ui-imgui/topmenu/menu_debugger.cpp:565
+#: src/ui-imgui/topmenu/menu_debugger.cpp:568
 msgid "GDG State"
 msgstr "GDG 状態"
 
@@ -11115,6 +11151,14 @@ msgstr "I/O ポート"
 #: src/ui-imgui/topmenu/menu_debugger.cpp:518
 msgid "Events"
 msgstr "イベント"
+
+#: src/ui-imgui/topmenu/menu_debugger.cpp:537
+msgid "Chips"
+msgstr "チップ"
+
+#: src/ui-imgui/topmenu/menu_debugger.cpp:585
+msgid "Storage"
+msgstr "ストレージ"
 
 #: src/ui-imgui/topmenu/menu_emulator.cpp:26
 msgid "Measuring of GDG Speed..."

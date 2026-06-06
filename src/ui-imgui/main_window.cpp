@@ -289,6 +289,24 @@ void imgui_main_window(GLuint texture)
 #endif
 #endif
 
+#if CFG_HWEXT_HAVE_RAMDISK
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    /* memory-disk-state: Memory Disk State debugger okno - stav vsech
+     * ramdisku (MR-1R18 STD + Pezik E8/68). Side-effect free, per frame. */
+    if (g_gui->showRamdiskStateWindow)
+        imgui_ramdisk_state_window(&g_gui->showRamdiskStateWindow);
+#endif
+#endif
+
+#if CFG_HWEXT_HAVE_IDE8
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    /* memory-disk-state: IDE8 State debugger okno - stav IDE8 radice
+     * (Master + Slave). Side-effect free, per frame. */
+    if (g_gui->showIde8StateWindow)
+        imgui_ide8_state_window(&g_gui->showIde8StateWindow);
+#endif
+#endif
+
     if (g_gui->showVirtualCmtTapeIndexWindow)
         imgui_cmt_tape_index_window(&g_gui->showVirtualCmtTapeIndexWindow);
 

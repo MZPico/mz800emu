@@ -175,6 +175,16 @@ void imgui_menu_ramdisk(void)
             imgui_ramdisk_std_open_file();
         };
 
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+        /* memory-disk-state: debugger okno se stavem vsech ramdisku. */
+        ImGui::Separator();
+        if (ImGui::MenuItem(_L("Memory Disk State (debugger)..."), NULL,
+                            g_gui->showRamdiskStateWindow, true))
+        {
+            g_gui->showRamdiskStateWindow = !g_gui->showRamdiskStateWindow;
+        };
+#endif
+
         ImGui::EndMenu();
     };
 }
