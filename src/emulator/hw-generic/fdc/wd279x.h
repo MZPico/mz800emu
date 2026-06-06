@@ -167,6 +167,7 @@ extern "C"
         uint8_t reading_status_counter; /**< Počet po sobě jdoucích čtení STATUS bez čtení DATA. */
         uint8_t pending_busy_status;  /**< 1 = další čtení STATUS vrátí BUSY=1 (one-shot po Type I příkazu, symetrie s _old_ STATUS_SCRIPT case 1). */
         uint8_t pending_drq;          /**< 1 = další čtení STATUS v Type II/III vrátí BUSY only (bez DRQ); až další čtení vrátí BUSY+DRQ. Symetrie s _old_ STATUS_SCRIPT case 2 (multi-block sector transition). CP/M 4.1 race condition se spoléhá na tuto prodlevu. */
+        uint8_t pending_rnf_end;      /**< 1 = multi-block R/W narazil na konec stopy (další sektor v pořadí neexistuje). První čtení STATUS vrátí BUSY+RNF (0x11), regSTATUS se pak vyčistí na 0x00. Symetrie s _old_ STATUS_SCRIPT case 4 ("1x BUSY+RNF, next 0x00"). MZ-800 disk BASIC čte adresář multi-blokem a spoléhá na to, že RNF na konci stopy je přechodný (BUSY=1, hned poté čisto), NE trvalý "command complete + RNF" - jinak hlásí FD1:Unformat error. */
         uint8_t positioned_sector;    /**< "Drive head position" - sektor ID na který je hlava aktuálně nastavená. Ekvivalent _old_ drive.SECTOR. Reset na 0 při track NEBO side change, update na READ SECTOR. Použito v READ ADDRESS pro buffer[1] - matchuje _old_ chování. */
         uint8_t positioned_track;     /**< Posledný track na který se hlava reálně přesunula. Ekvivalent _old_ drive.TRACK. */
         uint8_t positioned_side;      /**< Posledná strana - drive.SIDE equivalent. */

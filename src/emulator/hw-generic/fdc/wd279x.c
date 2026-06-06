@@ -644,6 +644,7 @@ static void do_force_interrupt(st_WD279X *chip, uint8_t command)
     chip->reading_status_counter = 0;
     chip->pending_busy_status = 0;
     chip->pending_drq = 0;
+    chip->pending_rnf_end = 0;
     /* Pozn.: waitForInt NEresetujeme - _old_ Force INT handler ho také
      * nereset (ř. 741-750 NEobsahuje `FDC->waitForInt = 0`). Reset by
      * způsobil race: CP/M dělá Force INT před novým commandem, OLD si
@@ -707,6 +708,7 @@ static void dispatch_command(st_WD279X *chip, uint8_t command)
     chip->intrq_active = 0;
     chip->reading_status_counter = 0;
     chip->pending_drq = 0;
+    chip->pending_rnf_end = 0;
 
     if ((command & 0x80) == 0x00)
     {
@@ -783,6 +785,7 @@ void wd279x_reset(st_WD279X *chip)
     chip->reading_status_counter = 0;
     chip->pending_busy_status = 0;
     chip->pending_drq = 0;
+    chip->pending_rnf_end = 0;
     chip->waitForInt = 0;
     chip->positioned_sector = 0;
     chip->positioned_track = 0;
@@ -857,6 +860,15 @@ int wd279x_read_byte(st_WD279X *chip, int i_addroffset, uint8_t *io_data)
             chip->regSTATUS |= WDST_T2_DRQ;
         }
 
+        /* One-shot konec stopy v multi-block R/W: toto čtení vrátí
+         * BUSY+RNF (0x11, už nastaveno v regSTATUS), všechna další čtení
+         * uvidí čistý 0x00. Symetrie s _old_ STATUS_SCRIPT case 4. */
+        if (chip->pending_rnf_end)
+        {
+            chip->pending_rnf_end = 0;
+            chip->regSTATUS = 0x00;
+        }
+
         *io_data = status;
 
         /* "10x čtení STATUS bez čtení DATA" pravidlo - simuluje konec
@@ -890,8 +902,12 @@ int wd279x_read_byte(st_WD279X *chip, int i_addroffset, uint8_t *io_data)
                     struct st_FDDrive *drv = current_drive(chip);
                     if (!drv || !load_sector_into_buffer(chip, drv))
                     {
+                        /* Konec stopy - přechodný RNF (1x BUSY+RNF, pak 0x00).
+                         * Symetrie s _old_ STATUS_SCRIPT case 4. Viz též
+                         * stejná cesta v DATA handleru a pole pending_rnf_end. */
                         chip->regSECTOR--;
-                        chip->regSTATUS = WDST_T2_RNF;
+                        chip->regSTATUS = WDST_BUSY | WDST_T2_RNF;
+                        chip->pending_rnf_end = 1;
                         chip->intrq_active = 1;
                     }
                     else
@@ -974,8 +990,15 @@ int wd279x_read_byte(st_WD279X *chip, int i_addroffset, uint8_t *io_data)
                     struct st_FDDrive *drv = current_drive(chip);
                     if (!drv || !load_sector_into_buffer(chip, drv))
                     {
+                        /* Konec stopy - další sektor v pořadí neexistuje.
+                         * Vrať RNF PŘECHODNĚ: 1x BUSY+RNF (0x11), pak 0x00.
+                         * Symetrie s _old_ STATUS_SCRIPT case 4. Trvalý RNF
+                         * (BUSY=0, sticky) by MZ-800 disk BASIC interpretoval
+                         * jako "command complete + Record Not Found" =
+                         * FD1:Unformat error při čtení adresáře multi-blokem. */
                         chip->regSECTOR--;
-                        chip->regSTATUS = WDST_T2_RNF;
+                        chip->regSTATUS = WDST_BUSY | WDST_T2_RNF;
+                        chip->pending_rnf_end = 1;
                         chip->intrq_active = 1;
                     }
                     else

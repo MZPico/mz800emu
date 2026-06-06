@@ -11,6 +11,8 @@
 
 	- MCP server: media sloty pro FDC nově adresují řadič i mechaniku - fdc0_fd0..3 (standardní řadič) a fdc1_fd0..3 (sekundární řadič). Původní sloty fdc0/fdc1 byly zrušeny (breaking change pro MCP klienty)
 
+	- BUGFIX: FDC - po přepisu řadiče hlásil MZ-800 disk BASIC při výpisu adresáře (DIR) chybu "FD1:Unformat error"; příčinou bylo, že při víceblokovém čtení sektorů na konci stopy řadič hlásil Record Not Found trvale, místo jen přechodně (jedno čtení stavu BUSY+RNF, poté čistý stav)
+
 	- BUGFIX: FDC - kliknutí na Cancel ve filebrowseru pro výměnu DSK obrazu už neodmountuje stávající obraz (zůstane beze změny)
 
 	- BUGFIX: Unicard - příkaz GETCWD vracel u podadresářů dvojité úvodní lomítko (//adresar)
