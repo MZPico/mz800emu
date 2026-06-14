@@ -1,4 +1,10 @@
 
+	- The printer mode switch can now be set to MZ or CENTRONICS. In both modes the printer communication can be logged to a file independently.
+
+	- Added full emulation of the MZ-1P16 plotter. This plotter behaves as connected only while the GUI window with its generated output is open. When the MZ-1P16 plotter window is opened, the printer mode switch is automatically set to the "MZ" standard, and the standard cannot be changed to "CENTRONICS" for as long as the plotter is connected. The printer file capture can still be used even with the plotter connected at the same time.
+
+	- The Z80 PIO can now generate an interrupt from the printer port signals, so hopefully it won't have any undesirable side effects.
+
 	- Added a MAX SPEED benchmark: measures emulation efficiency in MAX SPEED mode (how much real MZ-800 time gets executed per one real second, 100 % = real HW speed). Window via the Emulator -> MAX SPEED Benchmark... menu, the Alt+T key prints the report to the console, Alt+Shift+T resets it. For headless measurement use the --maxspeed-bench option. Measurement is active only in MAX SPEED and excludes pause and blocking operations (CMT hack).
 
 	- Added support for a secondary FDC controller (WD279x) on ports 0x58 - 0x5F (supported by some types of Unicard).

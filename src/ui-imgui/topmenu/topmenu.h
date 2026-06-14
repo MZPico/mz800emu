@@ -28,7 +28,7 @@ extern "C"
     void imgui_ide8_state_window(bool *p_open);
     void imgui_menu_memext(void);
     void imgui_menu_rom(void);
-    void imgui_menu_centronics(void);
+    void imgui_menu_printer(void);
 
     void imgui_menu_interface(void);
     void imgui_menu_display(void);

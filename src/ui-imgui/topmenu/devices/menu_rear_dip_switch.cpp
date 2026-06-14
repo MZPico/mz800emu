@@ -11,6 +11,10 @@
 #include "ui-imgui/topmenu/topmenu.h"
 #include "emulator/mzarch/mzarch.h"
 #include "emulator/hw-generic/cmt/cmt.h"
+#if (MZARCH == 800) || (MZARCH == 1500)
+#include "emulator/hw-generic/pioz80/pioz80.h"
+#include "emulator/hw-generic/mz1p16/mz1p16_emu.h"
+#endif
 
 extern "C"
 {
@@ -53,6 +57,37 @@ void imgui_menu_mz800_dip_switch(void)
         {
             cmt_rear_dip_switch_cmt_inverted_polarity(!CMT_TEST_POLARITY_INVERTED);
         };
+
+#if (MZARCH == 800) || (MZARCH == 1500)
+        /* SW2 + SW3: standard rozhraní tiskárny = polarita řídicích signálů
+         * (PA6/PA7 přes XOR). Oba spínače musí být ve stejné poloze, takže je
+         * modelujeme jako jeden přepínač MZ <-> Centronics. */
+        bool printer_mz = (pioz80_get_printer_std() == PIOZ80_PRINTER_STD_MZ);
+        /* Dokud je plotter připojený (okno otevřené), je standard zamčený na MZ
+         * (auto-přepnutí při otevření) - změna by rozhodila handshake. */
+        bool std_locked = mz1p16_emu_get_active();
+        GString *str2 = g_string_new(_("Printer Standard: "));
+        if (printer_mz)
+        {
+            g_string_append(str2, _("MZ"));
+        }
+        else
+        {
+            g_string_append(str2, _("Centronics (default)"));
+        };
+        if (std_locked)
+        {
+            g_string_append(str2, _(" (locked: plotter connected)"));
+        };
+        g_string_append(str2, "###RearDipPrinterStandard");
+
+        if (ImGui::MenuItem(str2->str, NULL, printer_mz, !std_locked))
+        {
+            pioz80_set_printer_std(printer_mz ? PIOZ80_PRINTER_STD_CENTRONICS
+                                              : PIOZ80_PRINTER_STD_MZ);
+        };
+        g_string_free(str2, TRUE);
+#endif /* (MZARCH == 800) || (MZARCH == 1500) */
 
         ImGui::EndMenu();
     };

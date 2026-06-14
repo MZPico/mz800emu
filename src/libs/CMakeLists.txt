@@ -87,6 +87,22 @@ mz_add_lib(mzlib_z80meta          SOURCES z80meta/z80_meta.c
 mz_add_lib(mzlib_iasm             SOURCES iasm/iasm.c)
 
 # ----------------------------------------------------------------------------
+# MCS-48 (Intel 8050) - jádro mikrokontroléru plotteru MZ-1P16
+# (experiment mz1p16-plotter, fáze 1). Arch-independent, ROM-agnostic.
+# Zdroj je v src/emulator/hw-generic/mz1p16/, registrován jako samostatná
+# knihovna kvůli standalone unit testu (tests/libs/mcs48).
+# ----------------------------------------------------------------------------
+mz_add_lib(mzlib_mcs48            SOURCES ../emulator/hw-generic/mz1p16/mcs48.c
+                                  INCLUDES ${CMAKE_SOURCE_DIR}/src/emulator)
+
+# Embeddovany firmware plotteru (4 KB ROM 8050) + mechanika MZ-1P16.
+# Samostatna knihovna kvuli standalone testum mechaniky.
+mz_add_lib(mzlib_mz1p16           SOURCES ../emulator/hw-generic/mz1p16/mz1p16_rom.c
+                                          ../emulator/hw-generic/mz1p16/mz1p16.c
+                                  DEPS    mzlib_mcs48
+                                  INCLUDES ${CMAKE_SOURCE_DIR}/src/emulator)
+
+# ----------------------------------------------------------------------------
 # Souborové formáty
 # ----------------------------------------------------------------------------
 mz_add_lib(mzlib_dsk              SOURCES dsk/dsk.c

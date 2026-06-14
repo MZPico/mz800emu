@@ -34,8 +34,14 @@ mz_add_test(gdg_mirror
     LABELS   "emu;peripherals"
 )
 
-mz_add_test(centronics
+mz_add_test(printer
     TYPE     EMU
-    SOURCES  test_centronics.c
+    SOURCES  test_printer.c
     LABELS   "emu;peripherals"
+)
+
+mz_add_test(mz1p16_emu
+    TYPE     EMU
+    SOURCES  test_mz1p16_emu.c
+    LABELS   "emu;peripherals;mz1p16"
 )

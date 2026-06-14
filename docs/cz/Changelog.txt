@@ -1,4 +1,10 @@
 
+	- Nyní lze zvolit nastavení switche pro printer mode MZ, nebo CENTRONICS. V obu režimech lze samostatně logovat komunikaci s tiskárnou do souboru.
+
+	- Přidána plná emulace plotteru MZ-1P16. Tento plotter se chová jako připojený jen tehdy, pokud je otevřeno GUI okno s jeho generovaným výstupem. Při otevření okna plotteru MZ-1P16 se plotter mode switch automaticky přepne na standard "MZ" a po celou dobu, kdy je plotter připojen nelze změnit standard na "CENTRONICS". Printer file capture je možné nadále použivat i se současně připojeným plotterem.
+
+	- PIO-Z80 nyní umí generovat interrupt na základě signálů z printer portu, tak snad to nebude mít žádné nežádoucí vedlejší efekty
+
 	- Přidán MAX SPEED benchmark: měření efektivity emulace v režimu MAX SPEED (kolik času skutečného MZ-800 se stihne vykonat za reálnou sekundu, 100 % = rychlost reálného HW). Okno přes menu Emulator -> MAX SPEED Benchmark..., klávesa Alt+T vypíše report na konzoli, Alt+Shift+T resetuje. Pro headless měření volba --maxspeed-bench. Měření je aktivní jen v MAX SPEED a nezahrnuje pauzu ani blokující operace (CMT-hack).
 
 	- Přidána podpora sekundárního FDC řadiče WD279x na portech 0x58 - 0x5F (podporováno některými typy Unicard).

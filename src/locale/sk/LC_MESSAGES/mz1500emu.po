@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-06 14:38+0200\n"
+"POT-Creation-Date: 2026-06-14 11:19+0200\n"
 "PO-Revision-Date: 2026-03-11 21:00+0100\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -5052,6 +5052,7 @@ msgstr "Snímka Δ"
 #: src/ui-imgui/debugger/membrowser/membrowser_layers.cpp:497
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:135
 #: src/ui-imgui/maxspeed_bench_window.cpp:156
+#: src/ui-imgui/plotter/plotter_window.cpp:414
 #: src/ui-imgui/topmenu/topmenu.cpp:41
 msgid "Reset"
 msgstr "Resetovať"
@@ -6197,6 +6198,7 @@ msgid "Deferred ICENA event (idle = -1, otherwise GDG ticks)"
 msgstr "Odložený ICENA event (idle = -1, inak GDG ticks)"
 
 #: src/ui-imgui/debugger/pioz80_window.cpp:448
+#: src/ui-imgui/plotter/plotter_window.cpp:508
 msgid "idle"
 msgstr "necinny"
 
@@ -9871,6 +9873,124 @@ msgstr ""
 "MZ-1500. Port 0xF2 je stále mono PSG (ľavý + pravý kanál).\n"
 "Port 0xF3 je iba PSG0 (ľavý) a port 0xF9 je iba PSG1 (pravý)."
 
+#: src/ui-imgui/plotter/plotter_window.cpp:99
+msgid "Black"
+msgstr "Čierna"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:100
+msgid "Red"
+msgstr "Červená"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:101
+#: src/ui-imgui/topmenu/interface/menu_display.cpp:38
+msgid "Green"
+msgstr "Zelená"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:102
+msgid "Blue"
+msgstr "Modrá"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:360
+msgid "Save plotter drawing"
+msgstr "Uložiť kresbu plotra"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:360
+msgid "plotter.png"
+msgstr "plotter.png"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:387
+msgid "Plotter MZ-1P16"
+msgstr "Plotter MZ-1P16"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:396
+msgid "Save..."
+msgstr "Uložiť..."
+
+#: src/ui-imgui/plotter/plotter_window.cpp:401
+msgid "Clear paper"
+msgstr "Vyčistiť papier"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:407
+msgid "Clear the drawing and reset the plotter (plain RESET keeps the paper)"
+msgstr "Zmaže kresbu a resetuje plotter (samotný RESET papier ponechá)"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:410
+msgid "Plotter buttons:"
+msgstr "Tlačidlá plotra:"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:420
+msgid "Paper feed"
+msgstr "Posuv papiera"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:430
+msgid "Hold to feed paper"
+msgstr "Podržaním posuniete papier"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:433
+msgid "Run drawing self-test"
+msgstr "Spustiť kresliaci self-test"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:442
+msgid "Reset with PAPER FEED held -> writes the character set in 4 colors"
+msgstr "Reset s podržaným PAPER FEED -> vypíše znakovú sadu v 4 farbách"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:447
+msgid "Zoom"
+msgstr "Priblíženie"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:449
+msgid "Preview scale: pixels per motor step"
+msgstr "Mierka náhľadu: pixelov na krok motora"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:452
+msgid "Show carriage"
+msgstr "Zobraziť vozík"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:454
+msgid "Live marker at the current pen/carriage position"
+msgstr "Živý marker na aktuálnej pozícii pera/vozíka"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:478
+#, c-format
+msgid "X: %ld"
+msgstr "X: %ld"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:480
+#, c-format
+msgid "Y: %ld"
+msgstr "Y: %ld"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:484
+msgid "Color:"
+msgstr "Farba:"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:497
+#, c-format
+msgid "Pen: %s"
+msgstr "Pero: %s"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:497
+msgid "DOWN"
+msgstr "DOLE"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:497
+msgid "UP"
+msgstr "HORE"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:503
+msgid "BUSY"
+msgstr "BUSY"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:513
+#, c-format
+msgid "Strokes: %u"
+msgstr "Ťahy: %u"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:517
+#, c-format
+msgid "(dropped %u)"
+msgstr "(zahodené %u)"
+
 #: src/ui-imgui/ramdisk/pezik_settings_window.cpp:110
 msgid "Connected"
 msgstr "Pripojené"
@@ -10089,37 +10209,6 @@ msgstr "Aktuálna rýchlosť"
 #: src/ui-imgui/topmenu/customspeed_setup.cpp:103
 msgid "Reset sliders"
 msgstr "Resetovať posuvníky"
-
-#: src/ui-imgui/topmenu/devices/menu_centronics.cpp:29
-msgid "Centronics Printer"
-msgstr "Tlačiareň Centronics"
-
-#: src/ui-imgui/topmenu/devices/menu_centronics.cpp:32
-msgid "Capture Enabled"
-msgstr "Záznam zapnutý"
-
-#: src/ui-imgui/topmenu/devices/menu_centronics.cpp:42
-#, c-format
-msgid "Capture file: %s"
-msgstr "Súbor záznamu: %s"
-
-#: src/ui-imgui/topmenu/devices/menu_centronics.cpp:43
-#, c-format
-msgid "Bytes captured: %u"
-msgstr "Zachytených bajtov: %u"
-
-#: src/ui-imgui/topmenu/devices/menu_centronics.cpp:47
-msgid "No capture file open"
-msgstr "Žiadny súbor záznamu nie je otvorený"
-
-#: src/ui-imgui/topmenu/devices/menu_centronics.cpp:52
-#, c-format
-msgid "Session total: %u bytes"
-msgstr "Spolu za reláciu: %u bajtov"
-
-#: src/ui-imgui/topmenu/devices/menu_centronics.cpp:58
-msgid "Close Capture File"
-msgstr "Zatvoriť súbor záznamu"
 
 #: src/ui-imgui/topmenu/devices/menu_cmt.cpp:26
 msgid "CMT"
@@ -10460,6 +10549,70 @@ msgstr "Načítať MemExt FLASH zo súboru..."
 msgid "Save MemExt FLASH Into File..."
 msgstr "Uložiť MemExt FLASH do súboru..."
 
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:39
+msgid "Printer"
+msgstr "Tlačiareň"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:47
+msgid "Status: ONLINE"
+msgstr "Stav: ONLINE"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:51
+msgid "Status: OFFLINE"
+msgstr "Stav: OFFLINE"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:62
+msgid "Printer Standard:"
+msgstr "Štandard tlačiarne:"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:64
+msgid "Centronics"
+msgstr "Centronics"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:68
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:72
+msgid "MZ"
+msgstr "MZ"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:75
+msgid "(locked: plotter connected)"
+msgstr "(uzamknuté: plotter pripojený)"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:80
+msgid "Capture Enabled"
+msgstr "Záznam zapnutý"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:90
+#, c-format
+msgid "Capture file: %s"
+msgstr "Súbor záznamu: %s"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:91
+#, c-format
+msgid "Bytes captured: %u"
+msgstr "Zachytených bajtov: %u"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:95
+msgid "No capture file open"
+msgstr "Žiadny súbor záznamu nie je otvorený"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:100
+#, c-format
+msgid "Session total: %u bytes"
+msgstr "Spolu za reláciu: %u bajtov"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:106
+msgid "Close Capture File"
+msgstr "Zatvoriť súbor záznamu"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:122
+msgid "Plotter MZ-1P16 connected"
+msgstr "Plotter MZ-1P16 pripojený"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:127
+msgid "Open plotter window"
+msgstr "Otvoriť okno plotra"
+
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:78
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:80
 msgid "QD: Unsaved RAM changes"
@@ -10644,35 +10797,47 @@ msgstr "Súbor RAM Disku..."
 msgid "Memory Disk State (debugger)..."
 msgstr "Stav pamäťového disku (debugger)..."
 
-#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:22
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:26
 msgid "Rear DIP Switch"
 msgstr "Zadný DIP prepínač"
 
-#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:25
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:29
 msgid "Mode 700 Compat.: "
 msgstr "Režim 700 kompat.: "
 
-#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:28
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:32
 msgid "OFF"
 msgstr "VYP"
 
-#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:32
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:36
 msgid "ON (default)"
 msgstr "ZAP (predvolené)"
 
-#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:42
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:46
 msgid "CMT Polarity: "
 msgstr "CMT polarita: "
 
-#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:45
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:49
 msgid "Inverted"
 msgstr "Invertovaná"
 
-#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:49
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:53
 #: src/ui-imgui/topmenu/interface/menu_display.cpp:30
 #: src/ui-imgui/topmenu/interface/menu_display.cpp:65
 msgid "Normal"
 msgstr "Normálna"
+
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:69
+msgid "Printer Standard: "
+msgstr "Štandard tlačiarne: "
+
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:76
+msgid "Centronics (default)"
+msgstr "Centronics (predvolené)"
+
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:80
+msgid " (locked: plotter connected)"
+msgstr " (uzamknuté: plotter pripojený)"
 
 #: src/ui-imgui/topmenu/devices/menu_rom.cpp:24
 msgid "ROM"
@@ -10869,10 +11034,6 @@ msgstr "Farebná schéma"
 #: src/ui-imgui/topmenu/interface/menu_display.cpp:34
 msgid "Grayscale"
 msgstr "Stupne šedej"
-
-#: src/ui-imgui/topmenu/interface/menu_display.cpp:38
-msgid "Green"
-msgstr "Zelená"
 
 #: src/ui-imgui/topmenu/interface/menu_display.cpp:47
 msgid "Custom Colormap..."
@@ -11406,6 +11567,9 @@ msgstr "MZ-1500 Virtuálna klávesnica"
 #: src/ui-imgui/vkbd_window.cpp:228
 msgid "MZ-800 Virtual Keyboard"
 msgstr "MZ-800 Virtuálna klávesnica"
+
+#~ msgid "Centronics Printer"
+#~ msgstr "Tlačiareň Centronics"
 
 #, c-format
 #~ msgid "Select DSK image file for drive FD%d"

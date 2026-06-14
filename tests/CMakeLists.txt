@@ -27,6 +27,8 @@ add_subdirectory(libs/dasm_export)
 add_subdirectory(libs/dasm_motorola_ix)
 add_subdirectory(libs/psg_scope)
 add_subdirectory(libs/mzglyphs)
+add_subdirectory(libs/mcs48)
+add_subdirectory(libs/mz1p16)
 
 # Lib (lib + emu core + stuby)
 add_subdirectory(libs/cfgfile)

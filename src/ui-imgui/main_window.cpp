@@ -9,6 +9,7 @@
 #include "i18n.h"
 
 #include "ui-imgui/topmenu/topmenu.h"
+#include "ui-imgui/plotter/plotter_window.h"
 #include "iface/iface_keyboard.h"
 #include "hw-generic/pio8255/pio8255.h"
 #include "imgui_windows.h"
@@ -287,6 +288,15 @@ void imgui_main_window(GLuint texture)
     if (g_gui->showQdiskStateWindow)
         imgui_qdisk_state_window(&g_gui->showQdiskStateWindow);
 #endif
+#endif
+
+#if (MZARCH == 800) || (MZARCH == 1500)
+    /* mz1p16-plotter: GUI okno plotteru MZ-1P16 - živý náhled kresby +
+     * ovládání. Plotter je aktivní jen když je okno otevřené; deaktivaci při
+     * zavření [X] detekuje imgui_plotter_window podle hrany *p_open uvnitř,
+     * proto ho voláme BEZPODMÍNEČNĚ (i při zavřeném okně - tam je render
+     * no-op, ale zpracuje open->close hranu a deaktivuje plotter). */
+    imgui_plotter_window(&g_gui->showPlotterWindow);
 #endif
 
 #if CFG_HWEXT_HAVE_RAMDISK

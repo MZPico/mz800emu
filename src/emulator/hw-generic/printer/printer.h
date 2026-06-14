@@ -1,5 +1,5 @@
 /*
- * File:   centronics.h
+ * File:   printer.h
  * Author: experiment centronics-printer (emu-experiments)
  *
  * Virtuální Centronics tiskárna napojená na Zilog Z80 PIO.
@@ -19,8 +19,8 @@
  * ---------------------------------------------------------------------------
  */
 
-#ifndef CENTRONICS_H
-#define CENTRONICS_H
+#ifndef PRINTER_H
+#define PRINTER_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,7 +31,7 @@ extern "C" {
 #include <stdio.h>
 
 /** Maximální délka názvu capture souboru (vč. terminátoru). */
-#define CENTRONICS_FILENAME_MAX 280
+#define PRINTER_FILENAME_MAX 280
 
 /**
  * @brief Stav virtuální Centronics tiskárny.
@@ -39,7 +39,7 @@ extern "C" {
  * Modul simuluje připojenou tiskárnu na Z80 PIO (porty 0FCh-0FFh): když je
  * @ref active, hlásí na vstupu PA0 (BUSY) připravenost (= 0) a zachytává bajty
  * zapsané na datovou bránu PB v okamžiku STROBE pulzu na PA7. Zachycené bajty
- * se ukládají syrově (1:1) do per-session souboru s prefixem "centronics".
+ * se ukládají syrově (1:1) do per-session souboru s prefixem "printer".
  *
  * Invarianty:
  *  - @ref fp != NULL  <=>  soubor je otevřen a @ref filename obsahuje jeho název
@@ -50,61 +50,64 @@ extern "C" {
  * Stav je runtime-only a *neserializuje* se do snapshotu (file handle je
  * proces-specifický, capture je efemérní stream).
  */
-typedef struct st_CENTRONICS {
+typedef struct st_PRINTER {
     bool active;                          /**< Virtuální tiskárna zapnutá. */
     FILE *fp;                             /**< Capture soubor, NULL = neotevřen. */
-    char filename[CENTRONICS_FILENAME_MAX]; /**< Název aktuálního souboru, "" = žádný. */
+    char filename[PRINTER_FILENAME_MAX]; /**< Název aktuálního souboru, "" = žádný. */
     uint32_t byte_count;                  /**< Bajtů v aktuálním souboru. */
     uint32_t total_byte_count;            /**< Bajtů za celou session. */
     uint32_t file_seq;                    /**< Pořadí souboru v session (pro unikátnost). */
     uint8_t last_strobe;                  /**< Poslední úroveň PA7 (STROBE) pro detekci hrany. */
-} st_CENTRONICS;
+} st_PRINTER;
 
 /** Globální stav modulu (mirror pro UI). */
-extern st_CENTRONICS g_centronics;
+extern st_PRINTER g_printer;
 
 /**
  * @brief Jednorázová inicializace modulu.
  *
- * Vynuluje stav, zaregistruje INI sekci [CENTRONICS] (klíč active:bool,
- * default 0) v g_cfgmain a aplikuje případný CLI flag --centronics. Volá se
- * z init sekvence architektur, které mají Z80 PIO (mz800, mz1500), hned po
- * @ref pioz80_init. Idempotentní (opakované volání je no-op).
+ * Vynuluje stav, zaregistruje INI sekci [PRINTER] (klíče capture:bool default 0
+ * a standard:keyword CENTRONICS|MZ default CENTRONICS) v g_cfgmain a aplikuje
+ * případný CLI flag --printer. Klíč standard deleguje na pioz80_set_printer_std
+ * (polarita řídicích signálů = zadní DIP SW2/SW3). Volá se z init sekvence
+ * architektur, které mají Z80 PIO (mz800, mz1500), hned po @ref pioz80_init.
+ * Idempotentní (opakované volání je no-op).
  *
- * @post g_centronics je v klidovém stavu; soubor není otevřen.
+ * @post g_printer je v klidovém stavu; soubor není otevřen.
  */
-void centronics_init ( void );
+void printer_init ( void );
 
 /**
  * @brief Reakce na reset stroje.
  *
  * Resynchronizuje baseline úrovně STROBE (PA7) podle aktuálního stavu PIO
  * (po resetu je výstupní registr 0 => PA7 = 0), aby se po resetu nevygenerovala
- * falešná hrana. Capture soubor *neuzavírá* - reset stroje není nová session.
+ * falešná hrana. Stávající capture soubor uzavře (reset stroje = konec tiskové
+ * úlohy; další zachycený bajt založí nový soubor).
  */
-void centronics_reset ( void );
+void printer_reset ( void );
 
 /**
  * @brief Ukončení modulu - zavře případně otevřený capture soubor.
  */
-void centronics_shutdown ( void );
+void printer_shutdown ( void );
 
 /**
  * @brief Zapne/vypne virtuální tiskárnu.
  *
  * Při zapnutí se na PA0 (BUSY) začne hlásit ready a STROBE pulzy se zachytávají.
  * Při vypnutí se chování vrací k nepřipojené tiskárně; otevřený soubor zůstává
- * (lze ho zavřít přes @ref centronics_close_file).
+ * (lze ho zavřít přes @ref printer_close_file).
  *
  * @param active true = zapnout, false = vypnout
  */
-void centronics_set_active ( bool active );
+void printer_set_active ( bool active );
 
 /**
  * @brief Vrátí, zda je virtuální tiskárna aktivní.
  * @return true pokud aktivní
  */
-bool centronics_get_active ( void );
+bool printer_get_active ( void );
 
 /**
  * @brief Uzavře aktuální capture soubor.
@@ -112,7 +115,7 @@ bool centronics_get_active ( void );
  * Po uzavření se při dalším zachyceném bajtu založí nový jedinečný soubor.
  * Pokud žádný soubor otevřen není, je volání no-op.
  */
-void centronics_close_file ( void );
+void printer_close_file ( void );
 
 /**
  * @brief Capture hook volaný z PIO při zápisu na datovou bránu PA.
@@ -129,10 +132,10 @@ void centronics_close_file ( void );
  * @param pa7_level nová úroveň PA7 (0 nebo 1)
  * @param pb_data   aktuální bajt na datové bráně PB (output latch)
  */
-void centronics_pa_strobe_update ( uint8_t pa7_level, uint8_t pb_data );
+void printer_pa_strobe_update ( uint8_t pa7_level, uint8_t pb_data );
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* CENTRONICS_H */
+#endif /* PRINTER_H */

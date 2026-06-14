@@ -163,12 +163,19 @@ static const st_SDLAPP_OPTION_DEF g_known_options[] = {
       "Activate the CPU Profiler subsystem on startup (per-function profilation on top of Callstack). "
       "Implies --callstack (Profiler will force Callstack ON if needed). "
       "Overrides the [PROFILER] active value from the INI." },
-    /* Centronics virtual printer (capture bytes sent to the printer into a file). */
-    { "--centronics",         SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
-      "Enable the virtual Centronics printer at startup. When active, the printer "
+    /* Virtual printer capture (capture bytes sent to the printer into a file). */
+    { "--printer",            SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
+      "Enable the virtual printer capture at startup. When active, the printer "
       "reports ready (BUSY=0) on the Z80 PIO and bytes strobed to it are captured "
-      "into a per-session file named centronics-<timestamp>.bin in the working "
-      "directory. Overrides the [CENTRONICS] active value from the INI." },
+      "into a per-session file named printer-<timestamp>.bin in the working "
+      "directory. Overrides the [PRINTER] capture value from the INI." },
+    /* MZ-1P16 plotter (virtual color X-Y pen plotter on the Z80 PIO Centronics). */
+    { "--mz1p16",             SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
+      "Enable the virtual MZ-1P16 plotter at startup. When active, the plotter's "
+      "internal 8050 microcontroller is stepped and connected to the Z80 PIO "
+      "Centronics interface (data, STROBE, BUSY). Overrides the [MZ1P16] active "
+      "value from the INI. Only available on architectures with a Z80 PIO "
+      "(MZ-800, MZ-1500)." },
     { "--no-save-ini",      SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
       "Do not write the .ini file at exit (CLI overrides become session-only)." },
     { "--no-first-run-windows", SDLAPP_OPTION_FLAG, SDLAPP_OPTVAL_NONE,     NULL,        NULL,

@@ -158,6 +158,7 @@ extern "C" {
         // aktivace pripadneho interruptu je vystavena prakticky ihned
         PIOZ80_PORT_EVENT_PA4_CTC0, // udalost vznikla zmenou /CTC0
         PIOZ80_PORT_EVENT_PA5_VBLN, // udalost vznikla zmenou /VBLN
+        PIOZ80_PORT_EVENT_PA01_PRINTER, // periodicka resync stavu tiskarny/plotteru (PA0 BUSY, PA1 status)
 
         // interni udalosti vznikle na zaklade IORQ - pripadny int je vystaven ihned
 
@@ -202,6 +203,28 @@ extern "C" {
     } st_PIOZ80_PORT;
 
 
+    /**
+     * Standard rozhraní tiskárny (zadní DIP přepínač SW2+SW3 na MZ-800).
+     *
+     * SW2 a SW3 (oba musí být ve stejné poloze) volí standard tiskárny.
+     * V HW jsou výstupní řídicí signály brány A (PA6 = RESET/IRT, PA7 =
+     * STROBE/RDP) vedeny přes hradlo XOR, jehož druhý vstup je řízen tímto
+     * přepínačem - přepínač tedy mění POLARITU řídicích signálů na konektoru
+     * tiskárny.
+     *
+     * - CENTRONICS (default, SW OFF): řídicí signály prochází bez inverze.
+     * - MZ (SW ON): řídicí signály jsou invertované (XOR). MZ tiskárny/plotter
+     *   (např. MZ-1P16) vyžadují tuto polaritu.
+     *
+     * Pozn.: směr inverze (která poloha invertuje) je modelován tak, aby
+     * Centronics = pass-through; přesný směr se ověřuje empiricky proti
+     * reálnému firmware plotteru.
+     */
+    typedef enum en_PIOZ80_PRINTER_STD {
+        PIOZ80_PRINTER_STD_CENTRONICS = 0, /**< default; řídicí signály bez inverze */
+        PIOZ80_PRINTER_STD_MZ,             /**< MZ printer/plotter; řídicí signály invertované */
+    } en_PIOZ80_PRINTER_STD;
+
     typedef struct st_PIOZ80 {
         st_PIOZ80_PORT port [ PIOZ80_PORT_COUNT ];
         en_PIOZ80_INTERRUPT interrupt; // 0. bit INT, 1. bit IEO
@@ -209,9 +232,17 @@ extern "C" {
 
         st_EMUEVENT icena_event;
         en_PIOZ80_PORT_ID icena_event_port_id;
+
+        /* Standard tiskárny (zadní DIP SW2/SW3). Nastaven na default
+         * (CENTRONICS) v pioz80_init memsetem; machine reset jím nehýbe
+         * (fyzický přepínač). INI/CLI ho přepíše po initu. */
+        en_PIOZ80_PRINTER_STD printer_std;
     } st_PIOZ80;
 
     extern st_PIOZ80 g_pioz80;
+
+    /** TRUE, pokud je zvolen standard MZ printer (řídicí signály invertované). */
+#define PIOZ80_TEST_PRINTER_MZ ( g_pioz80.printer_std == PIOZ80_PRINTER_STD_MZ )
 
     /* Debug/UI mirror: posledni byte zapsany na control port per port
      * (IORQ 0xFC pro Port A, 0xFD pro Port B). Z80 PIO control je
@@ -227,6 +258,15 @@ extern "C" {
     extern void pioz80_init ( void );
     extern void pioz80_reset ( void );
 
+    /**
+     * @brief Nastaví standard rozhraní tiskárny (zadní DIP SW2/SW3).
+     * @param std PIOZ80_PRINTER_STD_CENTRONICS nebo PIOZ80_PRINTER_STD_MZ.
+     */
+    extern void pioz80_set_printer_std ( en_PIOZ80_PRINTER_STD std );
+
+    /** @brief Vrátí aktuální standard rozhraní tiskárny. */
+    extern en_PIOZ80_PRINTER_STD pioz80_get_printer_std ( void );
+
     extern uint8_t pioz80_read_byte ( en_PIOZ80_ADDR addr );
     extern void pioz80_write_byte ( en_PIOZ80_ADDR addr, uint8_t value );
 
@@ -236,6 +276,8 @@ extern "C" {
     extern void pioz80_interrupt_reti_cb ( z80_t *cpu, void *user_data );
 
     extern void pioz80_port_id_event ( en_PIOZ80_PORT_ID port_id, en_PIOZ80_PORT_EVENT port_event, int pinvalue );
+
+    extern void pioz80_input_resync ( void );
 
     extern void pioz80_icena_event ( void );
 

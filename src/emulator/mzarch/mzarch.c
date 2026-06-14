@@ -23,7 +23,8 @@
 #include "hw-generic/cmt/cmt.h"
 #include "hw-generic/cmt/cmthack.h"
 #include "hw-generic/pioz80/pioz80.h"
-#include "hw-generic/centronics/centronics.h"
+#include "hw-generic/printer/printer.h"
+#include "hw-generic/mz1p16/mz1p16_emu.h"
 #include "hw-generic/joy/joymz-1x03.h"
 #include "audio.h"
 
@@ -141,6 +142,16 @@ static inline void mz800_main_event_callback_screen_done(void)
 #endif
 #if HAVE_PIOZ80
     pioz80_on_screen_done_event();
+    /* Per-frame krokování 8050 plotteru MZ-1P16. Když plotter neaktivní,
+     * okamžitý návrat (1 atomic read + branch) = ~zero impact na hot path.
+     * Plotter běží asynchronně vůči Z80; krokujeme ho mimo CPU smyčku zde. */
+    mz1p16_emu_on_screen_done();
+    /* Po dokrokování plotteru periodicky zasynchronizuj stav tiskárny/plotteru
+     * (BUSY/PA0, status/PA1) do interruptu brány A. Tiskárna je externí
+     * asynchronní zařízení - interrupt nemusí být cyklus-přesný, stačí
+     * per-frame resync. SAME_INPUT pojistka uvnitř zajistí, že se interrupt
+     * vyvolá jen při skutečné změně. */
+    pioz80_input_resync();
 #endif
     cmt_on_screen_done_event();
     customspeed_on_screen_done();
@@ -965,7 +976,8 @@ static void mzarch_main_reset(void)
 #endif
 #if HAVE_PIOZ80
     pioz80_reset();
-    centronics_reset(); // resync STROBE baseline; capture soubor zůstává
+    printer_reset(); // resync STROBE baseline; capture soubor zůstává
+    mz1p16_emu_reset(); // reset jádra 8050 + mechaniky plotteru
 #endif
     cmthack_reset();
 

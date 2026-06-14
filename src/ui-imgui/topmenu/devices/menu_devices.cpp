@@ -31,8 +31,8 @@ void imgui_menu_devices(void)
         imgui_menu_rom();
 
 #if (MZARCH == 800) || (MZARCH == 1500)
-        // Centronics tiskárna existuje jen na architekturách se Z80 PIO
-        imgui_menu_centronics();
+        // Tiskárna (capture + plotter) existuje jen na architekturách se Z80 PIO
+        imgui_menu_printer();
 #endif
 
         imgui_menu_mz800_dip_switch();

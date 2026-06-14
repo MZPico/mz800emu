@@ -31,7 +31,9 @@
 #include "libs/cpu-z80/z80.h"
 
 #include "pioz80/pioz80.h"
-#include "centronics/centronics.h"
+#include "printer/printer.h"
+#include "mz1p16/mz1p16_emu.h"
+#include "mz1p16/mcs48.h"
 #include "mzarch/mzarch.h"
 #include "mzarch/interrupt.h"
 #include "ctc8253/ctc8253.h"
@@ -284,6 +286,10 @@ static inline const char* pioz80_dbg_get_port_event_name ( en_PIOZ80_PORT_EVENT 
             retval = "PA5_VBLN";
             break;
 
+        case PIOZ80_PORT_EVENT_PA01_PRINTER:
+            retval = "PA01_PRINTER";
+            break;
+
         case PIOZ80_PORT_EVENT_INTERNAL_MODE3_LEAVED:
             retval = "MODE3_LEAVED";
             break;
@@ -381,6 +387,25 @@ void pioz80_reset ( void ) {
     g_pioz80.icena_event.ticks = -1;
     g_pioz80.icena_event.event_name = MZEVENT_PIOZ80;
     g_pioz80.icena_event_port_id = PIOZ80_PORT_NONE;
+}
+
+
+void pioz80_set_printer_std ( en_PIOZ80_PRINTER_STD std ) {
+    if ( g_pioz80.printer_std == std ) return; /* beze změny */
+    g_pioz80.printer_std = std;
+    DBGPRINTF ( DBGINF, "pioz80: printer std = %s\n",
+                ( std == PIOZ80_PRINTER_STD_MZ ) ? "MZ" : "Centronics" );
+
+    /* Změna standardu mění význam/polaritu řídicích signálů na konektoru, takže
+     * uzavřeme stávající capture soubor (má-li obsah). Další zachycený bajt
+     * založí nový soubor se správným prefixem (printer-mz / printer-centronics).
+     * Capture i plotter sdílí jeden konektor. */
+    printer_close_file ( );
+}
+
+
+en_PIOZ80_PRINTER_STD pioz80_get_printer_std ( void ) {
+    return g_pioz80.printer_std;
 }
 
 
@@ -566,12 +591,39 @@ static inline uint8_t pioz80_port_get_raw_input ( st_PIOZ80_PORT *port ) {
          * tiskárnu: BUSY (PA0) zrcadlí STROBE (PA7).
          * Bez tohoto by LPT vstup floatoval na 1 (busy) a polling smyčka
          * čekající na potvrzení by se zacyklila. */
-        if ( g_centronics.active ) {
+        if ( g_printer.active ) {
             if ( ( port->data_output >> 7 ) & 0x01 ) {
                 retval |= 0x01;   /* STROBE asserted -> BUSY = 1 (bajt přijat) */
             } else {
                 retval &= ~( ( uint8_t ) 0x01 ); /* STROBE klid -> BUSY = 0 */
             };
+        };
+        /* MZ-1P16 plotter: pokud je připojený, je to REÁLNÉ zařízení, které
+         * generuje vlastní stavové signály - na rozdíl od printer capture
+         * (nekonečně rychlá tiskárna se zrcadlovým BUSY). Plotter má proto
+         * PRIORITU: jeho skutečné výstupy přebijí printer mirror. Když běží
+         * oba, host vidí stav plotteru (= reálná latence tisku); printer jen
+         * pasivně odposlouchává bajty na hraně STROBE, neřídí handshake.
+         *
+         * Zapojení stavových signálů (PŘÍMO z výstupního latche jádra
+         * g_mz1p16_cpu.P1):
+         *   PA0 (BUSY/RDA) = plotter P1.4: P1.4=0 -> PA0=0, P1.4=1 -> PA0=1.
+         *   PA1 (STA)      = plotter P1.7: P1.7=0 -> PA1=0, P1.7=1 -> PA1=1.
+         *
+         * Před přečtením stavu se plotter MCU deterministicky odkrokuje
+         * (drive_poll). Host čte BUSY v poll smyčce a každé čtení firmware
+         * posune, takže BUSY včas přejde busy->ready a poll smyčka neuvázne. */
+        if ( g_mz1p16.active ) {
+            /* Serializace přístupu k plotter jádru (race s UI/emu vláknem):
+             * zámek kolem krokování + čtení stavu. drive_poll sám zámek nebere
+             * (předpokládá držení volajícím). */
+            mz1p16_emu_lock ( );
+            mz1p16_emu_drive_poll ( );
+            uint8_t p1 = g_mz1p16_cpu.P1;
+            mz1p16_emu_unlock ( );
+
+            if ( p1 & 0x10u ) { retval |= 0x01; } else { retval &= ~( ( uint8_t ) 0x01 ); };
+            if ( p1 & 0x80u ) { retval |= 0x02; } else { retval &= ~( ( uint8_t ) 0x02 ); };
         };
     };
     return retval;
@@ -742,8 +794,54 @@ static inline void pioz80_port_wr_data ( st_PIOZ80_PORT *port, uint8_t value ) {
     /* Centronics: PA7 je STROBE (RDP). Při zápisu na bránu PA sledujeme hranu
      * PA7 a na aktivaci STROBE zachytíme aktuální bajt na datové bráně PB. */
     if ( port->port_id == PIOZ80_PORT_A ) {
-        centronics_pa_strobe_update ( ( value >> 7 ) & 0x01,
-                                      g_pioz80.port[ PIOZ80_PORT_B ].data_output );
+        uint8_t pa7 = ( value >> 7 ) & 0x01;
+
+        /* STROBE/RDP polarita podle zadního DIP SW2/SW3 (standard tiskárny).
+         * MZ-800 ROM drží STROBE (PA7) v klidu na 0 a pulzuje na 1, ale firmware
+         * plotteru čeká v klidu /INT = 1 (INT=0 bere jako aktivní strobe -> jde
+         * busy). Pro MZ tiskárnu je tedy STROBE INVERTOVANÝ: INT = !PA7
+         * (idle PA7=0 -> INT=1 ready; strobe PA7=1 -> INT=0 aktivní). Switch
+         * invertuje VÝSTUPNÍ řídicí signál (PA7), vstup BUSY/PA0 zůstává přímý
+         * (viz čtení PA výše). Centronics = bez inverze. */
+        uint8_t strobe = PIOZ80_TEST_PRINTER_MZ ? ( pa7 ^ 0x01 ) : pa7;
+        uint8_t pb  = g_pioz80.port[ PIOZ80_PORT_B ].data_output;
+        printer_pa_strobe_update ( strobe, pb );
+
+        /* MZ-1P16 plotter (koexistence s printer): host data na PB ->
+         * datová sběrnice plotteru P2 (firmware je čte IN A,P2). Zápis PA ->
+         * /INT plotteru (STROBE).
+         *
+         * Polarita /INT: /INT = efektivní STROBE po aplikaci zadního DIP
+         * SW2/SW3 (viz výše). Pro MZ standard (plotter MZ-1P16) je STROBE
+         * invertovaný oproti PA7. Firmware /INT čte pollingem (JNI), ne
+         * přerušením.
+         *
+         * Krokování (DETERMINISTICKÉ, event-driven - viz mz1p16_emu_drive_poll):
+         * tady jen nastavíme data + STROBE a na aktivační hraně STROBE synchronně
+         * odkrokujeme firmware, dokud bajt nepřijme (zvedne BUSY). NEvážeme na
+         * čas - tempo dalšího kreslení řídí host poll smyčka (čtení BUSY ->
+         * drive_poll). Když plotter neaktivní, je to no-op. */
+        if ( g_mz1p16.active ) {
+            /* Serializace přístupu k plotter jádru (race s UI/emu vláknem). */
+            mz1p16_emu_lock ( );
+
+            /* Detekce sestupné hrany /INT (aktivace STROBE): klid /INT=1 ->
+             * aktivní /INT=0. Na této hraně host právě "položil" nový bajt. */
+            uint8_t prev_int = g_mz1p16_cpu.INT;
+
+            g_mz1p16.host_data  = pb;
+            g_mz1p16_cpu.P2_in  = pb;
+            g_mz1p16_cpu.INT    = strobe;  /* /INT = STROBE (po polaritě DIP SW2/SW3) */
+
+            /* Robustní deterministický handshake: na aktivaci STROBE odkrokuj
+             * firmware, dokud bajt SKUTEČNĚ NEPŘIJME (zvedne BUSY). Tím se bajt
+             * přijme právě jednou, nezávisle na časování - mizí "zuby". */
+            if ( prev_int != 0 && strobe == 0 ) {
+                mz1p16_emu_sync_read_byte ( );
+            };
+
+            mz1p16_emu_unlock ( );
+        };
     };
 
     // pripadny INT je spusten ihned
@@ -1345,9 +1443,33 @@ void pioz80_port_id_event ( en_PIOZ80_PORT_ID port_id, en_PIOZ80_PORT_EVENT port
 
 
 /**
+ * @brief Periodicka resync stavu tiskarny/plotteru do interruptu brany A.
+ *
+ * Pripojena tiskarna/plotter rizene vstupni signaly BUSY (PA0) a status (PA1).
+ * Na rozdil od CTC0 (PA4) a VBLANK (PA5), ktere maji vlastni hranove eventy,
+ * tyto signaly hranovy event nemaji - jejich zmena (zapnuti/vypnuti capture,
+ * pripojeni/odpojeni plotteru, zmena BUSY behem kresby) by jinak sama o sobe
+ * neprehodnotila interrupt brany A.
+ *
+ * Tiskarna je externi asynchronni zarizeni; interrupt nemusi byt cyklus-presny.
+ * Staci proto "jednou za cas" (per-frame) prehodnotit interrupt brany A z
+ * aktualnich vstupnich pinu. Vlastni prehodnoceni resi pioz80_port_event, ktere
+ * cte ZIVE piny (vc. stavu tiskarny/plotteru) a diky interni SAME_INPUT
+ * pojistce vyvola zmenu interruptu jen pri skutecne zmene - nic spurious.
+ * Stav CTC0/VBLANK se mezi jejich hranovymi eventy nemeni, takze tahle resync
+ * je pro ne neutralni.
+ *
+ * Vola se z per-frame eventu emulatoru (po dokroceni plotteru).
+ */
+void pioz80_input_resync ( void ) {
+    pioz80_port_id_event ( PIOZ80_PORT_A, PIOZ80_PORT_EVENT_PA01_PRINTER, 0 );
+}
+
+
+/**
  * Casove posunuta udalost - IC_ENA byl nastaven na ENABLED.
  * Zmena se projevi 3 CPU takty po nasledujicim M1.
- * 
+ *
  * @param event_ticks
  */
 void pioz80_icena_event ( void ) {

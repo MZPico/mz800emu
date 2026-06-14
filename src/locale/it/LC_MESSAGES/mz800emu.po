@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-06 14:38+0200\n"
+"POT-Creation-Date: 2026-06-14 11:19+0200\n"
 "PO-Revision-Date: 2026-03-11 22:00+0100\n"
 "Last-Translator: Claude Code\n"
 "Language-Team: Italiano\n"
@@ -5132,6 +5132,7 @@ msgstr "Istantanea Δ"
 #: src/ui-imgui/debugger/membrowser/membrowser_layers.cpp:497
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:135
 #: src/ui-imgui/maxspeed_bench_window.cpp:156
+#: src/ui-imgui/plotter/plotter_window.cpp:414
 #: src/ui-imgui/topmenu/topmenu.cpp:41
 msgid "Reset"
 msgstr "Ripristina"
@@ -6280,6 +6281,7 @@ msgid "Deferred ICENA event (idle = -1, otherwise GDG ticks)"
 msgstr "Evento ICENA differito (idle = -1, altrimenti tick GDG)"
 
 #: src/ui-imgui/debugger/pioz80_window.cpp:448
+#: src/ui-imgui/plotter/plotter_window.cpp:508
 msgid "idle"
 msgstr "inattivo"
 
@@ -9984,6 +9986,124 @@ msgstr ""
 "destro).\n"
 "La porta 0xF3 è solo PSG0 (sinistro) e la porta 0xF9 è solo PSG1 (destro)."
 
+#: src/ui-imgui/plotter/plotter_window.cpp:99
+msgid "Black"
+msgstr "Nero"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:100
+msgid "Red"
+msgstr "Rosso"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:101
+#: src/ui-imgui/topmenu/interface/menu_display.cpp:38
+msgid "Green"
+msgstr "Verde"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:102
+msgid "Blue"
+msgstr "Blu"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:360
+msgid "Save plotter drawing"
+msgstr "Salva il disegno del plotter"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:360
+msgid "plotter.png"
+msgstr "plotter.png"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:387
+msgid "Plotter MZ-1P16"
+msgstr "Plotter MZ-1P16"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:396
+msgid "Save..."
+msgstr "Salva..."
+
+#: src/ui-imgui/plotter/plotter_window.cpp:401
+msgid "Clear paper"
+msgstr "Pulisci carta"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:407
+msgid "Clear the drawing and reset the plotter (plain RESET keeps the paper)"
+msgstr "Cancella il disegno e reimposta il plotter (un semplice RESET mantiene la carta)"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:410
+msgid "Plotter buttons:"
+msgstr "Pulsanti del plotter:"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:420
+msgid "Paper feed"
+msgstr "Avanzamento carta"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:430
+msgid "Hold to feed paper"
+msgstr "Tieni premuto per far avanzare la carta"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:433
+msgid "Run drawing self-test"
+msgstr "Esegui l'autotest di disegno"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:442
+msgid "Reset with PAPER FEED held -> writes the character set in 4 colors"
+msgstr "Reset con PAPER FEED premuto -> stampa il set di caratteri in 4 colori"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:447
+msgid "Zoom"
+msgstr "Zoom"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:449
+msgid "Preview scale: pixels per motor step"
+msgstr "Scala anteprima: pixel per passo del motore"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:452
+msgid "Show carriage"
+msgstr "Mostra carrello"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:454
+msgid "Live marker at the current pen/carriage position"
+msgstr "Marcatore in tempo reale sulla posizione attuale di penna/carrello"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:478
+#, c-format
+msgid "X: %ld"
+msgstr "X: %ld"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:480
+#, c-format
+msgid "Y: %ld"
+msgstr "Y: %ld"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:484
+msgid "Color:"
+msgstr "Colore:"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:497
+#, c-format
+msgid "Pen: %s"
+msgstr "Penna: %s"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:497
+msgid "DOWN"
+msgstr "GIÙ"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:497
+msgid "UP"
+msgstr "SU"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:503
+msgid "BUSY"
+msgstr "BUSY"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:513
+#, c-format
+msgid "Strokes: %u"
+msgstr "Tratti: %u"
+
+#: src/ui-imgui/plotter/plotter_window.cpp:517
+#, c-format
+msgid "(dropped %u)"
+msgstr "(%u scartati)"
+
 #: src/ui-imgui/ramdisk/pezik_settings_window.cpp:110
 msgid "Connected"
 msgstr "Connesso"
@@ -10202,37 +10322,6 @@ msgstr "Velocità attuale"
 #: src/ui-imgui/topmenu/customspeed_setup.cpp:103
 msgid "Reset sliders"
 msgstr "Reimposta cursori"
-
-#: src/ui-imgui/topmenu/devices/menu_centronics.cpp:29
-msgid "Centronics Printer"
-msgstr "Stampante Centronics"
-
-#: src/ui-imgui/topmenu/devices/menu_centronics.cpp:32
-msgid "Capture Enabled"
-msgstr "Cattura abilitata"
-
-#: src/ui-imgui/topmenu/devices/menu_centronics.cpp:42
-#, c-format
-msgid "Capture file: %s"
-msgstr "File di cattura: %s"
-
-#: src/ui-imgui/topmenu/devices/menu_centronics.cpp:43
-#, c-format
-msgid "Bytes captured: %u"
-msgstr "Byte catturati: %u"
-
-#: src/ui-imgui/topmenu/devices/menu_centronics.cpp:47
-msgid "No capture file open"
-msgstr "Nessun file di cattura aperto"
-
-#: src/ui-imgui/topmenu/devices/menu_centronics.cpp:52
-#, c-format
-msgid "Session total: %u bytes"
-msgstr "Totale sessione: %u byte"
-
-#: src/ui-imgui/topmenu/devices/menu_centronics.cpp:58
-msgid "Close Capture File"
-msgstr "Chiudi file di cattura"
 
 #: src/ui-imgui/topmenu/devices/menu_cmt.cpp:26
 msgid "CMT"
@@ -10573,6 +10662,70 @@ msgstr "Carica FLASH MemExt da file..."
 msgid "Save MemExt FLASH Into File..."
 msgstr "Salva FLASH MemExt su file..."
 
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:39
+msgid "Printer"
+msgstr "Stampante"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:47
+msgid "Status: ONLINE"
+msgstr "Stato: ONLINE"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:51
+msgid "Status: OFFLINE"
+msgstr "Stato: OFFLINE"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:62
+msgid "Printer Standard:"
+msgstr "Standard stampante:"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:64
+msgid "Centronics"
+msgstr "Centronics"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:68
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:72
+msgid "MZ"
+msgstr "MZ"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:75
+msgid "(locked: plotter connected)"
+msgstr "(bloccato: plotter connesso)"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:80
+msgid "Capture Enabled"
+msgstr "Cattura abilitata"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:90
+#, c-format
+msgid "Capture file: %s"
+msgstr "File di cattura: %s"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:91
+#, c-format
+msgid "Bytes captured: %u"
+msgstr "Byte catturati: %u"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:95
+msgid "No capture file open"
+msgstr "Nessun file di cattura aperto"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:100
+#, c-format
+msgid "Session total: %u bytes"
+msgstr "Totale sessione: %u byte"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:106
+msgid "Close Capture File"
+msgstr "Chiudi file di cattura"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:122
+msgid "Plotter MZ-1P16 connected"
+msgstr "Plotter MZ-1P16 connesso"
+
+#: src/ui-imgui/topmenu/devices/menu_printer.cpp:127
+msgid "Open plotter window"
+msgstr "Apri la finestra del plotter"
+
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:78
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:80
 msgid "QD: Unsaved RAM changes"
@@ -10757,35 +10910,47 @@ msgstr "File disco RAM..."
 msgid "Memory Disk State (debugger)..."
 msgstr "Stato Disco di memoria (debugger)..."
 
-#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:22
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:26
 msgid "Rear DIP Switch"
 msgstr "Interruttore DIP posteriore"
 
-#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:25
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:29
 msgid "Mode 700 Compat.: "
 msgstr "Modalità 700 compat.: "
 
-#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:28
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:32
 msgid "OFF"
 msgstr "OFF"
 
-#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:32
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:36
 msgid "ON (default)"
 msgstr "ON (predefinito)"
 
-#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:42
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:46
 msgid "CMT Polarity: "
 msgstr "Polarità CMT: "
 
-#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:45
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:49
 msgid "Inverted"
 msgstr "Invertita"
 
-#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:49
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:53
 #: src/ui-imgui/topmenu/interface/menu_display.cpp:30
 #: src/ui-imgui/topmenu/interface/menu_display.cpp:65
 msgid "Normal"
 msgstr "Normale"
+
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:69
+msgid "Printer Standard: "
+msgstr "Standard stampante: "
+
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:76
+msgid "Centronics (default)"
+msgstr "Centronics (predefinito)"
+
+#: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:80
+msgid " (locked: plotter connected)"
+msgstr " (bloccato: plotter connesso)"
 
 #: src/ui-imgui/topmenu/devices/menu_rom.cpp:24
 msgid "ROM"
@@ -10983,10 +11148,6 @@ msgstr "Schema colori"
 #: src/ui-imgui/topmenu/interface/menu_display.cpp:34
 msgid "Grayscale"
 msgstr "Scala di grigi"
-
-#: src/ui-imgui/topmenu/interface/menu_display.cpp:38
-msgid "Green"
-msgstr "Verde"
 
 #: src/ui-imgui/topmenu/interface/menu_display.cpp:47
 msgid "Custom Colormap..."
@@ -11527,6 +11688,9 @@ msgstr "Tastiera virtuale MZ-1500"
 #: src/ui-imgui/vkbd_window.cpp:228
 msgid "MZ-800 Virtual Keyboard"
 msgstr "Tastiera virtuale MZ-800"
+
+#~ msgid "Centronics Printer"
+#~ msgstr "Stampante Centronics"
 
 #, c-format
 #~ msgid "Select DSK image file for drive FD%d"

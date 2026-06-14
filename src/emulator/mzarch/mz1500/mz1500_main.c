@@ -18,7 +18,8 @@
 #include "hw-generic/pio8255/pio8255.h"
 #include "hw-generic/cmt/cmt.h"
 #include "hw-generic/pioz80/pioz80.h"
-#include "hw-generic/centronics/centronics.h"
+#include "hw-generic/printer/printer.h"
+#include "hw-generic/mz1p16/mz1p16_emu.h"
 #include "hw-generic/psg/psg.h"
 #include "audio.h"
 
@@ -165,7 +166,8 @@ void mzarch_platform_fn_init(void)
     ctc8253_init(); // CTC by se mel inicializovat drive, nez PIO-Z80
     pio8255_init();
     pioz80_init();
-    centronics_init(); // virtuální Centronics tiskárna nad Z80 PIO
+    printer_init(); // virtuální Centronics tiskárna nad Z80 PIO
+    mz1p16_emu_init(); // virtuální plotter MZ-1P16 nad Z80 PIO
 
     cmt_init();
 
