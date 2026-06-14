@@ -44,8 +44,9 @@ mz700emu-ntsc.exe
 /mz1500*.lbl
 /mz1500*.watch
 
-# Centronics virtuální tiskárna - capture soubory (per session)
-/centronics-*.bin
+# Virtuální tiskárna - capture soubory (per session)
+/printer-mz-*.bin
+/printer-centronics-*.bin
 
 # Testovací dočasné soubory
 /MZdata/
