@@ -1,4 +1,6 @@
 
+2026-06-14 - Released version 2.0.4 - preview
+
 	- The printer mode switch can now be set to MZ or CENTRONICS. In both modes the printer communication can be logged to a file independently.
 
 	- Added full emulation of the MZ-1P16 plotter. This plotter behaves as connected only while the GUI window with its generated output is open. When the MZ-1P16 plotter window is opened, the printer mode switch is automatically set to the "MZ" standard, and the standard cannot be changed to "CENTRONICS" for as long as the plotter is connected. The printer file capture can still be used even with the plotter connected at the same time.

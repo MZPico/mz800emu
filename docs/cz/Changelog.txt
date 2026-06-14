@@ -1,4 +1,6 @@
 
+2026-06-14 - Released version 2.0.4 - preview
+
 	- Nyní lze zvolit nastavení switche pro printer mode MZ, nebo CENTRONICS. V obu režimech lze samostatně logovat komunikaci s tiskárnou do souboru.
 
 	- Přidána plná emulace plotteru MZ-1P16. Tento plotter se chová jako připojený jen tehdy, pokud je otevřeno GUI okno s jeho generovaným výstupem. Při otevření okna plotteru MZ-1P16 se plotter mode switch automaticky přepne na standard "MZ" a po celou dobu, kdy je plotter připojen nelze změnit standard na "CENTRONICS". Printer file capture je možné nadále použivat i se současně připojeným plotterem.
