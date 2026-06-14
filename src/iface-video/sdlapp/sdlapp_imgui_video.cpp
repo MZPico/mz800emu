@@ -750,6 +750,52 @@ static void sdlapp_imgui_video_set_window_size_by_scale_request(float scale)
 /*******************************************************************************
  *
  *
+ *                  Callback pro vycentrování hlavního okna
+ *                  =======================================
+ *
+ *
+ *******************************************************************************/
+
+/**
+ * @brief Callback (hlavní vlákno) - vycentruje hlavní okno na aktuálním displeji.
+ *
+ * Vznik okna proběhne v base velikosti (= scale Native) a okno se vycentruje
+ * podle ní; startup velikost (Normal/Bigger/...) se aplikuje až později přes
+ * @c set_window_size_by_scale, který mění jen velikost, ne pozici. Bez tohoto
+ * re-centrování by okno pro scale != Native skončilo mimo střed. Pozici počítá
+ * @c sdlapp_winmanager_good_place_for (jediné okno -> střed).
+ *
+ * @param win Hlavní okno.
+ * @param event Nepoužito.
+ */
+static void sdlapp_imgui_video_center_main_window_cb(SdlAppWindow *win, SDL_Event *event)
+{
+    (void)event;
+    if (!win || !win->sdl_window)
+        return;
+    int x = 0, y = 0;
+    sdlapp_winmanager_good_place_for(sdlapp_window_get_manager(win), win, &x, &y);
+    SDL_SetWindowPosition(win->sdl_window, x, y);
+}
+
+/**
+ * @brief Požadavek (libovolné vlákno) na vycentrování hlavního okna.
+ *
+ * Zařadí @c sdlapp_imgui_video_center_main_window_cb do fronty zpráv okna.
+ * Díky FIFO pořadí fronty se centrování provede až po případné předchozí
+ * změně velikosti (resize), takže okno skončí vycentrované ve finální velikosti.
+ */
+static void sdlapp_imgui_video_center_main_window_request(void)
+{
+    SDL_Window *sdl_window = getSDL_Window_by_name("main_window");
+    if (!sdl_window)
+        return;
+    sdlapp_send_message_for_SDL_windowID(SDL_GetWindowID(sdl_window), SDLAPP_WINDOW_EVENT_WINDOW_CALLBACK_REQUEST, 1, (gpointer)sdlapp_imgui_video_center_main_window_cb, NULL);
+}
+
+/*******************************************************************************
+ *
+ *
  *                  Callbacks for setting framerate mode
  *                  ====================================
  *
@@ -835,6 +881,7 @@ static iface_video_callbacks_t sdl3_iface_video_callbacks = {
     .set_window_focus = sdlapp_imgui_video_set_main_window_focus_request,
     .fix_window_aspect_ratio = sdlapp_imgui_video_fix_window_aspect_ratio_request,
     .set_window_size_by_scale = sdlapp_imgui_video_set_window_size_by_scale_request,
+    .set_window_centered = sdlapp_imgui_video_center_main_window_request,
     .set_framerate_mode = sdlapp_imgui_video_set_framerate_mode,
     .set_fullscreen = sdlapp_imgui_video_set_fullscreen,
     .switch_fullscreen = sdlapp_imgui_video_switch_fullscreen,

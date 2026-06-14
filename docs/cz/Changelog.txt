@@ -1,4 +1,7 @@
 
+	- BUGFIX: hlavní okno se při startu na displejích s nižším rozlišením neumístilo na střed obrazovky, pokud byla zvolena startovní velikost okna jiná než "Native". Nyní se okno vycentruje pro všechny velikosti i po opuštění režimu celé obrazovky.
+
+
 2026-06-14 - Released version 2.0.4 - preview
 
 	- Nyní lze zvolit nastavení switche pro printer mode MZ, nebo CENTRONICS. V obu režimech lze samostatně logovat komunikaci s tiskárnou do souboru.

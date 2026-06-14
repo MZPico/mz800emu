@@ -193,7 +193,8 @@ void display_init(void)
 
     // Nastavit velikost okna, pripadne fullscreen a zobrazit display settings info
     // Pokud je predvolen velikost okna fullscreen, tak nejprve nastavime default size a az potom fullscreen
-    if (g_display.startup_window_size == DISPLAY_STARTUP_SIZE_FULLSCREEN)
+    bool fullscreen_startup = (g_display.startup_window_size == DISPLAY_STARTUP_SIZE_FULLSCREEN);
+    if (fullscreen_startup)
     {
         if (g_iface_video_callbacks->set_window_size_by_scale)
         {
@@ -203,8 +204,22 @@ void display_init(void)
         {
             WARN("Display: set window size '%s' - callback is not implemented\n", display_predef_scale_name[DISPLAY_STARTUP_SIZE_NORMAL]);
         };
+        // Vycentrovat NORMAL "restore" okno JEŠTĚ před přepnutím do fullscreenu,
+        // aby okno po opuštění fullscreenu padlo na střed.
+        if (g_iface_video_callbacks->set_window_centered)
+            g_iface_video_callbacks->set_window_centered();
     };
     display_set_window_startup_scale(g_display.startup_window_size);
+
+    // Okno se při vzniku vycentrovalo v base velikosti (= scale Native); pro
+    // ostatní startup velikosti ho po aplikaci scale (= resize, který pozici
+    // nemění) vycentrujeme znovu. Ve fullscreenu už je restore okno vycentrované
+    // výše. FIFO fronta zpráv okna zajistí pořadí resize -> center.
+    if (!fullscreen_startup)
+    {
+        if (g_iface_video_callbacks->set_window_centered)
+            g_iface_video_callbacks->set_window_centered();
+    };
 }
 
 uint32_t *display_get_default_color_schema(void)

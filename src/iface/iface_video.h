@@ -17,6 +17,8 @@ typedef struct iface_video_callbacks_t
     void (*set_window_focus)(void);
     void (*fix_window_aspect_ratio)(char correction_by);
     void (*set_window_size_by_scale)(float scale);
+    /* Vycentruje hlavní okno na aktuálním displeji (one-shot při startu). */
+    void (*set_window_centered)(void);
     void (*set_framerate_mode)(en_DISPLAY_FRAMERATE_MODE mode, int custom_fps);
     void (*set_fullscreen)(bool enabled);
     void (*switch_fullscreen)(void);

@@ -515,9 +515,26 @@ void sdlapp_winmanager_good_place_for(SdlAppWindowManager *wm, SdlAppWindow *new
 
     if (!found)
     {
-        // pokud neni zadne okno, tak stred obrazovky
-        best_x = SDL_WINDOWPOS_CENTERED;
-        best_y = SDL_WINDOWPOS_CENTERED;
+        // Žádné jiné okno (nebo se nenašlo volné místo) -> okno na střed.
+        // Centrujeme do "usable" oblasti displeje (bez taskbaru/panelů) a levý
+        // horní roh clampneme na origin, aby titulkový pruh velkého okna
+        // (např. scale Big na 1080p) nevyjel nad horní/levý okraj a šel chytit.
+        SDL_Rect usable;
+        if (SDL_GetDisplayUsableBounds(win_displayID, &usable))
+        {
+            best_x = usable.x + (usable.w - win_width) / 2;
+            best_y = usable.y + (usable.h - win_height) / 2;
+            if (best_x < usable.x)
+                best_x = usable.x;
+            if (best_y < usable.y)
+                best_y = usable.y;
+        }
+        else
+        {
+            WARN("SDL_GetDisplayUsableBounds failed: %s", SDL_GetError());
+            best_x = SDL_WINDOWPOS_CENTERED;
+            best_y = SDL_WINDOWPOS_CENTERED;
+        };
     };
 
     g_list_free_full(occupied_areas, g_free);
