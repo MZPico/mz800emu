@@ -115,9 +115,23 @@ int dbgapi_regions_enumerate(st_REGION_DESC *out, int max_count)
 }
 
 
-/* Helper: získá descriptor z cache podle id. NULL = invalid. */
+/* Helper: získá descriptor z cache podle id. NULL = invalid.
+ *
+ * Lazy auto-enumerate: pokud cache ještě nebyla naplněná (= klient zavolal
+ * region_read/write bez předchozího regions_list a bez otevřeného Memory
+ * Browseru, který enumerate spustí), naplň ji teď. region_id je index do
+ * enumerate výsledku, takže read/write je tím self-sufficient a nevyžaduje
+ * explicitní enumerate-first (mzdos 0012). Re-enumerace při už naplněné
+ * cache se NEdělá - ID zůstávají stabilní v rámci session (re-enumerate je
+ * na dbgapi_regions_enumerate / regions_list). */
 static const st_REGION_DESC *lookup_region(int region_id)
 {
+    if (s_region_cache_count <= 0) {
+        s_region_cache_count = arch_regions_collect(s_region_cache, REGION_CACHE_MAX);
+        if (s_region_cache_count > REGION_CACHE_MAX) {
+            s_region_cache_count = REGION_CACHE_MAX;
+        }
+    }
     if (region_id < 0 || region_id >= s_region_cache_count) return NULL;
     return &s_region_cache[region_id];
 }

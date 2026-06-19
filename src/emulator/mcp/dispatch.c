@@ -11426,15 +11426,20 @@ static en_MCP_DISPATCH_RESULT _handle_region_read(
         .out_count = 0,
     };
     if (!_submit_dbgapi(DBGAPI_CMD_REGIONS_READ, &param, NULL)) {
+        /* _submit_dbgapi vrací (out_count >= 0). param.out_count rozliší
+         * příčinu: backend nastaví -1 když region_id/offset/region je
+         * neplatný (= read proběhl, ale selhal); ponechá initial 0 když
+         * příkaz vůbec neproběhl (= emu nedostupný / fronta plná / timeout).
+         * Cache se plní lazy (viz dbgapi_regions lookup_region), takže
+         * prázdná enumerace už není příčinou - selhání = opravdu bad ID. */
+        en_MCP_DISPATCH_RESULT rc = (param.out_count < 0)
+            ? MCP_DISPATCH_INVALID_PARAMS : MCP_DISPATCH_EMU_ERROR;
+        const char *msg = (param.out_count < 0)
+            ? "region read failed: invalid region_id, offset, or "
+              "disconnected region (use regions_list to enumerate valid IDs)"
+            : "region read failed: emulator unavailable";
         g_free(buf);
-        return _err_response(req_id, "REGIONS_READ failed",
-                             MCP_DISPATCH_EMU_ERROR, out_response);
-    }
-    if (param.out_count < 0) {
-        g_free(buf);
-        return _err_response(req_id,
-                             "REGIONS_READ failed (bad region_id / offset)",
-                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+        return _err_response(req_id, msg, rc, out_response);
     }
     JsonObject *data = json_object_new();
     json_object_set_int_member(data, "region_id", region_id);
@@ -11646,15 +11651,18 @@ static en_MCP_DISPATCH_RESULT _handle_region_write(
         .out_count = 0,
     };
     if (!_submit_dbgapi(DBGAPI_CMD_REGIONS_WRITE, &param, NULL)) {
+        /* Stejná logika jako region_read: param.out_count rozliší bad
+         * region/read-only (-1, příkaz proběhl) od emu nedostupný (0,
+         * neproběhl). Cache se plní lazy, takže prázdná enumerace už není
+         * příčinou selhání. */
+        en_MCP_DISPATCH_RESULT rc = (param.out_count < 0)
+            ? MCP_DISPATCH_INVALID_PARAMS : MCP_DISPATCH_EMU_ERROR;
+        const char *msg = (param.out_count < 0)
+            ? "region write failed: read-only, disconnected, or invalid "
+              "region_id/offset (use regions_list to enumerate valid IDs)"
+            : "region write failed: emulator unavailable";
         g_free(decoded);
-        return _err_response(req_id, "REGIONS_WRITE failed",
-                             MCP_DISPATCH_EMU_ERROR, out_response);
-    }
-    if (param.out_count < 0) {
-        g_free(decoded);
-        return _err_response(req_id,
-                             "REGIONS_WRITE failed (read-only / disconnected / bad id)",
-                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+        return _err_response(req_id, msg, rc, out_response);
     }
     JsonObject *data = json_object_new();
     json_object_set_int_member(data, "region_id", region_id);

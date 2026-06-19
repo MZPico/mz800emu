@@ -1,6 +1,8 @@
 
 	- BUGFIX: the main window was not placed at the center of the screen at startup on lower-resolution displays when a startup window size other than "Native" was selected. The window is now centered for all sizes, including after leaving full-screen mode.
 
+	- BUGFIX: MCP server - direct physical memory access (region_read/region_write and the file_load/save_from_region composites) was unreliable in some situations: reading large regions (around 64 KB) over TCP stalled the connection, and region IO failed until the debugger was opened. It now works reliably even for full 64 KB regions and right after startup; on error it returns a clear message instead of an empty response.
+
 
 2026-06-14 - Released version 2.0.4 - preview
 

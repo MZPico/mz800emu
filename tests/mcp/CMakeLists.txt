@@ -142,6 +142,29 @@ if(Python3_FOUND)
     )
     message(STATUS "  tests/mcp: registered mcp_server_stdio_e2e "
                    "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Test 5: TCP transport region wedge regrese (bug 0011)
+    # -----------------------------------------------------------
+    # Mock TCP server (BEZ emu) ověří, že velký region_read response
+    # (>64 KiB JSONL řádek) nezasekne bridge, že error response se
+    # surfacuje místo holého {}, a že _send_request self-healuje
+    # off-by-one desync. Test importuje mcp_server in-process, takže
+    # potřebuje FastMCP venv - sám se re-execne pod venv interpretem,
+    # nebo skipne (exit 77) když venv chybí.
+    add_test(
+        NAME    mcp_tcp_region_wedge
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_tcp_region_wedge.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_tcp_region_wedge PROPERTIES
+        LABELS  "e2e;mcp;tcp"
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_tcp_region_wedge "
+                   "(Python ${Python3_VERSION})")
 else()
     message(STATUS "  tests/mcp: mcp_pipe_e2e SKIPPED "
                    "(Python3 interpreter not found)")

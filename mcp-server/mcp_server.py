@@ -106,6 +106,14 @@ TCP_PORT: int = int(os.environ.get("MZ800EMU_TCP_PORT", "23800"))
 # 30 s je bezpečná horní mez pro startup hello + první příkaz.
 SEND_TIMEOUT_S: float = 30.0
 
+# Max délka jednoho JSONL řádku (TCP transport). asyncio.StreamReader má
+# default limit 64 KiB; region_read smí číst až 65536 bajtů, base64 z toho
+# je ~87.4 KB v jednom řádku -> přesáhne default limit a readline() vyhodí
+# ValueError -> reader task umře -> bridge se zasekne (bug 0011). Zvyšujeme
+# limit s rezervou pro budoucí bulk čtení. Pipe transport tímto netrpí
+# (file.readline() bez limitu).
+MAX_JSONL_LINE_BYTES: int = 16 * 1024 * 1024
+
 
 # === Logging ==========================================================
 # MCP server používá stdio = NESMÍ psát na stdout (= MCP wire protocol)
@@ -464,8 +472,12 @@ class _TcpTransport(_Transport):
     async def connect(self) -> None:
         log.info("connecting to emu TCP: %s:%d", self.host, self.port)
         try:
+            # limit= zvyšuje StreamReader buffer z default 64 KiB na
+            # MAX_JSONL_LINE_BYTES - velké region_read response (base64
+            # 64 KB regionu ~87 KB) jinak přesáhnou limit a readline()
+            # vyhodí ValueError (bug 0011).
             self.reader, self.writer = await asyncio.open_connection(
-                self.host, self.port)
+                self.host, self.port, limit=MAX_JSONL_LINE_BYTES)
         except (ConnectionRefusedError, OSError) as e:
             raise RuntimeError(
                 f"TCP connect to {self.host}:{self.port} failed: {e} "
@@ -502,6 +514,16 @@ class _TcpTransport(_Transport):
             raw = await self.reader.readline()
         except (asyncio.IncompleteReadError, ConnectionError, OSError) as e:
             log.info("TCP read EOF/error: %s", e)
+            self._alive = False
+            return None
+        except ValueError as e:
+            # readline() re-raisuje LimitOverrunError jako ValueError, když
+            # řádek přesáhne StreamReader limit. Buffer je tím zničený, takže
+            # transport označíme za mrtvý -> reader task skončí čistě a
+            # _send_request se při dalším volání reconnectne (místo aby
+            # bridge tiše zůstal zaseknutý s is_alive()==True, bug 0011).
+            log.error("TCP read line over limit (%d B): %s",
+                      MAX_JSONL_LINE_BYTES, e)
             self._alive = False
             return None
         if not raw:
@@ -748,24 +770,53 @@ async def _send_request(cmd: str,
         log.debug("TX: %s", _wire_truncate(req_line))
         await _transport.send_line(req_line)
 
-        try:
-            resp = await asyncio.wait_for(
-                _response_queue.get(),
-                timeout=SEND_TIMEOUT_S,
-            )
-        except asyncio.TimeoutError as e:
-            raise RuntimeError(
-                f"emu request timeout after {SEND_TIMEOUT_S}s (cmd={cmd})"
-            ) from e
-
-        # Pozn.: RX wire trace se loguje v _stdout_reader_task (= jediný
-        # čtecí bod), ne tady, aby se response neloggovala dvakrát a aby
-        # se zachytily i async broadcasty bez req_id.
-        if resp.get("req_id") != req_id:
-            log.warning("out-of-order response: expected %d, got %d",
+        # Protokol je synchronní (jeden request naráz pod _send_lock),
+        # takže response se správným req_id musí přijít jako další. Pokud
+        # ale dřívější request vytimeoutoval a jeho pozdní response dorazila
+        # až teď, zůstala ve frontě a způsobila by trvalý off-by-one desync
+        # (bug 0011). Stale response (req_id != náš) proto zahazujeme a
+        # čekáme dál až do společného deadline - self-heal desyncu.
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + SEND_TIMEOUT_S
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise RuntimeError(
+                    f"emu request timeout after {SEND_TIMEOUT_S}s (cmd={cmd})")
+            try:
+                resp = await asyncio.wait_for(
+                    _response_queue.get(), timeout=remaining)
+            except asyncio.TimeoutError as e:
+                raise RuntimeError(
+                    f"emu request timeout after {SEND_TIMEOUT_S}s (cmd={cmd})"
+                ) from e
+            # Pozn.: RX wire trace se loguje v _stdout_reader_task (= jediný
+            # čtecí bod), ne tady, aby se response neloggovala dvakrát a aby
+            # se zachytily i async broadcasty bez req_id.
+            if resp.get("req_id") == req_id:
+                return resp
+            log.warning("discarding stale response: expected %d, got %s",
                         req_id, resp.get("req_id"))
 
-        return resp
+
+def _data_or_error(resp: dict[str, Any]) -> dict[str, Any]:
+    """Vrátí ``resp["data"]``, nebo error dict když data chybí.
+
+    Wire response na úspěch nese ``data``, na chybu jen ``error`` (bez
+    ``data``). Tool wrappery dřív dělaly ``resp.get("data", {})``, což
+    error tiše převedlo na holé ``{}`` - caller selhání nepoznal (bug
+    0011). Tento helper error surfacuje.
+
+    Args:
+        resp: wire response z ``_send_request``.
+
+    Returns:
+        ``resp["data"]`` pokud existuje, jinak ``{"error": ...}`` se
+        zprávou z ``resp["error"]`` (fallback generická hláška).
+    """
+    if "data" in resp:
+        return resp["data"]
+    return {"error": resp.get("error", "emu returned no data")}
 
 
 async def _shutdown_emu() -> None:
@@ -4618,7 +4669,7 @@ async def emu_region_read(region_id: int, offset: int = 0,
     resp = await _send_request("region_read",
                                {"region_id": region_id,
                                 "offset": offset, "length": length})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4656,7 +4707,7 @@ async def emu_region_write(region_id: int, offset: int,
                                {"region_id": region_id,
                                 "offset": offset,
                                 "data_b64": data_b64})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()

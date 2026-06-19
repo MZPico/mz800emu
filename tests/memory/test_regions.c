@@ -90,6 +90,32 @@ static int count_regions(const st_REGION_DESC *regs, int count, en_REGION_KIND k
 
 
 /* ================================================================
+ * Test 0: read BEZ předchozího enumerate musí fungovat (mzdos 0012)
+ *
+ * region_id se překládá přes interní cache s_region_cache, kterou plní
+ * dbgapi_regions_enumerate(). Bez lazy auto-fill by read na čerstvém
+ * stavu (= klient nezavolal regions_list / neotevřel Memory Browser)
+ * vrátil -1 ("REGIONS_READ failed"). Lazy-fill v lookup_region() to
+ * řeší - read/write je self-sufficient.
+ *
+ * POZOR: tento test MUSÍ běžet jako PRVNÍ (před jakýmkoliv enumerate),
+ * protože s_region_cache_count je static init 0 jen na začátku procesu.
+ * Nemáme veřejné API na reset cache, takže prázdný stav získáme jen
+ * pořadím (první RUN_TEST v main()).
+ * ================================================================ */
+
+void test_regions_read_without_enumerate_autofills(void)
+{
+    /* Žádné volání dbgapi_regions_enumerate() před readem. Region 0
+     * vždy existuje (LOGICAL) a má 64 KB, takže read 4 bajtů z offsetu 0
+     * musí vrátit přesně 4 (= cache se sama naplnila). Před fixem: -1. */
+    uint8_t buf[4];
+    int n = dbgapi_regions_read(0, 0x0000, buf, 4);
+    TEST_ASSERT_EQUAL_INT(4, n);
+}
+
+
+/* ================================================================
  * Test 1: basic enumerate vrátí ne-prázdný seznam s povinnými regiony
  * ================================================================ */
 
@@ -759,6 +785,9 @@ int main(int argc, char *argv[])
     mztest_init();
 
     UNITY_BEGIN();
+
+    /* MUSÍ být první - testuje prázdnou cache (viz komentář u testu). */
+    RUN_TEST(test_regions_read_without_enumerate_autofills);
 
     /* smoke */
     RUN_TEST(test_regions_enumerate_basic);
