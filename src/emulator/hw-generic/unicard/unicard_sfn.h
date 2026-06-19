@@ -122,16 +122,24 @@ extern void unicard_sfn_ctx_clear ( st_UNICARD_SFN_CTX *ctx );
  * případ prázdného aliasu - obsazuje kolizní slot), aby další jména
  * dostala správné ~N číslo.
  *
+ * Volitelně vrací přes @p out_has_lfn, zda jméno potřebuje LFN directory
+ * entry (FatFS NS_LFN: lossy, smíšená velikost písmen nebo non-ASCII).
+ * To určuje, zda guest dostane vyplněné pole LFN (offset 23) a lfn_strlen
+ * (offset 22) - reálné HW je plní jen pro jména s LFN, ne pro čistě 8.3
+ * (velká i malá uniform-case jména jdou do FAT bez LFN entry).
+ *
  * @param name_utf8     vstupní jméno (basename, UTF-8/ASCII, bez cesty)
  * @param style         styl plnění offset 9 (per-firmware)
  * @param ctx           kolizní kontext (nesmí být NULL); modifikován
  * @param out_altname   výstupní buffer min. 13 bytů; NUL-terminovaný
  *                      display alias nebo "" (jen UC3 pro čisté 8.3)
+ * @param out_has_lfn   volitelný (může být NULL); TRUE pokud jméno
+ *                      potřebuje LFN entry (NS_LFN), jinak FALSE
  *
  * @pre name_utf8 != NULL, ctx inicializován, out_altname má >= 13 bytů.
  * @post out_altname obsahuje NUL-terminovaný řetězec délky 0..12.
  */
-extern void unicard_sfn_make ( const char *name_utf8, en_UNICARD_SFN_STYLE style, st_UNICARD_SFN_CTX *ctx, char out_altname[13] );
+extern void unicard_sfn_make ( const char *name_utf8, en_UNICARD_SFN_STYLE style, st_UNICARD_SFN_CTX *ctx, char out_altname[13], gboolean *out_has_lfn );
 
 #ifdef __cplusplus
 }

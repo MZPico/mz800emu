@@ -107,6 +107,10 @@ void setUp(void)
      * Vždy nejdřív disconnect, pak connect = guarantee re-init. */
     unicard_set_sd_root_dirpath(s_test_sd_root);
     unicard_set_connected(UNICARD_CONNECTION_DISCONNECTED);
+    /* Deterministický FW pro testy = uc3 (nezávisle na per-platform defaultu
+     * prvního spuštění, který je na MZ-800 uc1). uc1-specifické testy si FW
+     * přepnou samy (set_fw + restore). */
+    unicard_set_fw(UNICARD_FW_UC3);
     unicard_set_connected(UNICARD_CONNECTION_CONNECTED);
 }
 
@@ -1267,18 +1271,24 @@ static int uc_read_dir_filinfo(uint32_t *fsize, uint8_t *fattrib, char *out_name
     (void)uc_recv_word_le(); /* ftime */
     *fattrib = uc_recv_data();
 
-    /* fname[13] - skip */
-    for (int i = 0; i < 13; i++) (void)uc_recv_data();
+    /* fname[13] = S (8.3 short), offset 9 */
+    char sbuf[13];
+    for (int i = 0; i < 13; i++) sbuf[i] = (char)uc_recv_data();
+    sbuf[12] = '\0';
 
     uint8_t lfn_strlen = uc_recv_data();
 
-    /* lfname[_MAX_LFN] */
+    /* lfname[_MAX_LFN] = L (LFN), offset 23 */
     char buf[_MAX_LFN];
     for (int i = 0; i < _MAX_LFN; i++) buf[i] = (char)uc_recv_data();
 
+    /* Stejné pravidlo jako mzdos DIR: L když LEN>0, jinak fallback na S
+     * (8.3 short). Reálné HW i emu plní L jen pro jména s LFN entry. */
     if (out_name && out_cap > 0) {
-        size_t copy = lfn_strlen < (out_cap - 1) ? lfn_strlen : (out_cap - 1);
-        memcpy(out_name, buf, copy);
+        const char *src = (lfn_strlen > 0) ? buf : sbuf;
+        size_t copy = strlen(src);
+        if (copy > out_cap - 1) copy = out_cap - 1;
+        memcpy(out_name, src, copy);
         out_name[copy] = '\0';
     }
     return 1;
@@ -1304,9 +1314,11 @@ void test_unicard_cmdREADDIR(void)
         char name[40];
         if (!uc_read_dir_filinfo(&fsize, &fattrib, name, sizeof(name))) break;
 
-        if (strcmp(name, TEST_UNICARD_MGR_MZF) == 0) found_mgr = 1;
-        else if (strcmp(name, UNICARD_UNIMGR_MZFLOADER_MZQ) == 0) found_mzq = 1;
-        else if (strcmp(name, UNICARD_UNIMGR_MZFLOADER_CFG) == 0) found_cfg = 1;
+        /* Case-insensitive: u jmen bez LFN je fallback na S (8.3), které
+         * je v uc3 uppercase (altname). */
+        if (g_ascii_strcasecmp(name, TEST_UNICARD_MGR_MZF) == 0) found_mgr = 1;
+        else if (g_ascii_strcasecmp(name, UNICARD_UNIMGR_MZFLOADER_MZQ) == 0) found_mzq = 1;
+        else if (g_ascii_strcasecmp(name, UNICARD_UNIMGR_MZFLOADER_CFG) == 0) found_cfg = 1;
     }
 
     TEST_ASSERT_TRUE_MESSAGE(found_mgr, "READDIR musí najít " TEST_UNICARD_MGR_MZF);
@@ -1338,8 +1350,9 @@ void test_unicard_cmdREADDIR_dir_attribute(void)
         char name[40];
         if (!uc_read_dir_filinfo(&fsize, &fattrib, name, sizeof(name))) break;
 
-        if (strcmp(name, "subdir1") == 0) subdir_is_dir = (fattrib & UNICARD_AM_DIR) ? 1 : 0;
-        else if (strcmp(name, "file1.bin") == 0) file_is_dir = (fattrib & UNICARD_AM_DIR) ? 1 : 0;
+        /* Case-insensitive: bez LFN fallback na S (8.3), v uc3 uppercase. */
+        if (g_ascii_strcasecmp(name, "subdir1") == 0) subdir_is_dir = (fattrib & UNICARD_AM_DIR) ? 1 : 0;
+        else if (g_ascii_strcasecmp(name, "file1.bin") == 0) file_is_dir = (fattrib & UNICARD_AM_DIR) ? 1 : 0;
     }
 
     TEST_ASSERT_EQUAL_INT_MESSAGE(1, subdir_is_dir,
@@ -1930,8 +1943,20 @@ static void sfn_make_s(const char *name, en_UNICARD_SFN_STYLE style, char out[13
 {
     st_UNICARD_SFN_CTX ctx;
     unicard_sfn_ctx_init(&ctx);
-    unicard_sfn_make(name, style, &ctx, out);
+    unicard_sfn_make(name, style, &ctx, out, NULL);
     unicard_sfn_ctx_clear(&ctx);
+}
+
+/* Pomocník: vrať has_lfn (jméno potřebuje LFN entry). Nezávisí na stylu. */
+static gboolean sfn_has_lfn(const char *name)
+{
+    char out[13];
+    gboolean hl = FALSE;
+    st_UNICARD_SFN_CTX ctx;
+    unicard_sfn_ctx_init(&ctx);
+    unicard_sfn_make(name, UNICARD_SFN_STYLE_UC1, &ctx, out, &hl);
+    unicard_sfn_ctx_clear(&ctx);
+    return hl;
 }
 
 /* UC3 styl (Unicard3, FatFS R0.13a). */
@@ -1947,15 +1972,15 @@ void test_unicard_sfn_lossy_long_name(void)
     TEST_ASSERT_EQUAL_STRING("BATMAN~1.MZF", out);
 }
 
-void test_unicard_sfn_pure_83_uppercase_is_empty(void)
+void test_unicard_sfn_uc3_pure_83_uppercase_filled(void)
 {
-    /* Reálný FatFS vrací altname PRÁZDNÝ pro validní 8.3 ve velkých
-     * písmenech bez LFN/case info (get_fileinfo ff.c:2737). */
+    /* "Opravený" uc3 plní pole S vždy 8.3 aliasem (velkými) - empty rule
+     * (reálný FatFS by dal prázdné) záměrně NEpoužíváme. */
     char out[13];
     sfn_single("Y2K.MZF", out);
-    TEST_ASSERT_EQUAL_STRING("", out);
+    TEST_ASSERT_EQUAL_STRING("Y2K.MZF", out);
     sfn_single("SAPO-P.MZF", out);
-    TEST_ASSERT_EQUAL_STRING("", out);
+    TEST_ASSERT_EQUAL_STRING("SAPO-P.MZF", out);
 }
 
 void test_unicard_sfn_83_lowercase_uppercased(void)
@@ -1993,13 +2018,27 @@ void test_unicard_sfn_collision_numbering(void)
     st_UNICARD_SFN_CTX ctx;
     unicard_sfn_ctx_init(&ctx);
 
-    unicard_sfn_make("LongNameOne.txt", UNICARD_SFN_STYLE_UC3, &ctx, out);
+    unicard_sfn_make("LongNameOne.txt", UNICARD_SFN_STYLE_UC3, &ctx, out, NULL);
     TEST_ASSERT_EQUAL_STRING("LONGNA~1.TXT", out);
 
-    unicard_sfn_make("LongNameTwo.txt", UNICARD_SFN_STYLE_UC3, &ctx, out);
+    unicard_sfn_make("LongNameTwo.txt", UNICARD_SFN_STYLE_UC3, &ctx, out, NULL);
     TEST_ASSERT_EQUAL_STRING("LONGNA~2.TXT", out);
 
     unicard_sfn_ctx_clear(&ctx);
+}
+
+/* has_lfn: jméno potřebuje LFN entry jen když není čisté 8.3 (lossy /
+ * smíšená velikost / non-ASCII). Reálné HW podle toho plní pole LFN. */
+void test_unicard_sfn_has_lfn_flag(void)
+{
+    /* Mají LFN: smíšená velikost a lossy. */
+    TEST_ASSERT_TRUE(sfn_has_lfn("Bomber.mzf"));        /* mixed case */
+    TEST_ASSERT_TRUE(sfn_has_lfn("Batman Demo.mzf"));   /* lossy */
+    TEST_ASSERT_TRUE(sfn_has_lfn("Gp-Simul.mzf"));      /* mixed case */
+    /* Nemají LFN: čistě 8.3 uniform case (velká i malá). */
+    TEST_ASSERT_FALSE(sfn_has_lfn("SAPO-P.MZF"));       /* upper 8.3 */
+    TEST_ASSERT_FALSE(sfn_has_lfn("Y2K.MZF"));          /* upper 8.3 */
+    TEST_ASSERT_FALSE(sfn_has_lfn("seesharp.mzf"));     /* lower 8.3 */
 }
 
 /* UC1 styl (MZ800UKP1, FatFS R0.09): offset 9 vždy vyplněné, 8.3 s case.
@@ -2104,6 +2143,167 @@ void test_unicard_cmdREADDIR_sfn_alias(void)
         "READDIR offset 9 musí obsahovat FatFS alias BATMAN~1.MZF");
 }
 
+/* Integrace uc3: off 23 = primární jméno (fname) - VŽDY vyplněné, i pro
+ * čisté 8.3 (SAPO-P). off 9 (altname) je naopak u čistě-VELKÝCH 8.3
+ * prázdné -> jméno nese pole L. (uc3 default; položky podle fsize.) */
+void test_unicard_cmdREADDIR_uc3_lfn_always(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    char *sub = g_build_filename(s_test_sd_root, "lfndir", NULL);
+    g_mkdir(sub, 0777);
+    g_free(sub);
+    create_test_file("lfndir/SAPO-P.MZF", 111);    /* čisté 8.3 UPPER */
+    create_test_file("lfndir/Bomber.mzf", 222);    /* mixed case */
+
+    uc_send_cmd(cmdRESET);
+    uc_send_cmd(cmdREADDIR);
+    uc_send_str("/lfndir");
+
+    int seen_sapo = 0, seen_bomber = 0;
+    for (int iter = 0; iter < 100; iter++) {
+        uint8_t sts = uc_master_status();
+        if (!(sts & UNICARD_STS_READDIR)) break;
+
+        uint32_t fsize = uc_recv_dword_le();
+        (void)uc_recv_word_le();  /* fdate */
+        (void)uc_recv_word_le();  /* ftime */
+        (void)uc_recv_data();     /* fattrib */
+        char sbuf[13];
+        for (int i = 0; i < 13; i++) sbuf[i] = (char)uc_recv_data();  /* S (off 9) */
+        sbuf[12] = '\0';
+        uint8_t len = uc_recv_data();   /* LEN (off 22) */
+        char lfname[33];
+        for (int i = 0; i < 32; i++) lfname[i] = (char)uc_recv_data();
+        lfname[32] = '\0';
+
+        if (fsize == 111) {
+            seen_sapo = 1;
+            /* uc3 (opravený): off 23 = primární jméno, off 9 = 8.3 alias
+             * (vždy vyplněné). */
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(strlen("SAPO-P.MZF"), len, "SAPO-P uc3: LEN=délka jména");
+            TEST_ASSERT_EQUAL_STRING_MESSAGE("SAPO-P.MZF", lfname, "SAPO-P uc3: L=primární jméno");
+            TEST_ASSERT_EQUAL_STRING_MESSAGE("SAPO-P.MZF", sbuf, "SAPO-P uc3: S=8.3 alias (vždy)");
+        } else if (fsize == 222) {
+            seen_bomber = 1;
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(strlen("Bomber.mzf"), len, "Bomber uc3: LEN");
+            TEST_ASSERT_EQUAL_STRING_MESSAGE("Bomber.mzf", lfname, "Bomber uc3: L=primární jméno");
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(seen_sapo, "READDIR musí vidět SAPO-P.MZF");
+    TEST_ASSERT_TRUE_MESSAGE(seen_bomber, "READDIR musí vidět Bomber.mzf");
+}
+
+/* Integrace uc1: off 23 = LFN - plněno JEN pro jména s LFN entry. Čisté
+ * 8.3 (SAPO-P) má L prázdné + LEN=0 (jméno nese pole S); mixed (Bomber)
+ * má L=LFN. Přepíná FW na uc1 (save/restore). */
+void test_unicard_cmdREADDIR_uc1_lfn_conditional(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+    if (g_mzarch_platform_numeric != 800) {
+        TEST_IGNORE_MESSAGE("uc1 firmware jen na MZ-800");
+        return;
+    }
+
+    en_UNICARD_FW saved_fw = unicard_get_fw();
+    unicard_set_fw(UNICARD_FW_UC1);
+
+    char *sub = g_build_filename(s_test_sd_root, "uc1lfn", NULL);
+    g_mkdir(sub, 0777);
+    g_free(sub);
+    create_test_file("uc1lfn/SAPO-P.MZF", 111);
+    create_test_file("uc1lfn/Bomber.mzf", 222);
+
+    uc_send_cmd(cmdRESET);
+    uc_send_cmd(cmdREADDIR);
+    uc_send_str("/uc1lfn");
+
+    int seen_sapo = 0, seen_bomber = 0;
+    for (int iter = 0; iter < 100; iter++) {
+        uint8_t sts = uc_master_status();
+        if (!(sts & UNICARD_STS_READDIR)) break;
+
+        uint32_t fsize = uc_recv_dword_le();
+        (void)uc_recv_word_le();
+        (void)uc_recv_word_le();
+        (void)uc_recv_data();
+        char sbuf[13];
+        for (int i = 0; i < 13; i++) sbuf[i] = (char)uc_recv_data();  /* S (off 9) */
+        sbuf[12] = '\0';
+        uint8_t len = uc_recv_data();
+        char lfname[33];
+        for (int i = 0; i < 32; i++) lfname[i] = (char)uc_recv_data();
+        lfname[32] = '\0';
+
+        if (fsize == 111) {
+            seen_sapo = 1;
+            /* uc1: off 23 prázdné (bez LFN), jméno v S (off 9). */
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(0, len, "SAPO-P uc1: LEN=0");
+            TEST_ASSERT_EQUAL_STRING_MESSAGE("", lfname, "SAPO-P uc1: L prázdné");
+            TEST_ASSERT_EQUAL_STRING_MESSAGE("SAPO-P.MZF", sbuf, "SAPO-P uc1: S=8.3 jméno");
+        } else if (fsize == 222) {
+            seen_bomber = 1;
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(strlen("Bomber.mzf"), len, "Bomber uc1: LEN");
+            TEST_ASSERT_EQUAL_STRING_MESSAGE("Bomber.mzf", lfname, "Bomber uc1: L=LFN");
+        }
+    }
+
+    unicard_set_fw(saved_fw);
+
+    TEST_ASSERT_TRUE_MESSAGE(seen_sapo, "READDIR musí vidět SAPO-P.MZF");
+    TEST_ASSERT_TRUE_MESSAGE(seen_bomber, "READDIR musí vidět Bomber.mzf");
+}
+
+/* Integrace uc1: v podadresáři posílá ".." jako první položku; pole S má
+ * 8.3 s case, L jen pro jména s LFN. Přepíná FW na uc1 (save/restore). */
+void test_unicard_cmdREADDIR_uc1_dotdot(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+    if (g_mzarch_platform_numeric != 800) {
+        TEST_IGNORE_MESSAGE("uc1 firmware jen na MZ-800");
+        return;
+    }
+
+    en_UNICARD_FW saved_fw = unicard_get_fw();
+    unicard_set_fw(UNICARD_FW_UC1);
+
+    char *sub = g_build_filename(s_test_sd_root, "uc1dir", NULL);
+    g_mkdir(sub, 0777);
+    g_free(sub);
+    create_test_file("uc1dir/seesharp.mzf", 333);  /* čistě malá 8.3 */
+
+    uc_send_cmd(cmdRESET);
+    uc_send_cmd(cmdREADDIR);
+    uc_send_str("/uc1dir");
+
+    int dotdot_first = -1, idx = 0;
+    int seen_lower = 0;
+    for (int iter = 0; iter < 100; iter++) {
+        uint8_t sts = uc_master_status();
+        if (!(sts & UNICARD_STS_READDIR)) break;
+
+        (void)uc_recv_dword_le(); /* fsize */
+        (void)uc_recv_word_le();  /* fdate */
+        (void)uc_recv_word_le();  /* ftime */
+        (void)uc_recv_data();     /* fattrib */
+        char fname[13];
+        for (int i = 0; i < 13; i++) fname[i] = (char)uc_recv_data();
+        (void)uc_recv_data();     /* LEN */
+        for (int i = 0; i < 32; i++) (void)uc_recv_data();  /* L */
+
+        if (strcmp(fname, "..") == 0 && dotdot_first < 0) dotdot_first = idx;
+        if (strcmp(fname, "seesharp.mzf") == 0) seen_lower = 1;  /* uc1 S = malými */
+        idx++;
+    }
+
+    unicard_set_fw(saved_fw);  /* restore */
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, dotdot_first,
+        "uc1 musí poslat '..' jako PRVNÍ položku v podadresáři");
+    TEST_ASSERT_TRUE_MESSAGE(seen_lower,
+        "uc1 S pole musí mít malá písmena (seesharp.mzf)");
+}
+
 
 /* ================================================================
  * MAIN
@@ -2154,7 +2354,7 @@ int main(int argc, char *argv[])
 
     /* FatFS 8.3 SFN alias generátor (unicard_sfn). */
     RUN_TEST(test_unicard_sfn_lossy_long_name);
-    RUN_TEST(test_unicard_sfn_pure_83_uppercase_is_empty);
+    RUN_TEST(test_unicard_sfn_uc3_pure_83_uppercase_filled);
     RUN_TEST(test_unicard_sfn_83_lowercase_uppercased);
     RUN_TEST(test_unicard_sfn_space_in_name);
     RUN_TEST(test_unicard_sfn_long_base);
@@ -2163,8 +2363,12 @@ int main(int argc, char *argv[])
     RUN_TEST(test_unicard_sfn_uc1_lowercase_preserved);
     RUN_TEST(test_unicard_sfn_uc1_mixed_uppercased);
     RUN_TEST(test_unicard_sfn_uc1_lossy);
+    RUN_TEST(test_unicard_sfn_has_lfn_flag);
     RUN_TEST(test_unicard_cmdSTAT_sfn_alias);
     RUN_TEST(test_unicard_cmdREADDIR_sfn_alias);
+    RUN_TEST(test_unicard_cmdREADDIR_uc3_lfn_always);
+    RUN_TEST(test_unicard_cmdREADDIR_uc1_lfn_conditional);
+    RUN_TEST(test_unicard_cmdREADDIR_uc1_dotdot);
 
     /* SD jail (directory traversal protection). */
     RUN_TEST(test_unicard_jail_basic_paths);

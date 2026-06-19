@@ -1,6 +1,10 @@
-
+	
 	- BUGFIX: Unicard - pole s krátkým názvem souboru (formát 8.3) ve výpisu adresáře a ve stavu souboru obsahovalo u dlouhých názvů jen useknutý dlouhý název místo platného 8.3 jména. Nyní emulace generuje stejné 8.3 jméno jako reálná karta.
-	  DŮLEŽITÉ: ukázalo se, že každá verze firmwaru Unicard plní toto pole JINAK - a emulace nově věrně napodobuje OBĚ varianty. Firmware uc1 (MZ800UKP1) pole vyplňuje vždy a zachovává velikost písmen (např. "seesharp.mzf" zůstane malými). Firmware uc3 (Unicard3) u krátkých názvů velkými písmeny pole nechává prázdné a používá výhradně velká písmena. Emulace správnou variantu volí podle aktivního firmwaru.
+	  DŮLEŽITÉ: ukázalo se, že každá verze firmwaru Unicard plní toto pole JINAK - a emulace nově napodobuje OBĚ varianty. Firmware uc1 (MZ800UKP1) zachovává velikost písmen (např. "seesharp.mzf" zůstane malými); firmware uc3 (Unicard3) používá výhradně velká písmena. Emulace správnou variantu volí podle aktivního firmwaru.
+
+	- BUGFIX: Unicard - binární výpis adresáře a stav souboru nově věrně plní i pole dlouhého názvu a jeho délku, a to podle aktivního firmwaru (uc1 a uc3 tato pole plní odlišně - u uc1 se dlouhý název posílá jen u souborů, které jej skutečně mají, u uc3 nese hlavní jméno právě toto pole). Díky tomu program odladěný proti emulátoru funguje i na skutečném HW. Firmware uc1 navíc v podadresáři posílá položku ".." (uc3 ne - jeho manager si ji přidává sám).
+
+	- ZMĚNA: V emulaci Unicard byla odhalena chyba ve firmware uc3 (Unicard3) - v binárním výpisu adresáře nevyplňuje pole dlouhého názvu (LFN). Emulátor se v tomto bodě záměrně chová V ROZPORU se zásadou přesné emulace: firmware uc3 emuluje tak, jak by se podle nás měl chovat, KDYBY chyba nebyla (tj. LFN vyplňuje korektně). Z tohoto důvodu je nově pro MZ-800 jako implicitní (výchozí) firmware Unicard nastaven uc1, který je věrný skutečnému HW.
 
 	- BUGFIX: hlavní okno se při startu na displejích s nižším rozlišením neumístilo na střed obrazovky, pokud byla zvolena startovní velikost okna jiná než "Native". Nyní se okno vycentruje pro všechny velikosti i po opuštění režimu celé obrazovky.
 

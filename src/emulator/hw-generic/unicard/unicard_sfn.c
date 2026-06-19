@@ -291,13 +291,14 @@ static void sfn_ctx_register ( st_UNICARD_SFN_CTX *ctx, const unsigned char *bod
 }
 
 void unicard_sfn_make ( const char *name_utf8, en_UNICARD_SFN_STYLE style,
-                        st_UNICARD_SFN_CTX *ctx, char out_altname[13] ) {
+                        st_UNICARD_SFN_CTX *ctx, char out_altname[13], gboolean *out_has_lfn ) {
     gunichar2 lfn[64];          /* FF_MAX_LFN=32; rezerva na delší vstup */
     unsigned char body[SFN_BODY_LEN];
     unsigned char final_body[SFN_BODY_LEN];
     unsigned char cf;
 
     out_altname[0] = '\0';
+    if ( out_has_lfn ) *out_has_lfn = FALSE;
 
     /* UTF-8 -> UTF-16. Příliš dlouhé / nedekódovatelné -> prázdný alias. */
     glong items = 0;
@@ -313,6 +314,10 @@ void unicard_sfn_make ( const char *name_utf8, en_UNICARD_SFN_STYLE style,
     g_free ( u16 );
 
     sfn_create_body ( lfn, di, body, &cf );
+
+    /* NS_LFN určuje, zda jméno potřebuje LFN entry (lossy / smíšená
+     * velikost / non-ASCII). Reálné HW podle toho plní pole LFN. */
+    if ( out_has_lfn ) *out_has_lfn = ( cf & SFN_NS_LFN ) != 0;
 
     if ( cf & SFN_NS_LOSS ) {
         /* numbered SFN - najdi nejnižší nekolidující ~N (port dir_register) */
@@ -335,12 +340,10 @@ void unicard_sfn_make ( const char *name_utf8, en_UNICARD_SFN_STYLE style,
         return;
     }
 
-    /* uc3 (R0.13a altname): pro čisté 8.3 bez LFN a bez case info zůstává
-     * prázdný (port get_fileinfo: if (!DIR_NTres) altname[0]=0). */
-    if ( !( cf & SFN_NS_LFN ) && !( cf & ( SFN_NS_BODY | SFN_NS_EXT ) ) ) {
-        out_altname[0] = '\0';
-        return;
-    }
-
+    /* uc3 (R0.13a altname): "opravený" uc3 plní pole S vždy 8.3 aliasem
+     * (velká písmena). FatFS empty rule (prázdné altname pro čisté 8.3 ve
+     * velkých písmenech) ZÁMĚRNĚ NEpoužíváme - idealizované chování, aby
+     * shortname nikdy nechybělo (rozhodnutí Michal, "jak by mělo být kdyby
+     * FW byl OK"). Reálný uc3 by zde dal prázdné / vynulovaný 1. znak. */
     sfn_body_to_display ( final_body, out_altname );
 }

@@ -1,6 +1,10 @@
 
 	- BUGFIX: Unicard - the short file name field (8.3 format) in the directory listing and file status contained only a truncated long name instead of a valid 8.3 name for long file names. The emulation now generates the same 8.3 name as a real card.
-	  IMPORTANT: it turned out that each Unicard firmware version fills this field DIFFERENTLY - and the emulation now faithfully reproduces BOTH variants. Firmware uc1 (MZ800UKP1) always fills the field and preserves letter case (e.g. "seesharp.mzf" stays lowercase). Firmware uc3 (Unicard3) leaves the field empty for short uppercase names and uses uppercase only. The emulation picks the correct variant based on the active firmware.
+	  IMPORTANT: it turned out that each Unicard firmware version fills this field DIFFERENTLY - and the emulation now reproduces BOTH variants. Firmware uc1 (MZ800UKP1) preserves letter case (e.g. "seesharp.mzf" stays lowercase); firmware uc3 (Unicard3) uses uppercase only. The emulation picks the correct variant based on the active firmware.
+
+	- BUGFIX: Unicard - the binary directory listing and file status now also faithfully fill the long name field and its length, according to the active firmware (uc1 and uc3 fill these fields differently - on uc1 the long name is sent only for files that actually have one, on uc3 this field carries the primary name). As a result, code tested against the emulator also works on real HW. Firmware uc1 additionally sends a ".." entry in subdirectories (uc3 does not - its manager adds it itself).
+
+	- CHANGE: A bug was found in the Unicard uc3 (Unicard3) firmware - in the binary directory listing it does not fill the long file name (LFN) field. In this point the emulator deliberately behaves CONTRARY to the accurate-emulation principle: it emulates uc3 the way we believe it should behave IF the bug were not there (i.e. filling the LFN correctly). For this reason, uc1 (which is faithful to the real HW) is now the default Unicard firmware for MZ-800.
 
 	- BUGFIX: the main window was not placed at the center of the screen at startup on lower-resolution displays when a startup window size other than "Native" was selected. The window is now centered for all sizes, including after leaving full-screen mode.
 
