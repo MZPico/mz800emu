@@ -42,6 +42,7 @@ extern "C" {
 #ifdef UNICARD_EMULATED
 #include "ff_result.h"
 #include "ff_open_mode.h"
+#include "unicard_sfn.h"  /* generátor FatFS 8.3 SFN aliasu */
 #define _MAX_LFN    32  // maximalni povolena delka filename, vcetne terminatoru
 #endif
 
@@ -110,6 +111,11 @@ extern "C" {
          * V2.11b sort přesune dir na pos 0 → crash.
          */
         char *forced_first_dir;
+
+        /* Kolizní kontext pro FatFS ~N číslování 8.3 aliasů (offset 9).
+         * Buduje se inkrementálně v pořadí iterace readdir; init v
+         * unicard_dir_open, clear v unicard_dir_close. */
+        st_UNICARD_SFN_CTX sfn_ctx;
     } st_UNICARD_DIR;
 
 

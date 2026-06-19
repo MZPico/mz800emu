@@ -1,4 +1,7 @@
 
+	- BUGFIX: Unicard - the short file name field (8.3 format) in the directory listing and file status contained only a truncated long name instead of a valid 8.3 name for long file names. The emulation now generates the same 8.3 name as a real card.
+	  IMPORTANT: it turned out that each Unicard firmware version fills this field DIFFERENTLY - and the emulation now faithfully reproduces BOTH variants. Firmware uc1 (MZ800UKP1) always fills the field and preserves letter case (e.g. "seesharp.mzf" stays lowercase). Firmware uc3 (Unicard3) leaves the field empty for short uppercase names and uses uppercase only. The emulation picks the correct variant based on the active firmware.
+
 	- BUGFIX: the main window was not placed at the center of the screen at startup on lower-resolution displays when a startup window size other than "Native" was selected. The window is now centered for all sizes, including after leaving full-screen mode.
 
 	- BUGFIX: MCP server - direct physical memory access (region_read/region_write and the file_load/save_from_region composites) was unreliable in some situations: reading large regions (around 64 KB) over TCP stalled the connection, and region IO failed until the debugger was opened. It now works reliably even for full 64 KB regions and right after startup; on error it returns a clear message instead of an empty response.

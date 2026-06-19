@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include "hw-generic/unicard/unicard.h"
+#include "hw-generic/unicard/unicard_sfn.h"
 #include "hw-generic/unicard/unimgr_commands.h"
 #include "baseui/baseui_tools.h"
 #include "emulator/mzarch/mzarch_platform.h"
@@ -1917,6 +1918,194 @@ void test_unicard_readonly_allows_read(void)
 
 
 /* ================================================================
+ * FatFS 8.3 SFN alias generátor (unicard_sfn) - čisté unit testy
+ *
+ * Očekávané hodnoty odvozeny ze zdroje FW Unicard (FatFS R0.13a,
+ * create_name + gen_numname + get_fileinfo). Pole offset 9 = FatFS
+ * FILINFO.altname.
+ * ================================================================ */
+
+/* Pomocník: vygeneruj alias pro jediné jméno (fresh kontext, daný styl). */
+static void sfn_make_s(const char *name, en_UNICARD_SFN_STYLE style, char out[13])
+{
+    st_UNICARD_SFN_CTX ctx;
+    unicard_sfn_ctx_init(&ctx);
+    unicard_sfn_make(name, style, &ctx, out);
+    unicard_sfn_ctx_clear(&ctx);
+}
+
+/* UC3 styl (Unicard3, FatFS R0.13a). */
+static void sfn_single(const char *name, char out[13])
+{
+    sfn_make_s(name, UNICARD_SFN_STYLE_UC3, out);
+}
+
+void test_unicard_sfn_lossy_long_name(void)
+{
+    char out[13];
+    sfn_single("Batman Demo.mzf", out);
+    TEST_ASSERT_EQUAL_STRING("BATMAN~1.MZF", out);
+}
+
+void test_unicard_sfn_pure_83_uppercase_is_empty(void)
+{
+    /* Reálný FatFS vrací altname PRÁZDNÝ pro validní 8.3 ve velkých
+     * písmenech bez LFN/case info (get_fileinfo ff.c:2737). */
+    char out[13];
+    sfn_single("Y2K.MZF", out);
+    TEST_ASSERT_EQUAL_STRING("", out);
+    sfn_single("SAPO-P.MZF", out);
+    TEST_ASSERT_EQUAL_STRING("", out);
+}
+
+void test_unicard_sfn_83_lowercase_uppercased(void)
+{
+    /* 8.3 jméno s malými písmeny -> má LFN entry, altname = velká 8.3. */
+    char out[13];
+    sfn_single("Gp-Simul.mzf", out);
+    TEST_ASSERT_EQUAL_STRING("GP-SIMUL.MZF", out);
+}
+
+void test_unicard_sfn_space_in_name(void)
+{
+    /* Mezera v jméně -> lossy -> ~N alias. */
+    char out[13];
+    sfn_single("Picture Show.MZF", out);
+    TEST_ASSERT_EQUAL_STRING("PICTUR~1.MZF", out);
+}
+
+void test_unicard_sfn_long_base(void)
+{
+    /* Základ delší než 8 znaků -> lossy -> ~N alias. */
+    char out[13];
+    sfn_single("Incopy102.mzf", out);
+    TEST_ASSERT_EQUAL_STRING("INCOPY~1.MZF", out);
+    sfn_single("Pool_3_V16k.mzf", out);
+    TEST_ASSERT_EQUAL_STRING("POOL_3~1.MZF", out);
+    sfn_single("Turbo_Copy_V1.21.mzf", out);
+    TEST_ASSERT_EQUAL_STRING("TURBO_~1.MZF", out);
+}
+
+void test_unicard_sfn_collision_numbering(void)
+{
+    /* Dvě lossy jména se stejným 6-znak prefixem + ext dostanou ~1 a ~2. */
+    char out[13];
+    st_UNICARD_SFN_CTX ctx;
+    unicard_sfn_ctx_init(&ctx);
+
+    unicard_sfn_make("LongNameOne.txt", UNICARD_SFN_STYLE_UC3, &ctx, out);
+    TEST_ASSERT_EQUAL_STRING("LONGNA~1.TXT", out);
+
+    unicard_sfn_make("LongNameTwo.txt", UNICARD_SFN_STYLE_UC3, &ctx, out);
+    TEST_ASSERT_EQUAL_STRING("LONGNA~2.TXT", out);
+
+    unicard_sfn_ctx_clear(&ctx);
+}
+
+/* UC1 styl (MZ800UKP1, FatFS R0.09): offset 9 vždy vyplněné, 8.3 s case.
+ * Očekávané hodnoty odvozeny z reálné karty (fotka FW1) + R0.09 zdroje. */
+void test_unicard_sfn_uc1_pure_83_filled(void)
+{
+    /* Reálná uc1 karta plní offset 9 i pro čisté 8.3 (na rozdíl od uc3). */
+    char out[13];
+    sfn_make_s("Y2K.MZF", UNICARD_SFN_STYLE_UC1, out);
+    TEST_ASSERT_EQUAL_STRING("Y2K.MZF", out);
+    sfn_make_s("SAPO-P.MZF", UNICARD_SFN_STYLE_UC1, out);
+    TEST_ASSERT_EQUAL_STRING("SAPO-P.MZF", out);
+}
+
+void test_unicard_sfn_uc1_lowercase_preserved(void)
+{
+    /* uc1 zachová malá písmena (NT case flag): seesharp.mzf zůstane malými. */
+    char out[13];
+    sfn_make_s("seesharp.mzf", UNICARD_SFN_STYLE_UC1, out);
+    TEST_ASSERT_EQUAL_STRING("seesharp.mzf", out);
+}
+
+void test_unicard_sfn_uc1_mixed_uppercased(void)
+{
+    /* Smíšená velikost (mixed) nemá uniform NT flag -> velká písmena. */
+    char out[13];
+    sfn_make_s("Gp-Simul.mzf", UNICARD_SFN_STYLE_UC1, out);
+    TEST_ASSERT_EQUAL_STRING("GP-SIMUL.MZF", out);
+}
+
+void test_unicard_sfn_uc1_lossy(void)
+{
+    /* Lossy jména mají ~N alias stejně jako uc3 (velkými). */
+    char out[13];
+    sfn_make_s("Batman Demo.mzf", UNICARD_SFN_STYLE_UC1, out);
+    TEST_ASSERT_EQUAL_STRING("BATMAN~1.MZF", out);
+    sfn_make_s("Incopy102.mzf", UNICARD_SFN_STYLE_UC1, out);
+    TEST_ASSERT_EQUAL_STRING("INCOPY~1.MZF", out);
+}
+
+/* Integrace: cmdSTAT na lossy jméno musí v poli offset 9 (8.3 short)
+ * vrátit FatFS alias, ne uťatý LFN. */
+void test_unicard_cmdSTAT_sfn_alias(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    create_test_file("Batman Demo.mzf", 100);
+
+    uc_send_cmd(cmdRESET);
+    uc_send_cmd(cmdSTAT);
+    uc_send_str("/Batman Demo.mzf");
+
+    uint8_t sts = uc_master_status();
+    TEST_ASSERT_EQUAL_HEX8_MESSAGE(0x00, sts & UNICARD_STS_ERROR,
+                                    "STAT existujícího souboru nesmí ERROR");
+
+    /* skip fsize(4)+fdate(2)+ftime(2)+fattrib(1) = 9 bytů */
+    for (int i = 0; i < 9; i++) (void)uc_recv_data();
+    char fname[13];
+    for (int i = 0; i < 13; i++) fname[i] = (char)uc_recv_data();
+
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("BATMAN~1.MZF", fname,
+        "offset 9 musí být FatFS 8.3 alias, ne uťatý LFN");
+
+    /* drain zbytek (lfn_strlen + lfname) aby se uvolnil DOUTRQ */
+    (void)uc_recv_data();
+    for (int i = 0; i < _MAX_LFN; i++) (void)uc_recv_data();
+}
+
+/* Integrace: cmdREADDIR musí v poli offset 9 vrátit FatFS alias. */
+void test_unicard_cmdREADDIR_sfn_alias(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    char *sub = g_build_filename(s_test_sd_root, "sfndir", NULL);
+    g_mkdir(sub, 0777);
+    g_free(sub);
+    create_test_file("sfndir/Batman Demo.mzf", 100);
+
+    uc_send_cmd(cmdRESET);
+    uc_send_cmd(cmdREADDIR);
+    uc_send_str("/sfndir");
+
+    int found = 0;
+    for (int iter = 0; iter < 100; iter++) {
+        uint8_t sts = uc_master_status();
+        if (!(sts & UNICARD_STS_READDIR)) break;
+
+        (void)uc_recv_dword_le(); /* fsize */
+        (void)uc_recv_word_le();  /* fdate */
+        (void)uc_recv_word_le();  /* ftime */
+        (void)uc_recv_data();     /* fattrib */
+        char fname[13];
+        for (int i = 0; i < 13; i++) fname[i] = (char)uc_recv_data();
+        (void)uc_recv_data();     /* lfn_strlen */
+        for (int i = 0; i < _MAX_LFN; i++) (void)uc_recv_data(); /* lfname */
+
+        if (strcmp(fname, "BATMAN~1.MZF") == 0) found = 1;
+    }
+
+    TEST_ASSERT_TRUE_MESSAGE(found,
+        "READDIR offset 9 musí obsahovat FatFS alias BATMAN~1.MZF");
+}
+
+
+/* ================================================================
  * MAIN
  * ================================================================ */
 
@@ -1962,6 +2151,20 @@ int main(int argc, char *argv[])
     RUN_TEST(test_unicard_cmdUTIME_missing);
     RUN_TEST(test_unicard_cmdREADDIR);
     RUN_TEST(test_unicard_cmdREADDIR_dir_attribute);
+
+    /* FatFS 8.3 SFN alias generátor (unicard_sfn). */
+    RUN_TEST(test_unicard_sfn_lossy_long_name);
+    RUN_TEST(test_unicard_sfn_pure_83_uppercase_is_empty);
+    RUN_TEST(test_unicard_sfn_83_lowercase_uppercased);
+    RUN_TEST(test_unicard_sfn_space_in_name);
+    RUN_TEST(test_unicard_sfn_long_base);
+    RUN_TEST(test_unicard_sfn_collision_numbering);
+    RUN_TEST(test_unicard_sfn_uc1_pure_83_filled);
+    RUN_TEST(test_unicard_sfn_uc1_lowercase_preserved);
+    RUN_TEST(test_unicard_sfn_uc1_mixed_uppercased);
+    RUN_TEST(test_unicard_sfn_uc1_lossy);
+    RUN_TEST(test_unicard_cmdSTAT_sfn_alias);
+    RUN_TEST(test_unicard_cmdREADDIR_sfn_alias);
 
     /* SD jail (directory traversal protection). */
     RUN_TEST(test_unicard_jail_basic_paths);

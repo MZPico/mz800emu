@@ -1182,6 +1182,7 @@ void unicard_dir_init ( st_UNICARD_DIR *dir ) {
     dir->dh = NULL;
     dir->dirpath = NULL;
     dir->forced_first_dir = NULL;
+    dir->sfn_ctx.assigned = NULL;  /* bezpečný clear před prvním open */
 }
 
 
@@ -1196,6 +1197,7 @@ FRESULT unicard_dir_close ( st_UNICARD_DIR *dir ) {
         g_free ( dir->forced_first_dir );
         dir->forced_first_dir = NULL;
     };
+    unicard_sfn_ctx_clear ( &dir->sfn_ctx );
     return FR_OK;
 }
 
@@ -1283,6 +1285,10 @@ FRESULT unicard_dir_open ( st_UNICARD_DIR *dir, char *dirpath ) {
     baseui_tools_mem_free ( full_dirpath );
     baseui_tools_mem_free ( full_dirpath_locale );
 
+    /* Kolizní kontext pro ~N SFN aliasy - čistý start pro tento listing.
+     * Buduje se inkrementálně v read_filinfo v pořadí iterace. */
+    unicard_sfn_ctx_init ( &dir->sfn_ctx );
+
     return FR_OK;
 }
 
@@ -1365,10 +1371,26 @@ FRESULT unicard_dir_read_filelist ( st_UNICARD_DIR *dir, char *buff, int buff_si
 }
 
 
+/**
+ * @brief Mapuje aktuální firmware Unicard na styl plnění offset 9.
+ *
+ * uc1 (MZ800UKP1, FatFS R0.09) a uc3 (Unicard3, FatFS R0.13a) mají jinou
+ * sémantiku pole na guest offsetu 9 - viz en_UNICARD_SFN_STYLE.
+ *
+ * @return UNICARD_SFN_STYLE_UC1 pro uc1 firmware, jinak UNICARD_SFN_STYLE_UC3
+ */
+static en_UNICARD_SFN_STYLE unicard_sfn_style_for_fw ( void ) {
+    return ( unicard_get_fw ( ) == UNICARD_FW_UC1 )
+           ? UNICARD_SFN_STYLE_UC1 : UNICARD_SFN_STYLE_UC3;
+}
+
+
 FRESULT unicard_dir_read_filinfo ( st_UNICARD_DIR *dir, st_UNICARD_FILINFO *finfo, int *eof ) {
     if ( !dir || !finfo || !eof ) return FR_INVALID_PARAMETER;
     *eof = 0;
     memset ( finfo, 0, sizeof ( *finfo ) );
+
+    const en_UNICARD_SFN_STYLE sfn_style = unicard_sfn_style_for_fw ( );
 
     if ( dir->dh == NULL ) return FR_DISK_ERR;
 
@@ -1389,9 +1411,8 @@ FRESULT unicard_dir_read_filinfo ( st_UNICARD_DIR *dir, st_UNICARD_FILINFO *finf
         }
         finfo->fattrib = UNICARD_AM_DIR;
         size_t fn_len = strlen ( dir->forced_first_dir );
-        size_t fn_copy = fn_len < 12 ? fn_len : 12;
-        memcpy ( finfo->fname, dir->forced_first_dir, fn_copy );
-        finfo->fname[fn_copy] = '\0';
+        /* fname (offset 9) = FatFS 8.3 alias místo uťatého LFN. */
+        unicard_sfn_make ( dir->forced_first_dir, sfn_style, &dir->sfn_ctx, finfo->fname );
         size_t lfn_copy = fn_len < ( _MAX_LFN - 1 ) ? fn_len : ( _MAX_LFN - 1 );
         memcpy ( finfo->lfname, dir->forced_first_dir, lfn_copy );
         finfo->lfname[lfn_copy] = '\0';
@@ -1432,10 +1453,8 @@ FRESULT unicard_dir_read_filinfo ( st_UNICARD_DIR *dir, st_UNICARD_FILINFO *finf
     };
     finfo->fattrib = g_file_test ( full, G_FILE_TEST_IS_DIR ) ? UNICARD_AM_DIR : 0;
 
-    /* fname (8.3 truncated) + lfname. */
-    size_t fn_copy = (size_t) length < 12 ? (size_t) length : 12;
-    memcpy ( finfo->fname, filename, fn_copy );
-    finfo->fname[fn_copy] = '\0';
+    /* fname (offset 9) = FatFS 8.3 alias místo uťatého LFN; lfname = LFN. */
+    unicard_sfn_make ( filename, sfn_style, &dir->sfn_ctx, finfo->fname );
 
     size_t lfn_copy = (size_t) length < ( _MAX_LFN - 1 ) ? (size_t) length : ( _MAX_LFN - 1 );
     memcpy ( finfo->lfname, filename, lfn_copy );
@@ -1820,6 +1839,57 @@ static void unicard_time_to_fat ( time_t t, uint16_t *fdate, uint16_t *ftime ) {
 }
 
 
+/**
+ * @brief Spočítá FatFS 8.3 alias souboru @p basename v adresáři @p dir_full.
+ *
+ * Projde hostitelský adresář @p dir_full ve stejném pořadí jako cmdREADDIR
+ * a inkrementálně buduje kolizní kontext, takže ~N číslo aliasu @p basename
+ * odpovídá tomu, co vrátí READDIR téhož adresáře. Když adresář nejde projít
+ * nebo @p basename není mezi položkami (např. STAT na samotný adresář),
+ * spadne na výpočet bez kolizního kontextu.
+ *
+ * @param dir_full   hostitelská cesta k adresáři (UTF-8)
+ * @param basename   hledané jméno (UTF-8)
+ * @param style      styl plnění offset 9 (per-firmware)
+ * @param out        výstup min. 13 bajtů; NUL-terminovaný 8.3 alias nebo ""
+ *
+ * @pre dir_full, basename, out != NULL.
+ * @post out obsahuje NUL-terminovaný řetězec délky 0..12.
+ */
+static void unicard_compute_sfn_in_dir ( const char *dir_full, const char *basename,
+                                         en_UNICARD_SFN_STYLE style, char out[13] ) {
+    out[0] = '\0';
+
+    st_UNICARD_SFN_CTX ctx;
+    unicard_sfn_ctx_init ( &ctx );
+
+    GError *err = NULL;
+    GDir *dh = g_dir_open ( dir_full, 0, &err );
+    if ( dh != NULL ) {
+        const gchar *name;
+        while ( ( name = g_dir_read_name ( dh ) ) != NULL ) {
+            char tmp[13];
+            unicard_sfn_make ( name, style, &ctx, tmp );
+            if ( 0 == strcmp ( name, basename ) ) {
+                memcpy ( out, tmp, sizeof ( tmp ) );
+                g_dir_close ( dh );
+                unicard_sfn_ctx_clear ( &ctx );
+                return;
+            }
+        }
+        g_dir_close ( dh );
+    }
+    if ( err != NULL ) g_error_free ( err );
+    unicard_sfn_ctx_clear ( &ctx );
+
+    /* Fallback: alias bez kolizního kontextu. */
+    st_UNICARD_SFN_CTX one;
+    unicard_sfn_ctx_init ( &one );
+    unicard_sfn_make ( basename, style, &one, out );
+    unicard_sfn_ctx_clear ( &one );
+}
+
+
 FRESULT unicard_stat ( const char *path, st_UNICARD_FILINFO *finfo ) {
     if ( !finfo ) return FR_INVALID_PARAMETER;
     memset ( finfo, 0, sizeof ( *finfo ) );
@@ -1845,16 +1915,15 @@ FRESULT unicard_stat ( const char *path, st_UNICARD_FILINFO *finfo ) {
     unicard_time_to_fat ( statbuf.st_mtime, &finfo->fdate, &finfo->ftime );
     finfo->fattrib = g_file_test ( full_path, G_FILE_TEST_IS_DIR ) ? UNICARD_AM_DIR : 0;
 
-    /* Basename pro fname (8.3 truncated) a lfname. */
+    /* Basename pro fname (8.3 alias) a lfname. */
     char *basename = g_path_get_basename ( naked_path );
     size_t bn_len = strlen ( basename );
 
-    /* fname: 12 znaků + terminátor (zjednodušení - hostitelský FS nemá
-     * separátní 8.3 short jména; truncate plně stačí pro guest SW co
-     * primárně používá lfname). */
-    size_t fn_copy = bn_len < 12 ? bn_len : 12;
-    memcpy ( finfo->fname, basename, fn_copy );
-    finfo->fname[fn_copy] = '\0';
+    /* fname (offset 9) = FatFS 8.3 alias konzistentní s cmdREADDIR téhož
+     * adresáře. Projde parent dir kvůli správnému ~N koliznímu číslu. */
+    char *parent_full = g_path_get_dirname ( full_path );
+    unicard_compute_sfn_in_dir ( parent_full, basename, unicard_sfn_style_for_fw ( ), finfo->fname );
+    g_free ( parent_full );
 
     /* lfname: max _MAX_LFN-1 znaků + terminátor. */
     size_t lfn_copy = bn_len < ( _MAX_LFN - 1 ) ? bn_len : ( _MAX_LFN - 1 );
