@@ -1,4 +1,6 @@
 	
+	- ZRYCHLENÍ: Emulace je v režimu MAX SPEED výrazně rychlejší. Díky optimalizaci Z80 jádra a přístupu do paměti běží nově o cca 42 % rychleji (na paměťově náročném kódu až ~47 %). Konkrétně: per-step varianta Z80 jádra bez vnitřní registrové cache (+27 %) a přímý (inline) přístup k běžné RAM místo přes ukazatel na funkci (+11,6 % až +15,6 %).
+
 	- BUGFIX: Unicard - pole s krátkým názvem souboru (formát 8.3) ve výpisu adresáře a ve stavu souboru obsahovalo u dlouhých názvů jen useknutý dlouhý název místo platného 8.3 jména. Nyní emulace generuje stejné 8.3 jméno jako reálná karta.
 	  DŮLEŽITÉ: ukázalo se, že každá verze firmwaru Unicard plní toto pole JINAK - a emulace nově napodobuje OBĚ varianty. Firmware uc1 (MZ800UKP1) zachovává velikost písmen (např. "seesharp.mzf" zůstane malými); firmware uc3 (Unicard3) používá výhradně velká písmena. Emulace správnou variantu volí podle aktivního firmwaru.
 

@@ -15,6 +15,9 @@ void mzarch_platform_bootstrap_apply_load_map(void)
      * 0x1000-0x1FFF (= ROM_1000/CG-ROM odmapováno), aby header buffer
      * 0x10F0 byl RAM a hlavička MZF se korektně zapsala. */
     g_memory.map = MEMORY_MZ800_MAP_FLAG_ROM_0000 | MEMORY_MZ800_MAP_FLAG_ROM_E000;
+#ifdef MZ800EMU_CFG_RAM_FASTPATH
+    mz800_ram_fastpath_rebuild ();
+#endif
 }
 
 void mzarch_platform_bootstrap_init(void)
@@ -42,6 +45,9 @@ void mzarch_platform_load_prepare_body_map(uint16_t fstrt)
     if (fstrt < 0x1000)
     {
         g_memory.map &= ~MEMORY_MZ800_MAP_FLAG_ROM_0000;
+#ifdef MZ800EMU_CFG_RAM_FASTPATH
+        mz800_ram_fastpath_rebuild ();
+#endif
     };
 }
 
@@ -82,6 +88,10 @@ void mzarch_platform_bootstrap_post_header(uint16_t fstrt)
         g_memory.map &= ~( MEMORY_MZ800_MAP_FLAG_CGRAM_VRAM |
                            MEMORY_MZ800_MAP_FLAG_ROM_1000 );
     }
+#ifdef MZ800EMU_CFG_RAM_FASTPATH
+    /* Bootstrap menil g_memory.map a regDMD primo -> prepocti fast-path. */
+    mz800_ram_fastpath_rebuild ();
+#endif
     /* SWITCH700_ON = MZ-700 mode: ponechat default z _init.
      *   - DMD zůstává v MZ-700 mode (= bit 3 = 1, default po gdg_init).
      *   - VRAM se v MZ-700 mode připojuje automaticky s horní ROM

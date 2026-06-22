@@ -276,6 +276,13 @@ void mzarch_platform_fn_debugger_state_changed(bool active)
         z80_set_pread(g_mzarch_main.cpu, port_read_cb, NULL);
         z80_set_pwrite(g_mzarch_main.cpu, port_write_cb, NULL);
     }
+
+#ifdef MZ800EMU_CFG_RAM_FASTPATH
+    /* E1: zmena read/write callbacku (logging on/off) -> prepocti fast-path
+     * gating. Pri logging cb (need_debug) bude enabled=false (plny callback,
+     * aby CDL/history vedlejsi efekty zustaly zachovany). */
+    mz800_ram_fastpath_resync();
+#endif
 }
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */
 

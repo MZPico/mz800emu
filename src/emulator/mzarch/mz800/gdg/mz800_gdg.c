@@ -61,6 +61,12 @@
 #include "hw-generic/ctc8253/ctc8253.h"
 #include "mzarch/mzarch.h"
 
+#ifdef MZ800EMU_CFG_RAM_FASTPATH
+/* E1: DMD switch (700/800 mode, SCRW640) meni VRAM mapping -> nutny rebuild
+ * RAM fast-path tabulky. mz800_ram_fastpath_rebuild deklarace. */
+#include "mzarch/mz800/memory/mz800_memory.h"
+#endif
+
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 #include "debugger/trace/hwlog.h"
 #include "debugger/bp_event.h"
@@ -162,6 +168,11 @@ static inline void gdg_set_regDMD(uint8_t value, unsigned event_ticks)
     {
         g_vramctrl.mz700_wr_latch_is_used = 0;
     };
+#ifdef MZ800EMU_CFG_RAM_FASTPATH
+    /* DMD switch (bit MZ700, SCRW640) zmenil VRAM mapping -> prepocti
+     * fast-path tabulku (VRAM stranky 8/A/C/D mohou prejit na RAM a zpet). */
+    mz800_ram_fastpath_rebuild();
+#endif
 }
 
 void gdg_reset(void)

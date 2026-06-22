@@ -1,4 +1,6 @@
 
+	- SPEEDUP: The emulation is significantly faster in MAX SPEED mode. Thanks to Z80 core and memory access optimizations it now runs about 42 % faster (up to ~47 % on memory-heavy code). Specifically: a per-step Z80 core variant without the internal register cache (+27 %) and direct (inline) access to plain RAM instead of going through a function pointer (+11.6 % to +15.6 %).
+
 	- BUGFIX: Unicard - the short file name field (8.3 format) in the directory listing and file status contained only a truncated long name instead of a valid 8.3 name for long file names. The emulation now generates the same 8.3 name as a real card.
 	  IMPORTANT: it turned out that each Unicard firmware version fills this field DIFFERENTLY - and the emulation now reproduces BOTH variants. Firmware uc1 (MZ800UKP1) preserves letter case (e.g. "seesharp.mzf" stays lowercase); firmware uc3 (Unicard3) uses uppercase only. The emulation picks the correct variant based on the active firmware.
 

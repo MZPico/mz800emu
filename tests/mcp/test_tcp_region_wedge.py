@@ -51,15 +51,24 @@ def _find_venv_python():
 # mcp_server importuje FastMCP. Když běžíme pod systémovým Pythonem (= ctest
 # launcher) bez FastMCP, re-execneme se pod venv interpretem. Když venv není,
 # test skipneme (exit 77).
+#
+# Smyčku re-execu hlídá sentinel ``MZ_MCP_REEXEC`` v prostředí (os.execv
+# dědí aktuální env), ne porovnání cest interpretů: na Linuxu je
+# ``.venv/bin/python`` symlink na systémový python, takže jeho ``resolve()``
+# je shodný se ``sys.executable`` a porovnání by re-exec chybně potlačilo
+# (na MSYS2 je venv python ``.exe`` kopie s odlišnou cestou, proto tam
+# porovnání fungovalo). Sentinel zaručí právě jeden re-exec a funguje
+# stejně na obou platformách.
 try:
     import mcp  # noqa: F401
 except ImportError:
     _venv = _find_venv_python()
-    if (_venv is not None
-            and Path(_venv).resolve() != Path(sys.executable).resolve()):
+    if _venv is not None and not os.environ.get("MZ_MCP_REEXEC"):
+        os.environ["MZ_MCP_REEXEC"] = "1"
         os.execv(str(_venv),
                  [str(_venv), str(Path(__file__).resolve()), *sys.argv[1:]])
-    print("SKIP: FastMCP/mcp není dostupný a .venv nenalezen", file=sys.stderr)
+    print("SKIP: FastMCP/mcp není dostupný (.venv chybí nebo nemá mcp)",
+          file=sys.stderr)
     sys.exit(SKIP_EXIT)
 
 # Import mcp_server.py z mcp-server/ adresáře (sourozenec tests/).
@@ -86,37 +95,48 @@ async def _mock_emu_server(host: str, port_holder: list):
                  "commands": ["region_read", "mem_read"]}
         writer.write((json.dumps(hello) + "\n").encode("utf-8"))
         await writer.drain()
-        while True:
+        try:
+            while True:
+                try:
+                    line = await reader.readline()
+                except Exception:
+                    break
+                if not line:
+                    break
+                try:
+                    req = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                cmd = req.get("cmd")
+                rid = req.get("req_id")
+                d = req.get("data", {}) or {}
+                if cmd == "region_read":
+                    n = int(d.get("length", 256))
+                    b64 = base64.b64encode(bytes(n)).decode("ascii")
+                    resp = {"req_id": rid, "success": True,
+                            "data": {"region_id": d.get("region_id"),
+                                     "offset": d.get("offset", 0),
+                                     "length": n, "data_b64": b64}}
+                elif cmd == "mem_read":
+                    n = int(d.get("len", 8))
+                    b64 = base64.b64encode(bytes(n)).decode("ascii")
+                    resp = {"req_id": rid, "success": True,
+                            "data": {"addr": d.get("addr", 0), "len": n,
+                                     "data_b64": b64}}
+                else:
+                    resp = {"req_id": rid, "success": True, "data": {}}
+                writer.write((json.dumps(resp) + "\n").encode("utf-8"))
+                await writer.drain()
+        finally:
+            # Uzavři connection writer, jinak na Pythonu 3.12+ čeká
+            # Server.wait_closed() navždy na dokončení tohoto spojení
+            # (změna chování oproti <3.12, kde wait_closed na spojení
+            # nečekal - proto hang nevznikal na MSYS2 se starším Pythonem).
             try:
-                line = await reader.readline()
+                writer.close()
+                await writer.wait_closed()
             except Exception:
-                break
-            if not line:
-                break
-            try:
-                req = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            cmd = req.get("cmd")
-            rid = req.get("req_id")
-            d = req.get("data", {}) or {}
-            if cmd == "region_read":
-                n = int(d.get("length", 256))
-                b64 = base64.b64encode(bytes(n)).decode("ascii")
-                resp = {"req_id": rid, "success": True,
-                        "data": {"region_id": d.get("region_id"),
-                                 "offset": d.get("offset", 0),
-                                 "length": n, "data_b64": b64}}
-            elif cmd == "mem_read":
-                n = int(d.get("len", 8))
-                b64 = base64.b64encode(bytes(n)).decode("ascii")
-                resp = {"req_id": rid, "success": True,
-                        "data": {"addr": d.get("addr", 0), "len": n,
-                                 "data_b64": b64}}
-            else:
-                resp = {"req_id": rid, "success": True, "data": {}}
-            writer.write((json.dumps(resp) + "\n").encode("utf-8"))
-            await writer.drain()
+                pass
 
     server = await asyncio.start_server(handler, host, 0)
     port_holder.append(server.sockets[0].getsockname()[1])

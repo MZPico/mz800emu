@@ -218,6 +218,11 @@ void memory_map_pwrite ( uint8_t mmap_port, uint8_t value ) {
             g_memory.map &= ~MEMORY_MZ800_MAP_FLAG_PROHIBITED;
             break;
     };
+
+#ifdef MZ800EMU_CFG_RAM_FASTPATH
+    /* Banking switch zmenil g_memory.map -> prepocti fast-path tabulku. */
+    mz800_ram_fastpath_rebuild ( );
+#endif
 }
 
 
@@ -236,6 +241,11 @@ void memory_map_pread ( uint8_t mmap_port ) {
             memory_mmap_vram_off ( );
             break;
     };
+
+#ifdef MZ800EMU_CFG_RAM_FASTPATH
+    /* IN E0/E1 zmenil g_memory.map (VRAM on/off) -> prepocti fast-path. */
+    mz800_ram_fastpath_rebuild ( );
+#endif
 }
 
 
@@ -260,7 +270,82 @@ void memory_reconnect_ram ( void ) {
         };
     };
 
+#ifdef MZ800EMU_CFG_RAM_FASTPATH
+    mz800_ram_fastpath_rebuild ( );
+#endif
 }
+
+
+#ifdef MZ800EMU_CFG_RAM_FASTPATH
+/**
+ * @brief Prepocet RAM-access fast-path page-table (E1, KROK 1 navrhu D3).
+ *
+ * Pro kazdou ze 16 stranek (4 KiB) urci podle aktualniho mapovaciho stavu
+ * (memmap_query), zda je to cista DRAM. Pokud ano, do read/write fast-path
+ * tabulky zapise bazi banku (z g_memory.memram_read/write, ktere uz reflektuji
+ * pripadny memext banking). Pokud ne (ROM/CG-ROM/VRAM/CGRAM/mapped-ports/
+ * PROHIBITED), zapise NULL = "NEEDS_CALLBACK" -> jadro spadne na memory_*_cb
+ * (presny GDG sync, regDBUS_latch, CDL).
+ *
+ * Volat pri KAZDE zmene mapovani (banking switch OUT E0-E6, DMD switch 700/800)
+ * a pri zmene read/write callbacku (logging on/off) - viz
+ * mz800_ram_fastpath_resync. Cold path (vzacne vuci memory pristupum), takze
+ * cena O(16) je amortizovana.
+ *
+ * Gating: tabulka se napln vzdy, ale fast-path je v jadre AKTIVNI jen pokud je
+ * nainstalovan obycejny read callback (memory_read_cb). Pri logging callbacku
+ * (debugger/CDL: memory_read_with_logging_cb) ma read vedlejsi efekty (X/R
+ * klasifikace, history) ktere fast-path neumi -> enabled=false = baseline.
+ *
+ * @pre g_mzarch_main.cpu != NULL (z80_create probehl).
+ * @post Fast-path tabulky v cpu-> aktualni vuci g_memory.map a regDMD.
+ * @note Cista RAM write fast-path se povoluje JEN pro KIND_RAM stranky -
+ *       u ROM stranek je zapis do RAM "pod ROM" potlaceny (write makro nic
+ *       neudela), takze write fast-path tam NESMI byt aktivni.
+ */
+void mz800_ram_fastpath_rebuild ( void ) {
+
+    if ( g_mzarch_main.cpu == NULL ) return;
+
+    uint8_t *read_table[16];
+    uint8_t *write_table[16];
+
+    int i;
+    for ( i = 0; i < 16; i++ ) {
+        if ( memmap_query ( (uint8_t) i ) == MEMMAP_KIND_RAM ) {
+            read_table[i]  = g_memory.memram_read[i];
+            write_table[i] = g_memory.memram_write[i];
+        } else {
+            read_table[i]  = NULL;
+            write_table[i] = NULL;
+        };
+    };
+
+    /*
+     * Gating: fast-path aktivni jen pro cisty memory_read_cb. Pri jakemkoli
+     * jinem read callbacku (logging/CDL nebo budouci diff-verify) zustava
+     * plny callback (enabled=false), aby se nezravala bit-identita.
+     */
+    bool enabled = ( g_mzarch_main.cpu->mread_cb == memory_read_cb );
+
+    z80_set_ram_fastpath ( g_mzarch_main.cpu, read_table, write_table,
+                           &g_mzarch_main.regDBUS_latch, enabled );
+}
+
+
+/**
+ * @brief Resync fast-path po zmene read/write callbacku (logging on/off).
+ *
+ * Tenky wrapper na mz800_ram_fastpath_rebuild - volat po z80_set_mread/
+ * z80_set_mwrite, aby se prepocital gating (enabled). Tabulky se prepoctou
+ * take (je to levne a bezpecne).
+ *
+ * @pre g_mzarch_main.cpu != NULL.
+ */
+void mz800_ram_fastpath_resync ( void ) {
+    mz800_ram_fastpath_rebuild ( );
+}
+#endif /* MZ800EMU_CFG_RAM_FASTPATH */
 
 
 /**

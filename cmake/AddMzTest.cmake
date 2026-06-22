@@ -218,6 +218,17 @@ function(mz_add_test name)
         message(FATAL_ERROR "mz_add_test(${name}): SOURCES jsou povinné")
     endif()
 
+    # Debugger-závislé testy (label "debugger") nelze přeložit bez debugger
+    # subsystému: jejich API (watch_cache, sym_db, freeze, dasm_export, ...) je
+    # schované za #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED v hlavičkách. Při
+    # MZ_NO_DEBUGGER registraci přeskočíme (stejný princip jako MZ_NO_MCP guard
+    # v tests/mcp/CMakeLists.txt), takže `make test` prochází i v NO_DEBUGGER
+    # buildu - debugger testy se v něm jen vynechají, neběží jako fail.
+    if(MZ_NO_DEBUGGER AND ARG_LABELS MATCHES "(^|;)debugger(;|$)")
+        message(STATUS "  test ${name}: skipped (MZ_NO_DEBUGGER=ON, debugger-dependent)")
+        return()
+    endif()
+
     set(target test_${name})
     add_executable(${target} ${ARG_SOURCES})
 

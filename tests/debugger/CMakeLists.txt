@@ -63,9 +63,13 @@ mz_add_test(bp_persist_bc
     SOURCES  test_bp_persist_bc.c
     LABELS   "emu;debugger"
 )
-target_compile_definitions(test_bp_persist_bc PRIVATE
-    MZTEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
-)
+# if(TARGET): test_bp_persist_bc se při MZ_NO_DEBUGGER neregistruje (debugger
+# label), pak target neexistuje a tato customizace by spadla configure chybou.
+if(TARGET test_bp_persist_bc)
+    target_compile_definitions(test_bp_persist_bc PRIVATE
+        MZTEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    )
+endif()
 
 mz_add_test(bp_integration
     TYPE     EMU

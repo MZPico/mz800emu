@@ -150,6 +150,16 @@ ifneq ($(FDC_DIAG),)
     CMAKE_CONFIGURE_FLAGS += -DFDC_DIAG=$(FDC_DIAG)
 endif
 
+# RAM_FASTPATH propagace (E1, KROK 1): `make RAM_FASTPATH=1` zapne inline
+# page-table fast-path pro cista RAM cteni/zapisy v Z80 jadre. OFF = A5 baseline.
+# `make RAM_FASTPATH_VERIFY=1` navic zapne diff-verify (DEBUG, pomale).
+ifneq ($(RAM_FASTPATH),)
+    CMAKE_CONFIGURE_FLAGS += -DMZ_RAM_FASTPATH=$(RAM_FASTPATH)
+endif
+ifneq ($(RAM_FASTPATH_VERIFY),)
+    CMAKE_CONFIGURE_FLAGS += -DMZ_RAM_FASTPATH_VERIFY=$(RAM_FASTPATH_VERIFY)
+endif
+
 # NO_DEBUGGER propagace: `make NO_DEBUGGER=1` vypne debugger subsystém
 # (vypne MZ800EMU_CFG_DEBUGGER_ENABLED v mzarch_config.h přes globální
 # define MZ800EMU_NO_DEBUGGER). Bez debuggeru je binárka cca o 15 %
@@ -262,10 +272,15 @@ ifneq ($(CTEST_REGEX),)
     CTEST_ARGS += -R $(CTEST_REGEX)
 endif
 
-# Helper - postavi vsechny testy a spusti CTest
+# Helper - postavi vsechny testy a spusti CTest.
+# MCP e2e testy (tests/mcp/test_pipe.py, test_mcp_server_stdio.py) spouštějí
+# mz800emu z rootu repozitáře. cmake --build ho staví jen do build/; kopii do
+# rootu dělá jinak až target `mz800emu`, takže bez následujícího cp by tyto e2e
+# testy padaly po `make mrproper` (binárka v rootu chybí).
 .PHONY: test
 test: $(CMAKE_CACHE)
 	$(QUIET)$(MZ_CMAKE) --build $(BUILD_DIR) -j$(JOBS)
+	$(QUIET)cp -f $(BUILD_DIR)/build-mz800emu/mz800emu* . 2>/dev/null || true
 	$(QUIET)ctest $(CTEST_ARGS)
 
 # Per-skupina shortcuts

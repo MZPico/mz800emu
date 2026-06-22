@@ -111,6 +111,21 @@ extern "C"
     //     return 0;
     // }
 
+#ifdef MZ800EMU_CFG_RAM_FASTPATH
+    /**
+     * @brief Prepocet RAM-access fast-path page-table (E1, KROK 1).
+     *
+     * Volat pri kazde zmene mapovani (banking switch, DMD switch). Detail viz
+     * definice v mz800_memory.c.
+     */
+    void mz800_ram_fastpath_rebuild ( void );
+
+    /**
+     * @brief Resync fast-path gating po zmene read/write callbacku (logging on/off).
+     */
+    void mz800_ram_fastpath_resync ( void );
+#endif
+
 #ifdef __cplusplus
 }
 #endif

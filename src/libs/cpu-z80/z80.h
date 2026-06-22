@@ -22,7 +22,7 @@
  * - DAA lookup tabulka (2048 zaznamu)
  * - Inline prefix handlery
  *
- * @version multi-v0.2
+ * @version multi-v0.3
  */
 
 #ifndef CPU_Z80_H
@@ -459,6 +459,45 @@ typedef struct z80_s {
      * Mimo z80_execute() musi byt NULL.
      */
     z80_local_cache_t *_active_cache;
+
+#ifdef MZ800EMU_CFG_RAM_FASTPATH
+    /**
+     * @name RAM-access fast-path (E1, KROK 1 navrhu D3)
+     *
+     * Page-table 16 zaznamu (1 / 4 KiB stranka, index addr>>12). Kazda stranka
+     * je BUD primy ukazatel na bazi 4 KiB RAM banku (pristup ptr[addr&0xFFF]),
+     * NEBO NULL = "NEEDS_CALLBACK" (VRAM/CGRAM/ROM/mapped-ports/PROHIBITED) -
+     * tehdy RD/WR makro spadne na puvodni mread_cb/mwrite_cb (presny GDG sync,
+     * regDBUS_latch, CDL logging zachovany).
+     *
+     * Tabulky plni a invaliduje mzarch vrstva (mz800: z80_ram_fastpath_rebuild)
+     * pri kazdem banking switchi (cold path). Jadro je arch-independent - jen
+     * konzumuje pointery, nezna mapovaci pravidla.
+     *
+     * @invariant Stranka je v ram_fp_read/write non-NULL pouze pokud cisty RAM
+     *            pristup na ni je BIT-IDENTICKY s pruchodem pres memory_*_cb
+     *            (vcetne vsech vedlejsich efektu - viz ram_fp_dbus_latch).
+     * @{
+     */
+    uint8_t *ram_fp_read[16];   /**< Read page-table: NULL = callback, jinak baze 4 KiB banku. */
+    uint8_t *ram_fp_write[16];  /**< Write page-table: NULL = callback, jinak baze 4 KiB banku. */
+    /**
+     * Ukazatel na arch-specificky "data bus latch" (mz800: g_mzarch_main.
+     * regDBUS_latch). Cista RAM cesta v memory_read_cb tento latch nastavuje
+     * na prectenou hodnotu - fast-path read ho proto musi replikovat, jinak
+     * neni bit-identicky (latch cte napr. cteni CTC control registru na E007).
+     * NULL = arch latch nepouziva (fast-path read ho pak neaktualizuje).
+     */
+    uint8_t *ram_fp_dbus_latch;
+    /**
+     * Gating: fast-path je aktivni jen kdyz true. Mzarch vrstva ho nastavi
+     * false kdykoliv je nainstalovan logging callback (debugger/CDL) - tam
+     * maji M1/read callbacky vedlejsi efekty (X/R klasifikace, history) ktere
+     * fast-path neumi replikovat, takze tam zustava plny callback.
+     */
+    bool ram_fp_enabled;
+    /** @} */
+#endif
 } z80_t;
 
 /**
@@ -631,6 +670,29 @@ void z80_set_im_change(z80_t *cpu, z80_im_cb fn, void *data);
 void z80_set_halt(z80_t *cpu, z80_halt_cb fn, void *data);
 void z80_set_nmi_cb(z80_t *cpu, z80_nmi_cb fn, void *data);
 
+#ifdef MZ800EMU_CFG_RAM_FASTPATH
+/**
+ * @brief Nastavi RAM-access fast-path page-table a gating (E1, KROK 1).
+ *
+ * Naplni ram_fp_read[]/ram_fp_write[] (16 zaznamu / 4 KiB stranka), ukazatel
+ * na arch data-bus latch a gating flag. Volat z mzarch vrstvy pri KAZDE zmene
+ * mapovani (banking switch, DMD switch) a pri zmene read/write callbacku
+ * (logging on/off). Jadro pak v RD/WR makrech preskakuje mread_cb/mwrite_cb
+ * pro stranky s non-NULL ukazatelem.
+ *
+ * @param cpu Ukazatel na CPU instanci.
+ * @param read_table Pole 16 ukazatelu (NULL = callback, jinak baze 4 KiB banku). Kopiruje se.
+ * @param write_table Pole 16 ukazatelu (NULL = callback, jinak baze 4 KiB banku). Kopiruje se.
+ * @param dbus_latch Ukazatel na arch data-bus latch, nebo NULL. Drzi se (ne kopie).
+ * @param enabled true = fast-path aktivni; false = vzdy callback (baseline).
+ * @pre cpu != NULL, read_table != NULL, write_table != NULL.
+ * @post Tabulky zkopirovany do cpu->; pri enabled=false se obsah ignoruje v hot path.
+ */
+void z80_set_ram_fastpath(z80_t *cpu, uint8_t *const read_table[16],
+                          uint8_t *const write_table[16],
+                          uint8_t *dbus_latch, bool enabled);
+#endif
+
 /**
  * @brief Nastavi callback pro zmenu IFF1/IFF2.
  *
@@ -728,6 +790,6 @@ void z80_add_wait_states(z80_t *cpu, int wait);
 int z80_process_interrupt(z80_t *cpu);
 
 /** Retezec verze knihovny. */
-#define CPU_Z80_VERSION "multi-v0.2"
+#define CPU_Z80_VERSION "multi-v0.3"
 
 #endif /* CPU_Z80_H */

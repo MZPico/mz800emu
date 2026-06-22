@@ -77,6 +77,39 @@ if(FDC_DIAG)
 endif()
 
 # ----------------------------------------------------------------------------
+# RAM-access fast-path (E1, KROK 1 navrhu D3) - volitelne
+#
+# MZ_RAM_FASTPATH - zapne inline page-table fast-path pro cista RAM cteni/
+#   zapisy v Z80 jadre (definuje MZ800EMU_CFG_RAM_FASTPATH globalne, takze ho
+#   vidi i sdilena knihovna cpu-z80). Defaultne ON; OFF = A5 baseline (vzdy callback).
+#
+# MZ_RAM_FASTPATH_VERIFY - DEBUG-only: kazdy RAM pristup provede ZAROVEN
+#   fast-path I puvodni callback a ASSERTuje shodu (hodnota + regDBUS_latch).
+#   Dokazuje ekvivalenci fast-path == callback na realnem behu. Implikuje
+#   MZ_RAM_FASTPATH. Velmi pomale - jen pro dukaz presnosti, ne pro perf.
+#
+# Defaultne ON (zabankovany +11.6-15.6% zisk). Vypnout pres
+# `cmake -DMZ_RAM_FASTPATH=OFF` (A5 baseline), VERIFY pres -DMZ_RAM_FASTPATH_VERIFY=ON.
+# ----------------------------------------------------------------------------
+option(MZ_RAM_FASTPATH        "Enable RAM-access fast-path in Z80 core (E1)" ON)
+option(MZ_RAM_FASTPATH_VERIFY "Diff-verify fast-path vs callback (DEBUG, slow)" OFF)
+
+if(MZ_RAM_FASTPATH_VERIFY AND NOT MZ_RAM_FASTPATH)
+    message(STATUS "  MZ_RAM_FASTPATH: forced ON (cascade from VERIFY)")
+    set(MZ_RAM_FASTPATH ON CACHE BOOL "Enable RAM fast-path (forced by VERIFY)" FORCE)
+endif()
+
+if(MZ_RAM_FASTPATH)
+    add_compile_definitions(MZ800EMU_CFG_RAM_FASTPATH)
+    message(STATUS "  MZ_RAM_FASTPATH: ON (E1 KROK 1 - inline RAM page-table)")
+endif()
+
+if(MZ_RAM_FASTPATH_VERIFY)
+    add_compile_definitions(MZ800EMU_CFG_RAM_FASTPATH_VERIFY)
+    message(STATUS "  MZ_RAM_FASTPATH_VERIFY: ON (diff-verify, slow, DEBUG only)")
+endif()
+
+# ----------------------------------------------------------------------------
 # Debugger subsystem opt-out (volitelne)
 #
 # MZ_NO_DEBUGGER - vypne MZ800EMU_CFG_DEBUGGER_ENABLED direktivu pres
