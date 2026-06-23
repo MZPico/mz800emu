@@ -12,6 +12,8 @@
 
 	- BUGFIX: MCP server - přímý přístup k fyzické paměti (region_read/region_write a composity file_load/save_from_region) byl v některých situacích nespolehlivý: čtení velkých regionů (kolem 64 KB) přes TCP zaseklo spojení a region IO selhávalo, dokud nebyl otevřen debugger. Nyní funguje spolehlivě i pro celá 64 KB a hned po startu; při chybě vrací srozumitelnou hlášku místo prázdné odpovědi.
 
+	- BUGFIX: Čtení za letu z CTC 8253 občas vracelo chybnou hodnotu. Chyba vznikla při rozdělení emulace na DBG a HOT path ve verzi v2.0.2
+
 
 2026-06-14 - Released version 2.0.4 - preview
 

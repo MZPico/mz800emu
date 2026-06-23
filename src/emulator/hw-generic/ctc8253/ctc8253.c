@@ -172,6 +172,35 @@ void ctc8253_sync_ctc0(void)
 
 #endif
 
+/**
+ * @brief Precte bajt z citace 8253 (HW-verne cteni s posunem byte-pointeru).
+ *
+ * Emuluje cteni datoveho portu 8253 pro vybrany citac @p cs. Vraci bud
+ * zalatchovanou hodnotu (`read_latch`, pokud probehl Counter Latch prikaz =
+ * `latch_op == 1`), nebo aktualni runtime hodnotu citace (`value`).
+ *
+ * Podle Read/Load Formatu (`rlf`) vraci LSB, MSB, nebo strida LSB/MSB pres
+ * jednobajtovy ukazatel `rl_byte` (8253 ma na to fyzicky jediny registr).
+ *
+ * @param cs Index citace (CTC_CS0..CTC_CS2).
+ * @return Precteny bajt (0..255).
+ *
+ * @note Side-effecty (zamerne, HW-verne): u CTC_RLF_LSBMSB posune `rl_byte`
+ *       0<->1; po precteni posledniho bajtu uvolni `latch_op` (= konec Counter
+ *       Latch cteni). Tyto mutace probihaji VZDY - nejsou potlaceny zadnym
+ *       debug flagem. Drivejsi guard `if (!TEST_DEBUGGER_MEMOP_CALL)` byl
+ *       odstranen, protoze cross-thread cteni `g_debugger.memop_call` (UI
+ *       vlakno) racovalo s hostovym CTC ctenim na emu vlakne (CP/M RTC bug).
+ *
+ * @warning Funkce je urcena vyhradne pro GUEST cteni (CPU IORQ / mapped MMIO
+ *          na emu vlakne). Debugger / UI okna NIKDY tuto funkci nevolaji -
+ *          ctou raw fieldy `g_ctc8253[cs]` side-effect-free (viz ctc_window.cpp,
+ *          io_catalog.c) a mapped-read pres `memory_read_byte` jde nosync
+ *          cestou, ktera CTC nevola (vraci konstantu).
+ *
+ * @pre Volat z emu vlakna v ramci CPU instrukcni cesty.
+ * @post U LSBMSB / latch cteni je aktualizovan `rl_byte` / `latch_op`.
+ */
 uint8_t ctc8253_read_byte(unsigned cs)
 {
 
@@ -198,59 +227,38 @@ uint8_t ctc8253_read_byte(unsigned cs)
     {
 
     case CTC_RLF_LSB:
-#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-        if (!TEST_DEBUGGER_MEMOP_CALL)
-        {
-#endif
-            g_ctc8253[cs].latch_op = 0;
-#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-        };
-#endif
+        /* Posun byte-pointeru / uvolneni latche je VZDY HW-verny (bez ohledu
+         * na debug stav). Drivejsi guard `if (!TEST_DEBUGGER_MEMOP_CALL)` mel
+         * potlacit mutaci pri debuggerem-iniciovanem cteni, jenze debugger se
+         * na tuto funkci nikdy nedostane (mapped-read jde pres nosync cestu
+         * memory_read_byte, ktera CTC necte pres ctc8253_read_byte - vraci
+         * konstantu; UI okna ctou raw g_ctc8253[] side-effect-free). Jediny
+         * pripad, kdy guard fakticky firnul, byla cross-thread data-race:
+         * UI vlakno nastavi ne-atomicky g_debugger.memop_call=1 (pro sve
+         * nesouvisejici disasm cteni pameti) behem soubezneho hostova CTC
+         * cteni na emu vlakne -> spurious potlaceni posunu rl_byte/latch_op
+         * -> roztrzena 16-bit on-the-fly hodnota -> CP/M RTC hodiny skakaly.
+         * Odstranenim guardu je guest cteni deterministicke (srovnano s
+         * PIO8255, ktery zadny takovy guard nema a funguje korektne). */
+        g_ctc8253[cs].latch_op = 0;
         retval = (value & 0xff);
         break;
 
     case CTC_RLF_MSB:
-
-#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-        if (!TEST_DEBUGGER_MEMOP_CALL)
-        {
-#endif
-            g_ctc8253[cs].latch_op = 0;
-#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-        };
-#endif
-
+        g_ctc8253[cs].latch_op = 0;
         retval = (value >> 8) & 0xff;
         break;
 
     case CTC_RLF_LSBMSB:
         if (g_ctc8253[cs].rl_byte == 0)
         {
-
-#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-            if (!TEST_DEBUGGER_MEMOP_CALL)
-            {
-#endif
-                g_ctc8253[cs].rl_byte = 1;
-#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-            };
-#endif
-
+            g_ctc8253[cs].rl_byte = 1;
             retval = (value & 0xff);
         }
         else
         {
-
-#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-            if (!TEST_DEBUGGER_MEMOP_CALL)
-            {
-#endif
-                g_ctc8253[cs].rl_byte = 0;
-                g_ctc8253[cs].latch_op = 0;
-#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-            };
-#endif
-
+            g_ctc8253[cs].rl_byte = 0;
+            g_ctc8253[cs].latch_op = 0;
             retval = (value >> 8) & 0xff;
         };
         break;

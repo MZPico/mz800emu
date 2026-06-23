@@ -12,7 +12,19 @@
 
 #include "hw-generic/ctc8253/ctc8253.h"
 
-void setUp(void) { }
+/* g_debugger (pole memop_call) pro regresní test fixu CP/M RTC race - viz
+ * test_ctc_read_lsbmsb_ignores_memop_call. V NO_DEBUGGER buildu se vynechá. */
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+#include "debugger/debugger.h"
+#endif
+
+void setUp(void)
+{
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    /* čistý debug flag před každým testem (test memop_call ho dočasně nastavuje) */
+    g_debugger.memop_call = 0;
+#endif
+}
 void tearDown(void) { }
 
 /* ================================================================
@@ -247,6 +259,66 @@ void test_ctc_output_callback(void)
     g_ctc8253[0].output_cb = NULL;
 }
 
+/* CTC — LSBMSB čtení posouvá byte-pointer deterministicky (LSB, pak MSB) a po
+ * druhém bajtu uvolní Counter Latch. Pokrývá řádky změněné fixem CP/M RTC race
+ * (dříve byl kolem těchto mutací guard if(!TEST_DEBUGGER_MEMOP_CALL)). */
+void test_ctc_read_lsbmsb_sequence(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    ctc8253_init();
+
+    /* counter 2, LSB+MSB, mode 0, binary: SC=10 RL=11 M=000 -> 0xB0 */
+    ctc8253_write_byte(CTCADDR_CWREG, 0xB0);
+    TEST_ASSERT_EQUAL_INT(CTC_RLF_LSBMSB, g_ctc8253[CTC_CS2].rlf);
+
+    /* nasimulujeme zalatchovanou 16bitovou hodnotu 0xFEF0 (jako RTC čtení CP/M) */
+    g_ctc8253[CTC_CS2].read_latch = 0xFEF0;
+    g_ctc8253[CTC_CS2].latch_op = 1;
+    g_ctc8253[CTC_CS2].rl_byte = 0;
+
+    /* 1. čtení: LSB = 0xF0, byte-pointer se posune na MSB, latch stále drží */
+    TEST_ASSERT_EQUAL_HEX8(0xF0, ctc8253_read_byte(CTC_CS2));
+    TEST_ASSERT_EQUAL_INT(1, g_ctc8253[CTC_CS2].rl_byte);
+    TEST_ASSERT_EQUAL_INT(1, g_ctc8253[CTC_CS2].latch_op);
+
+    /* 2. čtení: MSB = 0xFE, byte-pointer zpět na LSB, latch uvolněn */
+    TEST_ASSERT_EQUAL_HEX8(0xFE, ctc8253_read_byte(CTC_CS2));
+    TEST_ASSERT_EQUAL_INT(0, g_ctc8253[CTC_CS2].rl_byte);
+    TEST_ASSERT_EQUAL_INT(0, g_ctc8253[CTC_CS2].latch_op);
+}
+
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+/* CTC — regresní guard fixu CP/M RTC race: posun byte-pointeru musí proběhnout
+ * i když je nastaven g_debugger.memop_call. Dříve ho guard při nastaveném flagu
+ * potlačil, což při souběhu vláken (UI překresluje debugger × emulace čte CTC)
+ * trhalo 16bitové čtení a rozhazovalo hodiny v CP/M. Před fixem by 1. čtení
+ * nechalo rl_byte=0 a 2. čtení by vrátilo znovu LSB místo MSB. */
+void test_ctc_read_lsbmsb_ignores_memop_call(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    ctc8253_init();
+    ctc8253_write_byte(CTCADDR_CWREG, 0xB0); /* counter 2, LSBMSB, mode 0 */
+
+    g_ctc8253[CTC_CS2].read_latch = 0xFEF0;
+    g_ctc8253[CTC_CS2].latch_op = 1;
+    g_ctc8253[CTC_CS2].rl_byte = 0;
+
+    /* simulace: UI vlákno drží memop_call=1 během hostova čtení čítače */
+    g_debugger.memop_call = 1;
+
+    TEST_ASSERT_EQUAL_HEX8(0xF0, ctc8253_read_byte(CTC_CS2)); /* LSB */
+    TEST_ASSERT_EQUAL_INT(1, g_ctc8253[CTC_CS2].rl_byte);     /* posun PŘES memop_call */
+
+    TEST_ASSERT_EQUAL_HEX8(0xFE, ctc8253_read_byte(CTC_CS2)); /* MSB, ne znovu LSB */
+    TEST_ASSERT_EQUAL_INT(0, g_ctc8253[CTC_CS2].rl_byte);
+    TEST_ASSERT_EQUAL_INT(0, g_ctc8253[CTC_CS2].latch_op);
+
+    g_debugger.memop_call = 0;
+}
+#endif
+
 /* === MAIN === */
 
 int main(int argc, char *argv[])
@@ -272,6 +344,10 @@ int main(int argc, char *argv[])
     RUN_TEST(test_ctc_clkfall_processing);
     RUN_TEST(test_ctc_all_channels_independent);
     RUN_TEST(test_ctc_output_callback);
+    RUN_TEST(test_ctc_read_lsbmsb_sequence);
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    RUN_TEST(test_ctc_read_lsbmsb_ignores_memop_call);
+#endif
 
     int result = UNITY_END();
     mztest_teardown();
