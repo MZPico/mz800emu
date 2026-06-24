@@ -21,8 +21,8 @@ dokumentu [Resources overview](resources-overview.md).
 | `emu_history_get` | ne | 32 posledních provedených instrukcí (ring buffer) |
 | `emu_mem_read` | ne | Čte bajty z Z80 paměti (base64) |
 | `emu_mem_write` | **ANO** | Zápis bajtů do RAM - region check, **destruktivní** |
-| `emu_bp_add` | ne | Přidá execution breakpoint |
-| `emu_bp_list` | ne | Vypíše existující breakpointy |
+| `emu_bp_add` | ne | Přidá breakpoint (exec, nebo typed memw/memr/ior/iow + condition) |
+| `emu_bp_list` | ne | Vypíše breakpointy (id/addr/enabled + type/zone/bank_id/hits/condition) |
 | `emu_bp_remove` | ne | Odebere konkrétní BP podle ID |
 | `emu_bp_clear` | ne | Smaže všechny breakpointy najednou |
 | `emu_bp_enable` | ne | Toggle BP enabled flagu (bez mazání) |
@@ -63,6 +63,10 @@ dokumentu [Resources overview](resources-overview.md).
 | `emu_cdl_stop` | ne | Stop CDL recording (data zachována) |
 | `emu_cdl_reset` | ne | Vynuluje CDL countery |
 | `emu_cdl_export` | ne | Export CDL bitmap + meta do souborů |
+| `emu_trace_start` | ne | Spustí trace záznam kanálu (cputrack/iorqlog/intlog/hwlog) |
+| `emu_trace_stop` | ne | Zastaví trace záznam kanálu (segment uzavřen) |
+| `emu_trace_reset` | ne | Vynuluje aktuální segment trace kanálu |
+| `emu_trace_save` | ne | Uloží/přesměruje segment trace kanálu (volitelný path) |
 | `emu_profiler_start` | ne | Start CPU profileru (hot-path overhead) |
 | `emu_profiler_stop` | ne | Stop profileru (data zachována) |
 | `emu_profiler_reset` | ne | Vynuluje agregátor profileru |
@@ -157,6 +161,16 @@ v RAM regionu (ne ROM, CG-ROM, prohibited, unmapped). Pokud ne, tool
 vrátí chybu `MEM_WRITE region check failed`. Pro explicit fault
 injection (= zápis do regionů mimo RAM) je `emu_mem_write_force`.
 
+## Návratová konvence při chybě
+
+Při selhání backendu vrací každý tool objekt s polem `error`
+(`{"error": "<popis>"}`). Dříve některé tooly v takovém případě
+vracely holou prázdnou odpověď (`{}`), takže klient selhání nepoznal.
+Nyní je chyba vždy explicitní - klient může spolehlivě testovat
+přítomnost `error` v odpovědi. Na úspěch nese odpověď datová pole
+konkrétního toolu (viz popisy níže), pole `error` v úspěšné odpovědi
+není.
+
 ## Popis jednotlivých tools
 
 ### `emu_status`
@@ -185,19 +199,25 @@ zapauzuje. Argument:
 
 Pokud `frames` přesáhne limit, tool vrátí chybu.
 
-**Blokující sémantika:** Tool se vrátí až po skončení
-N framů, ne hned po unpause. Mezi unpause a pause backend sleduje
-`fbsnapshot_screen_id` counter (= per-frame inkrement v emu vlákně).
-Pro PAL frame=50 Hz znamená `emu_run(frames=100)` cca 2 s blokování.
-Pro NTSC (= 60 Hz) cca 1.67 s.
+**Blokující sémantika:** Tool se vrátí až po skončení N framů, ne hned po
+unpause. Emulátor se zastaví SÁM deterministicky přesně na N-té frame
+hranici (emu-side frame-bounded stop), ne asynchronní pauzou z dispatch
+vlákna. Běh stejného počtu framů ze stejného stavu je proto bitově
+reprodukovatelný - důležité při trasování časově citlivých programů.
+Pro PAL frame=50 Hz znamená `emu_run(frames=100)` cca 2 s blokování,
+pro NTSC (60 Hz) cca 1.67 s.
 
 Response obsahuje:
 
 - `running: false` - emu je po doběhnutí pausnutá
-- `actual_frames` (int) - skutečný počet proběhlých framů
-  (může být < requested při safety timeoutu nebo user pause)
+- `actual_frames` (int) - skutečný počet proběhlých framů (= N, méně při
+  zastavení breakpointem nebo safety timeoutu)
 - `requested_frames` (int) - co bylo žádáno
-- `complete` (bool) - true pokud actual == requested a pause OK
+- `stopped_by` (string) - důvod zastavení: `"frames"` (doběhl počet snímků),
+  `"breakpoint"` (zastavil breakpoint), `"manual"` (manuální/UI pauza),
+  `"timeout"` (safety timeout), `"unknown"` (jiný důvod)
+- `complete` (bool) - true jen pokud doběhl plný počet snímků (= `stopped_by`
+  je `"frames"`)
 
 Pokud `frames == 0` (nebo chybí), tool jen submituje unpause a
 vrací `running: true` async (= legacy fire-and-forget, pro
@@ -258,16 +278,37 @@ tool selže s `MEM_WRITE region check failed`.
 
 ### `emu_bp_add`
 
-Přidá execution breakpoint (= pause při dosažení PC = address).
+Přidá breakpoint. Ve výchozím stavu execution BP (= pause při dosažení
+PC = address), ale umí i typed (memory / I/O) BP a podmínku.
 Argumenty:
 
-- `address` (int, 0..0xFFFF) - PC, na kterém pauznout
+- `address` (int, 0..0xFFFF) - adresa BP (PC pro exec; sledovaná
+  adresa / port pro typed)
+- `type` (string, volitelný, default `"exec"`) - typ BP: `"exec"`
+  (execution), `"memr"` (čtení paměti), `"memw"` (zápis do paměti),
+  `"ior"` (I/O IN), `"iow"` (I/O OUT)
+- `condition` (string, volitelný) - podmínkový výraz (bp_expr DSL,
+  např. `A == 0x42`). Prázdné = bezpodmínečný BP.
 
-Vrací handle (ID) breakpointu.
+Prostý exec BP bez podmínky jde lehkou cestou. Typed BP nebo BP
+s podmínkou se transparentně vytvoří přes `emu_bp_create_with_init`
+(= jednotná cesta pro typed breakpointy) - není potřeba volat
+create ručně. Vrací handle (ID) breakpointu.
 
 ### `emu_bp_list`
 
-Vrátí seznam aktuálních breakpointů s jejich ID a adresami.
+Vrátí seznam aktuálních breakpointů. Návrat:
+`{"count": <int>, "breakpoints": [...]}`, kde každý záznam nese:
+
+- `id` (int) - handle breakpointu
+- `addr` (int) - adresa
+- `enabled` (bool)
+- `type` (string) - kanonický UPPER_SNAKE typ (`PC_EXEC` / `MEM_R` /
+  `MEM_W` / `IORQ_R` / `IORQ_W` / ...)
+- `zone` (string) - paměťová zóna (`CPU_VIEW` / `RAM` / ...)
+- `bank_id` (int) - index banky (pro zónu `MMEXT_BANK`)
+- `hits` (int) - počítadlo střelení BP
+- `condition` (string nebo null, pokud bezpodmínečný)
 
 ### `emu_bp_remove`
 
@@ -741,6 +782,43 @@ Layout cell = 16 B (`r`, `w`, `x`, `s` jako uint32 LE counter).
 Vrací `{"path": "...", "region_count": <int>}`. `region_count` je
 počet exportovaných region souborů (= dependent na platformě).
 
+## Trace tools
+
+Lifecycle ovládání 4 binárních kanálů trace-suite (`cputrack`,
+`iorqlog`, `intlog`, `hwlog`) za běhu. Rozhraní zrcadlí CDL tooly -
+umožňuje AI klientovi ohraničit záznam přesně kolem sledovaného úseku
+místo ukládání až při ukončení emulátoru. Detaily formátu výstupu viz
+[Trace Suite](../debugger/Trace_Suite.md).
+
+Všechny 4 tooly mají povinný argument:
+
+- `channel` (string, povinný) - jeden z `cputrack` / `iorqlog` /
+  `intlog` / `hwlog`.
+
+### `emu_trace_start`
+
+Spustí záznam kanálu (= režim ALWAYS). Vrací `{"started": true}`.
+
+### `emu_trace_stop`
+
+Zastaví záznam kanálu; segment se uzavře (flush + close). Vrací
+`{"stopped": true}`.
+
+### `emu_trace_reset`
+
+Vynuluje aktuální segment kanálu (uzavře + znovuotevře segment;
+u cputrack i reset HALT/self-loop collapse). Vrací `{"reset": true}`.
+
+### `emu_trace_save`
+
+Uloží / přesměruje segment kanálu. Argument:
+
+- `path` (string, volitelný) - cílová cesta NÁSLEDUJÍCÍHO segmentu. Bez
+  `path` se jen uzavře a znovuotevře aktuální segment na stávající
+  dir/name (= "ulož teď").
+
+Vrací `{"saved": true, "path": <str|null>}`.
+
 ## Profiler tools
 
 CPU profiler agreguje per-function statistiky (calls, exclusive
@@ -1012,6 +1090,7 @@ Whitelist:
 - `DISPLAY/custom_fps` (unsigned)
 - `QDISK/filename` (text)
 - `QDISK/write_protected` (bool)
+- `TRACE_CPUTRACK/pc_range_lo` .. `TRACE_CPUTRACK/pc_range_hi` (unsigned, 0..65535; PC filtr trasování za běhu)
 
 ### `emu_settings_get`
 
@@ -1182,6 +1261,18 @@ Všechny HID tools nesou **WARNING** token v description - user
 simulation může vyvolat nezamýšlené chování (= RUN+RETURN, BASIC
 program přepsání, hra ovládaná AI v různých kontextech).
 
+**Signalizace dosednutí kláves (`landing_verified`):** `emu_input_send_keys`
+vrací `{"keys_sent": N, "keys_landed": N, "total_frames": N, "encoding": str,
+"landing_verified": <bool>}`. `keys_sent` počítá host-side injekce do
+virtual matrix; `keys_landed` počítá, kolik z nich guest skutečně přečetl.
+Dříve tool hlásil úspěch, i když guest klávesy spolkl (běžící program s
+odpojenou ROM skenuje jen úzkou podmnožinu matice) - to bylo tiché selhání.
+Nově je `landing_verified` skutečný readback: po dobu držení klávesy emulátor
+sleduje čtení PPI Port B a flag je `true` jen tehdy, když guest během držení
+skenoval sloupec dané klávesy (= opravdu ji přečetl), jinak `false`. Pokud
+klávesa nedosedne, podržte ji déle (`frame_per_key`), ujistěte se, že je guest
+na promptu, který skenuje klávesnici, nebo emulátor resetujte.
+
 ### Praktické příklady
 
 **ASCII encoding** (= default, jednoduchý text + `\r` pro RETURN):
@@ -1302,13 +1393,18 @@ Args:
   `"im2_vector_mask"`, `"im2_isr_filter"`,
   `"im2_isr_match_mode"`, `"im2_isr_addr_end"`, `"im2_isr_mask"`,
   `"im0_enabled"`, `"im1_enabled"`, `"im2_enabled"`,
-  `"im0_rst_mask"`, `"irq_sig_source_mask"`.
+  `"im0_rst_mask"`, `"irq_sig_source_mask"`,
+  `"fwd_min_interval_ms"`, `"fwd_max_fires"`.
 - `values` (dict) - map field name -> value. Hodnoty se použijí
   pouze pro pole zmíněná ve `fields`. String fieldy (`name`,
   `expr`, `action`, `event_name`) přijímají `None` jako clear.
 
 Returns: JSON `{"id": int, "created": bool}`. `id` = -1 při
 selhání.
+
+Pole `fwd_min_interval_ms` a `fwd_max_fires` jsou per-BP override
+rate-limitu forward akcí (snapshot / trace_save) - viz sekce
+"Ochrana forward akcí (rate-limit + saturace)" níže.
 
 ### `emu_bp_set_parent`
 
@@ -1320,6 +1416,32 @@ Returns: `{"updated": bool}`.
 Selektivní update polí existujícího BP. Args: `id` (BP ID),
 `fields` (= jména polí), `values` (= map hodnot). Prázdný `fields`
 seznam = no-op success. Returns: `{"updated": bool}`.
+
+Stejně jako `emu_bp_create_with_init` přijímá i pole
+`fwd_min_interval_ms` a `fwd_max_fires` pro per-BP override
+rate-limitu forward akcí - viz sekce "Ochrana forward akcí
+(rate-limit + saturace)" níže.
+
+### Ochrana forward akcí (rate-limit + saturace)
+
+Forward akce v BP skriptu, které zapisují na disk (snapshot,
+trace_save), mají implicitní ochranu proti zahlcení emulátoru
+a zaplavení disku, pokud BP "fajruje" velmi často:
+
+- **Per-BP rate-limit.** `fwd_min_interval_ms` udává minimální
+  prodlevu v ms mezi dvěma forward akcemi téhož BP; rychlejší
+  opakování se tiše přeskočí. `fwd_max_fires` je tvrdý strop počtu
+  úspěšných firů za session - po dosažení se BP sám zakáže. Obě pole
+  jsou nastavitelná přes `emu_bp_create_with_init` / `emu_bp_update`
+  (`fields: ["fwd_min_interval_ms", "fwd_max_fires"]`). Bez
+  explicitního override platí globální default daný konfigurací.
+- **Byte saturace.** Kumulativní byte-limit objemu zápisů z forward
+  akcí (snapshot + trace, včetně flush-side účtování) - po překročení
+  prahu emulátor sám zapauzuje a vydá saturation event / warning
+  s důvodem. Práh je konfigurovatelný.
+- **Robustnost control-plane.** I když pokračující BP spustí těžkou
+  forward akci, příkazy pause / stop / vyčištění BP zaberou vždy -
+  emulátor se nezasekne.
 
 ### `emu_bpgrp_add`
 

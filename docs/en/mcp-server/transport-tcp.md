@@ -74,6 +74,14 @@ python mcp_server.py
 This configuration is preset in `.mcp.json` under the entry
 `mz800emu-tcp`. Details: [Python wrapper](python-wrapper.md).
 
+## Events over TCP
+
+MCP events (`emu_event_subscribe` / `emu_event_poll`) work over the
+TCP transport too, not only over the pipe. An AI client attached to a
+live GUI session can subscribe to topics (`breakpoint_hit`, `paused`,
+`step_done`, `io_write`) and poll pending events exactly as in pipe
+mode.
+
 ## Limitations
 
 - **Max 1 client** - the server accepts a connection, but a second

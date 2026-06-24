@@ -401,6 +401,32 @@ struct st_BP_ACTION;
          * UI tabulka BP zobrazuje krátký badge přes owner_badge_render().
          */
         en_DBGAPI_CMD_ORIGIN cmd_origin;
+
+        /* === 0019 vrstva 2 - per-BP rate-limit těžkých FWD akcí ===========
+         *
+         * Implicitní ochrana proti saturaci diskem/CPU opakovanými těžkými
+         * forward akcemi (snapshot / trace_save) na horkém BP. Aplikuje se
+         * JEN na FWD_SNAPSHOT a FWD_TRACE_SAVE (ostatní FWD jsou levné).
+         *
+         * Konfigurace (override; měněno uživatelem / MCP / .bpt):
+         *   - fwd_min_interval_ms: minimální odstup mezi dvěma firy těžké
+         *     akce v ms. 0 = použij vestavěný default
+         *     BP_ACTION_FWD_DEFAULT_MIN_INTERVAL_MS (bezpečný default i bez
+         *     jakékoliv konfigurace). Při porušení = akce se TIŠE skipne.
+         *   - fwd_max_fires: tvrdý strop počtu úspěšných firů těžké akce za
+         *     session (od enable / posledního resetu). 0 = neomezeno. Při
+         *     dosažení = BP se sám vypne (disable_self ekvivalent) + warning.
+         *
+         * Runtime stav (NE konfigurace; resetuje se při (re-)enable BP přes
+         * breakpoints_set_enabled a při breakpoints_init):
+         *   - fwd_last_fire_us: čas posledního úspěšného firu v mikrosekundách
+         *     monotonního zdroje (g_get_monotonic_time). 0 = ještě nikdy.
+         *   - fwd_fire_count: počet úspěšných firů těžké akce od resetu.
+         */
+        uint32_t fwd_min_interval_ms;   /* 0 = vestavěný default */
+        uint32_t fwd_max_fires;         /* 0 = neomezeno */
+        int64_t  fwd_last_fire_us;      /* runtime: monotonní čas posl. firu */
+        uint32_t fwd_fire_count;        /* runtime: počet firů od resetu */
     } st_BPT;
 
 
@@ -600,6 +626,29 @@ struct st_BP_ACTION;
 
     /* Nastaví edge_triggered flag. Vrátí true při úspěchu. */
     extern bool breakpoints_set_edge_triggered ( int bpt_id, bool edge_triggered );
+
+    /**
+     * @brief Nastaví per-BP override minimálního odstupu těžkých FWD akcí (0019 v2).
+     *
+     * Override rate-limitu pro forward akce snapshot / trace_save daného BP.
+     * @param bpt_id    ID breakpointu.
+     * @param interval_ms Minimální odstup mezi dvěma firy v ms. 0 = použij
+     *        globální / vestavěný default (NE nula = bezpečný default zůstává).
+     * @return false pokud BP s @p bpt_id neexistuje, jinak true.
+     * @note Runtime stav (fwd_last_fire_us, fwd_fire_count) tento setter
+     *       nemění; ten se resetuje při (re-)enable BP.
+     */
+    extern bool breakpoints_set_fwd_min_interval_ms ( int bpt_id, uint32_t interval_ms );
+
+    /**
+     * @brief Nastaví per-BP tvrdý strop počtu firů těžké FWD akce (0019 v2).
+     *
+     * @param bpt_id    ID breakpointu.
+     * @param max_fires Maximální počet úspěšných firů za session (od enable /
+     *        resetu). 0 = neomezeno. Při dosažení se BP sám vypne (disable_self).
+     * @return false pokud BP s @p bpt_id neexistuje, jinak true.
+     */
+    extern bool breakpoints_set_fwd_max_fires ( int bpt_id, uint32_t max_fires );
 
 
     /* === Match mode settery (V1.5.E) ======================================= */
@@ -894,6 +943,9 @@ struct st_BP_ACTION;
      *   5. hit_count: pokud > 0 a hits != hit_count, vrací (jen N. hit fires)
      *   6. action execute: NULL/empty = STOP, jinak skript rozhodne
      *   7. STOP → emulator_pause(true) + DBGAPI_MSG_BREAKPOINT_HIT (s id)
+     *   8. CONTINUE → drain control-plane fronty (0019 vrstva 1) =
+     *      pending PAUSE/STOP/... se obslouží na hranici akce (viz
+     *      breakpoints_drain_control_plane_at_bp_boundary)
      *
      * @param bpt   Breakpoint (musí existovat v g_breakpoints).
      * @param ctx   Naplněný kontext. Caller musí nastavit ctx->self_id =
@@ -916,6 +968,131 @@ struct st_BP_ACTION;
      */
     extern void breakpoints_enforce ( st_BPT *bpt,
                                        struct bp_expr_ctx_s *ctx );
+
+
+    /**
+     * @brief Drain control-plane fronty na hranici dokončené BP akce (0019).
+     *
+     * Vrstva 1 control-plane garance: zajišťuje, že pending řídicí příkazy
+     * (PAUSE / STOP / STEP / ...) z UI/MCP se obslouží do jednoho dalšího
+     * BP hitu i na horké smyčce, kde se k per-frame drainu (mzarch.c
+     * screen-done) emulátor nemusí dostat (= těžká BP akce natahuje snímek
+     * a synchronní submit z UI by jinak vytekl timeoutem).
+     *
+     * Volat výhradně PO dokončení BP akce, která vrací continue (= akce
+     * reálně proběhla, jsme mimo per-instrukční horkou cestu). V OFF stavu
+     * (žádný hit / hit bez akce) se sem nevstupuje. Náklad při hitu je jeden
+     * @c dbgapi_emu_has_pending() atomic read + branch v případě prázdné
+     * fronty (= stejně levné jako per-frame bod mzarch.c).
+     *
+     * Drainuje celou frontu stejnými primitivy jako per-frame bod
+     * (dbgapi_emu_dequeue/dispatch/complete). Pokud některý příkaz nastaví
+     * pauzu (emulator_pause(true)), enforce po návratu narazí na
+     * EMULATOR_TEST_PAUSED v mzarch.c a vstoupí do paused-loop - žádný další
+     * kód zde není potřeba.
+     *
+     * Pozn.: tato vrstva neřeší délku jedné dlouhé akce (ta vždy dobehne);
+     * řeší responzivnost control-plane MEZI hity (= žádné hromadění).
+     *
+     * Side effects: dispatch řídicích příkazů z fronty (může nastavit
+     * paused/run/reset stav, odeslat MSG/eventy). Žádný efekt při prázdné
+     * frontě.
+     *
+     * Threading: jen z EMU vlákna (volá dbgapi_emu_* primitiva určená pro
+     * emu stranu). No-op v buildu bez MZ800EMU_CFG_DEBUGGER_ENABLED a no-op
+     * pokud CMDRQ fronta není inicializovaná (= dbgapi_init nebyl volán,
+     * brzká fáze startu / test bez fronty).
+     */
+    extern void breakpoints_drain_control_plane_at_bp_boundary ( void );
+
+
+    /* ===================================================================== */
+    /*  0019 vrstva 3 - kumulativní byte backstop pro forward akce           */
+    /* ===================================================================== */
+
+    /**
+     * @brief Nastaví práh kumulativního byte backstopu pro FWD akce (0019 v3).
+     *
+     * Backstop sčítá počet bajtů zapsaných těžkými forward akcemi
+     * (snapshot / trace_save) napříč všemi BP. Po překročení prahu emulátor
+     * sám zapauzuje (emulator_pause(true)) a vyemituje warning + "paused"
+     * event s důvodem (= ochrana disku i při špatně nastavené vrstvě 2).
+     *
+     * @param limit_bytes Práh v bajtech. 0 = backstop vypnut (žádná
+     *        auto-pauza). Default po @ref breakpoints_init je
+     *        @c BP_ACTION_FWD_DEFAULT_BYTE_LIMIT.
+     *
+     * Side effects: pouze uloží práh. Neresetuje akumulátor.
+     * Threading: měněno z UI/MCP vlákna (prostý uint64 zápis); čteno z emu
+     * vlákna při FWD akci. Bez locku - hodnota je jen měkký práh, race na
+     * čtení nevadí.
+     */
+    extern void breakpoints_fwd_set_byte_limit ( uint64_t limit_bytes );
+
+    /**
+     * @brief Vrátí aktuální práh byte backstopu v bajtech (0 = vypnuto).
+     */
+    extern uint64_t breakpoints_fwd_get_byte_limit ( void );
+
+    /**
+     * @brief Vrátí dosud naakumulovaný počet bajtů zapsaných FWD akcemi.
+     *
+     * Slouží pro diagnostiku / UI. Akumulátor se resetuje při
+     * @ref breakpoints_init (= reset emulátoru).
+     */
+    extern uint64_t breakpoints_fwd_get_total_bytes ( void );
+
+    /**
+     * @brief Vynuluje byte akumulátor backstopu (0019 v3).
+     *
+     * Volá se z @ref breakpoints_init. Veřejné kvůli testům a možnému
+     * ručnímu resetu z UI po vyřešení saturace.
+     */
+    extern void breakpoints_fwd_reset_byte_accounting ( void );
+
+    /**
+     * @brief Přičte bajty forward akce a vyhodnotí byte backstop (0019 v3).
+     *
+     * Volá bp_action.c po každém úspěšném zápisu těžké FWD akce
+     * (snapshot / trace_save). Akumuluje bajty napříč všemi BP; po překročení
+     * prahu (@ref breakpoints_fwd_set_byte_limit) emulátor sám zapauzuje
+     * (emulator_pause(true)) + vyemituje warning a "paused" event s důvodem.
+     *
+     * @param bp_id ID breakpointu, jehož akce zápis provedla (do detailu eventu;
+     *        -1 = neznámé / mimo enforcement kontext).
+     * @param bytes Počet právě zapsaných bajtů (0 = no-op).
+     *
+     * Side effects: viz výše. Auto-pauza proběhne jen na hraně překročení.
+     * Threading: jen z emu vlákna (safe-point mezi instrukcemi).
+     */
+    extern void breakpoints_fwd_account_bytes ( int bp_id, uint64_t bytes );
+
+
+    /* ===================================================================== */
+    /*  0019 vrstva 2 - globální default rate-limit intervalu pro FWD akce   */
+    /* ===================================================================== */
+
+    /**
+     * @brief Nastaví globální default min. odstupu těžkých FWD akcí (0019 v2).
+     *
+     * Použije se pro BP, který nemá vlastní per-BP override
+     * (fwd_min_interval_ms == 0). Inicializován z INI klíče
+     * [BREAKPOINTS] fwd_default_min_interval_ms.
+     *
+     * @param interval_ms Globální default v ms. 0 = global default vypnut ->
+     *        fallback na vestavěnou konstantu @c
+     *        BP_ACTION_FWD_DEFAULT_MIN_INTERVAL_MS (bezpečný default zůstává).
+     *
+     * Side effects: pouze uloží hodnotu.
+     * Threading: měněno z UI/MCP vlákna, čteno z emu vlákna. Bez locku
+     * (prostý uint32 read/write, měkký práh).
+     */
+    extern void breakpoints_fwd_set_default_min_interval_ms ( uint32_t interval_ms );
+
+    /**
+     * @brief Vrátí globální default min. odstupu těžkých FWD akcí v ms (0019 v2).
+     */
+    extern uint32_t breakpoints_fwd_get_default_min_interval_ms ( void );
 
 
     /**

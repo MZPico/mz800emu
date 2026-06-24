@@ -25,6 +25,7 @@
 #include "libs/cfgfile/cfgmodule.h"
 #include "emulator/cfgmain.h"
 #include "emulator/debugger/trace/tlog_common.h"
+#include "emulator/debugger/trace/reclife.h"
 #include "emulator/debugger/trace/eventlog.h"
 #include "emulator/mzarch/mzarch.h"
 #include "emulator/hw-generic/psg/psg.h"
@@ -293,8 +294,39 @@ static inline void hwbuf_put_bytes ( st_HWLOG_BUF *b, const void *src, size_t n 
 
 
 /**
+ * Počítaný zápis na disk pro hwlog initial-state dumpy.
+ *
+ * Wrapper nad @c fwrite(), který po úspěšném zápisu připočte počet
+ * reálně zapsaných bajtů do kumulativního disk čítače trace-suite
+ * (@ref tlog_common_disk_bytes_add). Tím se hwlog initial-state dump
+ * (jinak raw @c fwrite cesta bez accountingu) započítá do byte backstopu
+ * (0019 vrstva 3), takže auto-pauza chrání disk i proti hwlog floodu.
+ *
+ * Stejný vzor jako @c cputrack.c write_bin_file (po úspěšném @c fwrite
+ * přičti počet bajtů). Accountuje jen skutečně zapsané bajty - při short
+ * write (chyba) se připočte jen úspěšně zapsaná část.
+ *
+ * @param data    Buffer k zápisu (nesmí být NULL, pokud @p n > 0).
+ * @param n       Počet bajtů k zápisu.
+ * @param fp      Otevřený výstupní stream (wb).
+ * @return Počet úspěšně zapsaných bajtů (= návratová hodnota @c fwrite).
+ *
+ * Side effects: zápis na disk + inkrement disk čítače trace-suite.
+ */
+static size_t hwlog_fwrite_counted ( const void *data, size_t n, FILE *fp )
+{
+    size_t wrote = fwrite ( data, 1, n, fp );
+    if ( wrote ) tlog_common_disk_bytes_add ( (uint64_t) wrote );
+    return wrote;
+}
+
+
+/**
  * Zapíše chip TLV s payloadem z bufferu (data + len). Buffer není bez
  * volání hwbuf_free() uvolněn.
+ *
+ * Zápis jde přes @ref hwlog_fwrite_counted - hlavička i payload se
+ * započítají do disk čítače trace-suite (byte backstop).
  */
 static void write_chip_tlv_buf ( FILE *fp, uint8_t chip_id, const st_HWLOG_BUF *b )
 {
@@ -302,18 +334,20 @@ static void write_chip_tlv_buf ( FILE *fp, uint8_t chip_id, const st_HWLOG_BUF *
     hdr[ 0 ] = chip_id;
     uint32_t len = (uint32_t) b->len;
     for ( int i = 0; i < 4; i++ ) hdr[ 1 + i ] = (uint8_t)( len >> ( i * 8 ) );
-    fwrite ( hdr, 1, 5, fp );
-    if ( len ) fwrite ( b->data, 1, len, fp );
+    hwlog_fwrite_counted ( hdr, 5, fp );
+    if ( len ) hwlog_fwrite_counted ( b->data, len, fp );
 }
 
 
 /**
  * Zapíše TLV s prázdným nebo NULL payloadem (typ. EOF marker).
+ *
+ * Zápis jde přes @ref hwlog_fwrite_counted (byte backstop accounting).
  */
 static void write_chip_tlv_empty ( FILE *fp, uint8_t chip_id )
 {
     uint8_t hdr[ 5 ] = { chip_id, 0, 0, 0, 0 };
-    fwrite ( hdr, 1, 5, fp );
+    hwlog_fwrite_counted ( hdr, 5, fp );
 }
 
 
@@ -798,20 +832,51 @@ int hwlog_is_truncated ( void )
 }
 
 
+int hwlog_save_segment ( const char *path )
+{
+    /* Uzavřít aktuální segment + volitelně přesměrovat na path. Vzor sdílený
+     * s cputrack_save_segment - viz tam pro detaily semantiky. */
+    int was_active = ( g_hwlog_active != 0 );
+
+    /* Prázdná cesta = "force save now": flush rozdělaného segmentu BEZ
+     * uzavření/reopenu (segment pokračuje do téhož manifestu). Viz
+     * cputrack_save_segment + mzdos 0022 pro detaily. */
+    if ( !( path && path[ 0 ] ) ) {
+        if ( s_writer_open ) {
+            uint64_t now_px = tlog_common_get_pxclk_total ( );
+            uint64_t now_cpu = tlog_common_get_cpuclk_total ( );
+            uint32_t now_sc = tlog_common_get_screens_total ( );
+            tlog_writer_flush_chunk ( &s_writer, now_px, now_cpu, now_sc );
+        }
+        return 0;
+    }
+
+    if ( s_writer_open ) {
+        hwlog_stop ( );
+    }
+    reclife_redirect_path ( &g_hwlog_config.dir, &g_hwlog_config.name, path );
+    if ( was_active ) {
+        return hwlog_start ( );
+    }
+    return 0;
+}
+
+
+/* Sdílený lifecycle deskriptor (reclife) - viz cputrack.c pro detaily vzoru. */
+static const st_RECLIFE_DESC s_hwlog_reclife = {
+    .subsys_name = "hwlog",
+    .mode_ptr    = (int *) &g_hwlog_config.mode,
+    .active_ptr  = &g_hwlog_active,
+    .fn_start    = hwlog_start,
+    .fn_stop     = hwlog_stop,
+    .fn_reset    = NULL,
+    .fn_save     = hwlog_save_segment,
+};
+
+
 void hwlog_recompute_active ( int debugger_active )
 {
-    int new_active = 0;
-    switch ( g_hwlog_config.mode ) {
-        case TLOG_MODE_OFF:         new_active = 0; break;
-        case TLOG_MODE_WITH_WINDOW: new_active = debugger_active; break;
-        case TLOG_MODE_ALWAYS:      new_active = 1; break;
-    }
-    if ( new_active && !g_hwlog_active ) {
-        if ( hwlog_start ( ) == 0 ) g_hwlog_active = 1;
-    } else if ( !new_active && g_hwlog_active ) {
-        hwlog_stop ( );
-        g_hwlog_active = 0;
-    }
+    reclife_recompute_active ( &s_hwlog_reclife, debugger_active );
 }
 
 

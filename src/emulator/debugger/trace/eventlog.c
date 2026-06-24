@@ -135,10 +135,16 @@ void eventlog_init ( size_t capacity )
     CFGMOD *cmod = cfgroot_register_new_module ( g_cfgmain, "EVENT_LOG" );
     if ( cmod ) {
         CFGELM *elm;
+        /* Dual-keyword sjednocení s reclife/tlog: WITH_WINDOW je alias pro
+         * WHEN_WINDOW_OPEN (stejná enum hodnota 1). cfgelement_property_get_
+         * keyword_by_value vrací PRVNÍ keyword se shodnou hodnotou, proto
+         * WHEN_WINDOW_OPEN zůstává první = zápis do INI se NEMĚNÍ (zpětná
+         * kompatibilita s uloženými .ini). Čtení akceptuje OBA keywordy. */
         elm = cfgmodule_register_new_element ( cmod, "mode", CFGENTYPE_KEYWORD,
                                                 EVENTLOG_MODE_OFF,
                                                 EVENTLOG_MODE_OFF,              "OFF",
                                                 EVENTLOG_MODE_WHEN_WINDOW_OPEN, "WHEN_WINDOW_OPEN",
+                                                EVENTLOG_MODE_WHEN_WINDOW_OPEN, "WITH_WINDOW",
                                                 EVENTLOG_MODE_ALWAYS,           "ALWAYS",
                                                 -1 );
         cfgelement_set_handlers ( elm, (void *) &g_eventlog_config.mode,

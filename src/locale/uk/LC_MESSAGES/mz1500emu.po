@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-14 11:19+0200\n"
+"POT-Creation-Date: 2026-06-23 00:00+0200\n"
 "PO-Revision-Date: 2026-03-11 21:00+0100\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -118,7 +118,7 @@ msgstr "Виберіть існуючий .MZQ файл або створіть 
 msgid "Select directory to mount as virtual Quick Disk"
 msgstr "Виберіть каталог для монтування як віртуальний Quick Disk"
 
-#: src/emulator/hw-generic/unicard/unicard.c:2175
+#: src/emulator/hw-generic/unicard/unicard.c:2299
 msgid "Select SD root directory for Unicard"
 msgstr "Виберіть кореневий каталог SD для Unicard"
 
@@ -5071,7 +5071,7 @@ msgid "Snapshot Δ"
 msgstr "Δ знімка"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_layers.cpp:497
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:135
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:137
 #: src/ui-imgui/maxspeed_bench_window.cpp:156
 #: src/ui-imgui/plotter/plotter_window.cpp:414
 #: src/ui-imgui/topmenu/topmenu.cpp:41
@@ -5903,109 +5903,133 @@ msgstr "Клік: розгорнути до нормального режимu"
 msgid "Click: collapse to compact mode"
 msgstr "Клік: згорнути до компактного режимu"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:98
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:100
 #: src/ui-imgui/memext/memext_load_dialog.cpp:106
 #: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:99
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:259
 msgid "File"
 msgstr "Файл"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:101
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:103
 msgid "Load MZF into RAM..."
 msgstr "Завантажити MZF до RAM..."
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:112
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:114
 msgid "Hide"
 msgstr "Сховати"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:133
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:135
 msgid "Emulation"
 msgstr "Емуляція"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:142
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:144
 msgid "Max Speed"
 msgstr "Максимальна швидкість"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:147
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:149
 #: src/ui-imgui/topmenu/topmenu.cpp:36
 msgid "Pause Emulation"
 msgstr "Призупинити емуляцію"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:158
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:160
 msgid "Forced Full Screen Refresh"
 msgstr "Примусовий full screen refresh"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:191
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:193
 msgid "Settings"
 msgstr "Налаштування"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:203
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:205
 msgid "CPU Instruction History"
 msgstr "Historie інструкцій CPU"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:209
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:246
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:319
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:211
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:248
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:321
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:341
 msgid "Off"
 msgstr "Vypnuto"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:215
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:251
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:321
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:217
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:253
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:323
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:344
 msgid "Only With Debug Window"
 msgstr "Тільки s вікном DBG"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:221
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:256
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:323
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:223
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:258
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:325
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:347
 msgid "Always"
 msgstr "Завжди"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:240
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:242
 msgid "CDL"
 msgstr "CDL"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:264
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:266
 msgid "Export on Exit"
 msgstr "Export при завершення"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:274
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:276
 msgid "Show heatmap window"
 msgstr "Показати вікно heatmap"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:282
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:284
 msgid "Set directory..."
 msgstr "Встановити каталог..."
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:293
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:295
 msgid "Select CDL export directory"
 msgstr "Вибрати каталог для export CDL"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:311
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:313
 msgid "Trace Suite"
 msgstr "Trace Suite"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:327
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:329
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:352
 msgid "Save on Exit"
 msgstr "Зберегти при завершення"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:356
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:336
+msgid "CPU Track"
+msgstr "Відстеження CPU"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:360
+msgid "PC range filter [lo,hi]:"
+msgstr "Фільтр діапазону PC [lo,hi]:"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:366
+msgid "lo (hex)"
+msgstr "lo (hex)"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:373
+msgid "hi (hex)"
+msgstr "hi (hex)"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:379
+msgid "Reset range (whole space)"
+msgstr "Скинути діапазон (весь простір)"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:407
 msgid "Disassembled"
 msgstr "Дизасембльовано"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:367
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:418
 msgid "Show branch arrows"
 msgstr "Показати стрілки розгалуження"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:376
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:427
 msgid "Screen"
 msgstr "Obrazovka"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:384
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:435
 msgid "Auto refresh on edit"
 msgstr "Auto refresh при редагуванні"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:395
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:446
 msgid "Auto refresh at every CPU step"
 msgstr "Auto refresh при кожному кроку CPU"
 

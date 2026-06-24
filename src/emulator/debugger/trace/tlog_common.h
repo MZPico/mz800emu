@@ -249,6 +249,80 @@ static inline int tlog_writer_is_truncated ( const st_TLOG_WRITER *w )
 int tlog_common_ensure_dir ( const char *dir );
 
 /**
+ * @brief Přičte @p n do globálního kumulativního čítače disk-bajtů trace-suite.
+ *
+ * Volá se z každého reálného zápisu na disk v rámci trace-suite (chunk soubor,
+ * meta.json, per-subsystém initial-state dumpy), aby existoval jeden centrální
+ * součet CELÉHO disk footprintu, který trace-suite zapsala. Slouží 0019
+ * vrstvě 3 (byte backstop): trace_save BP akce countuje deltu tohoto čítače,
+ * takže do auto-pauzy se započítá i objem chunk segmentů a initial-state
+ * dumpů (ne jen hlavní index soubor - to byl undercount vektor, viz V19).
+ *
+ * @param n  Počet bajtů úspěšně zapsaných na disk (0 = no-op).
+ *
+ * Side effects: inkrement process-globálního čítače (monotónní).
+ * Threading: čítač modifikován z emu vlákna (trace zápisy běží na něm); prostý
+ * uint64 read/modify/write bez locku - případný race jen posune okamžik
+ * accountingu, neohrozí korektnost.
+ */
+void tlog_common_disk_bytes_add ( uint64_t n );
+
+/**
+ * @brief Vrátí kumulativní počet disk-bajtů zapsaných trace-suite od startu
+ *        procesu (resp. od posledního @ref tlog_common_disk_bytes_reset).
+ *
+ * Monotónně neklesající (kromě explicitního resetu). Konzument (0019 byte
+ * backstop v bp_action.c) si pamatuje předchozí hodnotu a accountuje deltu.
+ *
+ * @return Kumulativní součet disk-bajtů trace-suite.
+ */
+uint64_t tlog_common_disk_bytes_total ( void );
+
+/**
+ * @brief Vynuluje kumulativní čítač disk-bajtů trace-suite.
+ *
+ * Určeno pro reset emulátoru a pro deterministickou izolaci testů. V produkci
+ * běžně volat netřeba (konzument pracuje s deltou, ne s absolutní hodnotou).
+ */
+void tlog_common_disk_bytes_reset ( void );
+
+/**
+ * @brief Typ hooku volaného po každém inkrementu disk-byte čítače (0019 v3 flush-side).
+ *
+ * Notifikační callback, který trace vrstva (tlog_common) volá pokaždé, když
+ * inkrementuje kumulativní disk-byte čítač přes @ref tlog_common_disk_bytes_add
+ * (chunk swap, meta.json, initial-state dump). Slouží flush-side byte backstop
+ * guardu: trace flooduje disk INKREMENTÁLNĚ po chunkách i mezi dvěma trace_save
+ * BP fire, takže per-fire accounting (bp_action) by tu rostoucí stopu chytil až
+ * při dalším fire. Hook umožní vyhodnotit backstop průběžně, na flush cestě.
+ *
+ * LAYERING: tlog_common je čistá trace vrstva a NESMÍ znát breakpoints ani
+ * emulator (závislostní inverze). Proto jen vystaví tento hook; konkrétní
+ * vyhodnocení prahu + auto-pauzu provádí vrstva, která breakpoints/emulator
+ * už zná (bp_action.c), a hook si registruje. tlog_common hooku jen předá
+ * právě přičtený počet bajtů.
+ *
+ * @param added  Počet bajtů, o který právě narostl kumulativní čítač.
+ *
+ * Threading: volán z emu vlákna (trace zápisy běží na něm), synchronně uvnitř
+ * @ref tlog_common_disk_bytes_add. Hook nesmí re-entrantně volat
+ * tlog_common_disk_bytes_add.
+ */
+typedef void ( *tlog_disk_flush_hook_fn ) ( uint64_t added );
+
+/**
+ * @brief Zaregistruje hook volaný po každém inkrementu disk-byte čítače (0019 v3).
+ *
+ * @param fn  Hook funkce, nebo @c NULL pro odregistraci (default = žádný hook,
+ *            chování trace-suite beze změny).
+ *
+ * Side effects: mutuje process-globální ukazatel na hook.
+ * Threading: typicky voláno při inicializaci (breakpoints_init) nebo z testu;
+ * není synchronizováno - nevolat souběžně s běžící emulací používající čítač.
+ */
+void tlog_common_set_disk_flush_hook ( tlog_disk_flush_hook_fn fn );
+
+/**
  * @brief Získat aktuální pxCLK total (= přes všechny screens).
  *
  * @return uint64 počet pxCLK od startu emulace.

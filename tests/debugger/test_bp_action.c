@@ -2,9 +2,11 @@
  * test_bp_action.c - testy action mini-DSL (D.1.3)
  *
  * Pokrývá:
- *   - parser pro 11 příkazů (log, continue, disable_self, enable,
+ *   - parser pro příkazy (log, continue, disable_self, enable,
  *     disable, poke, set, mark, $name = expr, $name op= expr,
  *     clear_vars, if expr then stmt)
+ *   - forward příkazy (cdl_*, trace_*, snapshot) - parse + klasifikace
+ *     (0017 FÁZE 3b); reálná exekuce vyžaduje plný debugger/emu init
  *   - executor (= ovlivňuje $vars + Z80 registry)
  *   - implicit continue rule
  *   - format string log (%X, %d, %b, %c, %s, %%)
@@ -22,11 +24,13 @@
 #include "debugger/bp_expr.h"
 #include "debugger/bp_vars.h"
 #include "debugger/symbols/sym_db.h"
+#include "emulator/emulator.h"     /* g_emulator.paused - gating snapshotu */
 #include "libs/cpu-z80/z80.h"
 
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>              /* stat() - ověření velikosti .mzs */
 #ifdef _WIN32
 #  include <process.h>   /* getpid na MSVCRT/MinGW */
 #else
@@ -765,6 +769,238 @@ void test_log_percent_s_unknown ( void ) {
 
 
 /* ========================================================================= */
+/*  Forward příkazy (cdl_* / trace_* / snapshot) - 0017 FÁZE 3b              */
+/* ========================================================================= */
+
+/**
+ * Ověří, že parsování konkrétního zdroje uspěje (vrací non-NULL).
+ * Testuje jen parse vrstvu - reálná exekuce forward příkazů vyžaduje
+ * plný debugger/emu init (mhmap, snapshot paused stav, trace writery).
+ */
+static void assert_parse_ok ( const char *src ) {
+    char err[160] = {0};
+    bp_action_t *act = bp_action_parse ( src, err, sizeof ( err ) );
+    if ( !act ) {
+        printf ( "PARSE FAILED: '%s' -> %s\n", src, err );
+    };
+    TEST_ASSERT_NOT_NULL ( act );
+    bp_action_free ( act );
+}
+
+
+/* --- CDL lifecycle parse --- */
+static void test_fwd_cdl_lifecycle_parse ( void ) {
+    assert_parse_ok ( "cdl_start" );
+    assert_parse_ok ( "cdl_stop" );
+    assert_parse_ok ( "cdl_reset" );
+    assert_parse_ok ( "cdl_export \"dump.cdl\"" );
+    assert_parse_ok ( "cdl_export \"seg-%d.cdl\", $id" );
+}
+
+/* --- trace lifecycle parse (všechny 4 kanály) --- */
+static void test_fwd_trace_parse_channels ( void ) {
+    assert_parse_ok ( "trace_start cputrack" );
+    assert_parse_ok ( "trace_start iorqlog" );
+    assert_parse_ok ( "trace_start intlog" );
+    assert_parse_ok ( "trace_start hwlog" );
+    assert_parse_ok ( "trace_stop cputrack" );
+    assert_parse_ok ( "trace_save hwlog, \"seg-%d.bin\", $id" );
+}
+
+/* --- snapshot parse --- */
+static void test_fwd_snapshot_parse ( void ) {
+    assert_parse_ok ( "snapshot \"state.mzs\"" );
+    assert_parse_ok ( "snapshot \"snap-%X.mzs\", PC" );
+}
+
+/* --- chybové stavy --- */
+static void test_fwd_parse_errors ( void ) {
+    /* trace bez kanálu / neznámý kanál. */
+    assert_parse_fails ( "trace_start" );
+    assert_parse_fails ( "trace_start bogus" );
+    /* trace_save bez filename string. */
+    assert_parse_fails ( "trace_save cputrack" );
+    /* cdl_export / snapshot bez string literálu. */
+    assert_parse_fails ( "cdl_export" );
+    assert_parse_fails ( "snapshot" );
+    assert_parse_fails ( "snapshot foo" );
+}
+
+/* --- klasifikace: forward příkazy = CONTINUE subtype --- */
+static void test_fwd_classify_continue ( void ) {
+    char err[160] = {0};
+    bp_action_t *a = bp_action_parse ( "trace_save cputrack, \"x.bin\"",
+                                       err, sizeof ( err ) );
+    TEST_ASSERT_NOT_NULL ( a );
+    TEST_ASSERT_EQUAL_INT ( BP_ACTION_SUB_CONTINUE,
+                            bp_action_classify_subtype ( a ) );
+    bp_action_free ( a );
+
+    a = bp_action_parse ( "snapshot \"s.mzs\"", err, sizeof ( err ) );
+    TEST_ASSERT_NOT_NULL ( a );
+    TEST_ASSERT_EQUAL_INT ( BP_ACTION_SUB_CONTINUE,
+                            bp_action_classify_subtype ( a ) );
+    bp_action_free ( a );
+}
+
+/* --- vize 0017: jeden BP skript kombinující $id + trace_save + snapshot --- */
+static void test_fwd_vision_0017_combo_parse ( void ) {
+    /* Reprezentuje "chytrý BP na 0x0005": inkrement segmentu, uložení
+     * trace segmentu i snapshotu s číslovaným jménem v jednom skriptu. */
+    assert_parse_ok (
+        "$id += 1\n"
+        "trace_save cputrack, \"seg-%d.bin\", $id\n"
+        "snapshot \"snap-%d.mzs\", $id" );
+}
+
+
+/* ========================================================================= */
+/*  FWD_SNAPSHOT exekuce z POKRAČUJÍCÍHO (continuing) BP - 0018             */
+/* ========================================================================= */
+
+/*
+ * Akceptační test pro item 0018 (S18MAIN): snapshot z BP action, který
+ * emulátor NEzastavuje (continuing BP = g_emulator.paused == false), musí
+ * reálně uložit validní .mzs.
+ *
+ * Pozadí: snapshot_save vyžaduje guard EMULATOR_TEST_PAUSED
+ * (snapshot_mgr.c:389). Akce FWD_SNAPSHOT běží na emu vlákně mezi
+ * instrukcemi (safe-point), takže snapshot je odsud bezpečný; guard se proto
+ * pro dobu volání transientně splní přímým setem g_emulator.paused a stav se
+ * vždy obnoví zpět (commit d8004cb9 - bp_action.c case FWD_SNAPSHOT).
+ *
+ * Existující parse testy ani test_snapshot_mgr.c tuto cestu nekryjí: parse
+ * testy validují jen syntax, test_snapshot_mgr volá snapshot_save přímo z
+ * paused stavu. Tento test prochází produkční cestou bp_action_parse +
+ * bp_action_execute -> execute_fwd FWD_SNAPSHOT -> snapshot_save právě z
+ * paused == false.
+ *
+ * snapshot_init() je v tomto EMU testu zavolán z mztest_init()
+ * (tests/framework/mztest.c:137), takže komponenty jsou registrované a
+ * snapshot_save zapíše reálný .mzs.
+ */
+
+/**
+ * Vrátí velikost souboru v bajtech, nebo -1 pokud neexistuje / chyba stat.
+ */
+static long file_size_or_neg1 ( const char *path ) {
+    struct stat st;
+    if ( stat ( path, &st ) != 0 ) return -1;
+    return (long) st.st_size;
+}
+
+/**
+ * Sestaví cestu k dočasnému .mzs souboru v TMP/TEMP (stejná konvence jako
+ * stdout_capture v tomto souboru) - nezávislé na existenci tests/data/tmp.
+ */
+static void make_tmp_mzs_path ( char *buf, size_t buf_size ) {
+    const char *tmpdir = getenv ( "TMP" );
+    if ( !tmpdir ) tmpdir = getenv ( "TEMP" );
+    if ( !tmpdir ) tmpdir = "/tmp";
+    snprintf ( buf, buf_size, "%s/bpaction_snap_%d.mzs",
+               tmpdir, (int) getpid ( ) );
+}
+
+/**
+ * Hlavní akceptační test: snapshot z continuing BP (paused == false).
+ *
+ * Ověřuje:
+ *   (a) snapshot_save NEselže na NOT_PAUSED (transientní gating funguje) -
+ *       nepřímo přes to, že vznikne soubor (jinak by NOT_PAUSED skončil
+ *       warningem bez zápisu),
+ *   (b) vznikne validní .mzs (> 0 B),
+ *   (c) po návratu je g_emulator.paused obnoven na původní (false) hodnotu.
+ */
+static void test_fwd_snapshot_continuing_bp_writes_mzs ( void ) {
+    MZTEST_REQUIRE_LEVEL ( MZTEST_LEVEL_UNIT );
+
+    char path[640];
+    make_tmp_mzs_path ( path, sizeof ( path ) );
+    remove ( path );                       /* čistý start */
+
+    /* Pre-podmínka: soubor zatím neexistuje. */
+    TEST_ASSERT_EQUAL_INT ( -1, (int) file_size_or_neg1 ( path ) );
+
+    /* Continuing BP = emulátor NEpozastaven. */
+    g_emulator.paused = false;
+
+    /* Sestavíme action 'snapshot "<path>"'. Řetězec v BP-DSL používá
+     * dvojité uvozovky; v cestě na Windows mohou být zpětná lomítka -
+     * normalizujeme je na dopředná, která snapshot/g_fopen akceptuje a
+     * zároveň nekolidují s DSL escape sekvencemi. */
+    char fwd_path[640];
+    {
+        size_t j = 0;
+        for ( size_t i = 0; path[i] != '\0' && j + 1 < sizeof ( fwd_path ); i++ ) {
+            fwd_path[j++] = ( path[i] == '\\' ) ? '/' : path[i];
+        };
+        fwd_path[j] = '\0';
+    }
+    char src[760];
+    snprintf ( src, sizeof ( src ), "snapshot \"%s\"", fwd_path );
+
+    /* Exekuce přes produkční cestu (parse + execute). Forward příkaz =
+     * implicit continue. */
+    bool cont = exec_action ( src );
+    TEST_ASSERT_TRUE ( cont );
+
+    /* (c) paused obnoven na původní hodnotu (false). */
+    TEST_ASSERT_FALSE ( g_emulator.paused );
+
+    /* (a)+(b) soubor vznikl a je neprázdný. Pokud by gating nefungoval,
+     * snapshot_save by vrátil NOT_PAUSED a soubor by nevznikl. */
+    long sz = file_size_or_neg1 ( fwd_path );
+    if ( sz < 0 ) {
+        /* Diagnostika: zkusíme i původní (nenormalizovanou) cestu. */
+        sz = file_size_or_neg1 ( path );
+    };
+    TEST_ASSERT_GREATER_THAN_MESSAGE ( 0, sz,
+        "snapshot z continuing BP nevytvoril validni .mzs (gating selhal?)" );
+
+    remove ( fwd_path );
+    remove ( path );
+}
+
+/**
+ * Regresní test: z PAUSED emulátoru se chování nemění a po návratu je
+ * paused stále true (save_paused == true -> žádná změna flagu).
+ */
+static void test_fwd_snapshot_from_paused_no_regression ( void ) {
+    MZTEST_REQUIRE_LEVEL ( MZTEST_LEVEL_UNIT );
+
+    char path[640];
+    make_tmp_mzs_path ( path, sizeof ( path ) );
+    remove ( path );
+
+    char fwd_path[640];
+    {
+        size_t j = 0;
+        for ( size_t i = 0; path[i] != '\0' && j + 1 < sizeof ( fwd_path ); i++ ) {
+            fwd_path[j++] = ( path[i] == '\\' ) ? '/' : path[i];
+        };
+        fwd_path[j] = '\0';
+    }
+    char src[760];
+    snprintf ( src, sizeof ( src ), "snapshot \"%s\"", fwd_path );
+
+    g_emulator.paused = true;
+    bool cont = exec_action ( src );
+    TEST_ASSERT_TRUE ( cont );
+
+    /* paused zůstal true (restore nepřepsal na false). */
+    TEST_ASSERT_TRUE ( g_emulator.paused );
+
+    long sz = file_size_or_neg1 ( fwd_path );
+    if ( sz < 0 ) sz = file_size_or_neg1 ( path );
+    TEST_ASSERT_GREATER_THAN ( 0, sz );
+
+    remove ( fwd_path );
+    remove ( path );
+    g_emulator.paused = false;
+}
+
+
+/* ========================================================================= */
 /*  MAIN                                                                     */
 /* ========================================================================= */
 
@@ -863,6 +1099,18 @@ int main ( int argc, char *argv[] ) {
     /* V1.6+ 4.1 - %s v log formatu (sym_db lookup) */
     RUN_TEST ( test_log_percent_s_known_symbol );
     RUN_TEST ( test_log_percent_s_unknown );
+
+    /* Forward příkazy (cdl_* / trace_* / snapshot) - 0017 FÁZE 3b */
+    RUN_TEST ( test_fwd_cdl_lifecycle_parse );
+    RUN_TEST ( test_fwd_trace_parse_channels );
+    RUN_TEST ( test_fwd_snapshot_parse );
+    RUN_TEST ( test_fwd_parse_errors );
+    RUN_TEST ( test_fwd_classify_continue );
+    RUN_TEST ( test_fwd_vision_0017_combo_parse );
+
+    /* FWD_SNAPSHOT exekuce z continuing BP - 0018 (S18MAIN) */
+    RUN_TEST ( test_fwd_snapshot_continuing_bp_writes_mzs );
+    RUN_TEST ( test_fwd_snapshot_from_paused_no_regression );
 
     int result = UNITY_END ( );
 

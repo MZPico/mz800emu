@@ -152,6 +152,23 @@ static int activate_hwlog ( void )
 }
 
 
+/**
+ * @brief Vrátí velikost souboru @p filename v @p dir v bajtech.
+ *
+ * @return Velikost v bajtech, nebo -1 pokud soubor neexistuje / nelze
+ *         získat stat.
+ */
+static gint64 file_size ( const char *dir, const char *filename )
+{
+    char *path = g_build_filename ( dir, filename, NULL );
+    GStatBuf st;
+    int rc = g_stat ( path, &st );
+    g_free ( path );
+    if ( rc != 0 ) return -1;
+    return (gint64) st.st_size;
+}
+
+
 /* ================================================================
  * Lifecycle
  * ================================================================ */
@@ -1028,6 +1045,58 @@ void test_hwlog_record_when_not_active_is_noop ( void )
 
 
 /* ================================================================
+ * I19HWLOG - byte backstop accounting hwlog disk zápisů
+ * ================================================================
+ *
+ * I19BYTE zařídil, že byte backstop countuje trace_save disk footprint,
+ * ale hwlog měl vlastní raw fwrite cesty (write_chip_tlv_buf / _empty
+ * volané z dump_initial_state), které NEšly přes
+ * tlog_common_disk_bytes_add -> initial-state dump (~stovky B až KB)
+ * unikal accountingu a auto-pauza ho neviděla.
+ *
+ * Test prokazuje, že po hwlog_start() (= reálný zápis hw_initial_state.bin
+ * na disk + meta hw.json) narostl kumulativní disk čítač přesně o součet
+ * velikostí zapsaných souborů. Před fixem by delta postrádala velikost
+ * initial-state souboru.
+ *
+ * Test je deterministický nezávisle na časování (čítač je čistá
+ * aritmetika disk bajtů, ne clock-domain stav).
+ */
+void test_hwlog_initial_state_counted_in_disk_backstop ( void )
+{
+    tlog_common_disk_bytes_reset ( );
+    TEST_ASSERT_EQUAL_UINT64 ( 0, tlog_common_disk_bytes_total ( ) );
+
+    /* hwlog_start() zapíše: hw_initial_state.bin (raw fwrite cesta, jádro
+     * fixu) + meta hw.json (přes tlog_common writer). Měříme deltu jen
+     * kolem startu, abychom izolovali od second meta write v hwlog_stop. */
+    uint64_t before = tlog_common_disk_bytes_total ( );
+    TEST_ASSERT_EQUAL_INT ( 0, hwlog_start ( ) );
+    g_hwlog_active = 1;
+    uint64_t after = tlog_common_disk_bytes_total ( );
+
+    gint64 sz_initial = file_size ( s_test_dir, "hw_initial_state.bin" );
+    gint64 sz_meta    = file_size ( s_test_dir, "hw.json" );
+
+    /* Oba soubory musí existovat a být neprázdné. */
+    TEST_ASSERT_TRUE_MESSAGE ( sz_initial > 0,
+        "hw_initial_state.bin musí vzniknout a být neprázdný" );
+    TEST_ASSERT_TRUE_MESSAGE ( sz_meta > 0,
+        "hw.json (meta) musí vzniknout a být neprázdný" );
+
+    /* Klíčové tvrzení gapu: delta čítače = initial_state + meta. Bez fixu
+     * by delta postrádala sz_initial (raw fwrite necountoval). */
+    TEST_ASSERT_EQUAL_UINT64_MESSAGE (
+        (uint64_t) ( sz_initial + sz_meta ),
+        after - before,
+        "disk byte backstop musí započítat initial-state dump i meta hwlogu" );
+
+    hwlog_stop ( );
+    g_hwlog_active = 0;
+}
+
+
+/* ================================================================
  * MAIN
  * ================================================================ */
 
@@ -1086,6 +1155,7 @@ int main ( int argc, char *argv[] )
     RUN_TEST ( test_hwlog_initial_state_file_created );
     RUN_TEST ( test_hwlog_initial_state_field_layout );
     RUN_TEST ( test_hwlog_initial_state_contains_pioz80_tlv );
+    RUN_TEST ( test_hwlog_initial_state_counted_in_disk_backstop );
 
     /* PIOZ80 */
     RUN_TEST ( test_hwlog_pioz80_sub_enum_reservations );

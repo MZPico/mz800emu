@@ -59,6 +59,7 @@
 #include "bptmap.h"
 #include "breakpoints.h"
 #include "mhmap.h"
+#include "trace/reclife.h"
 #include "trace/cputrack.h"
 #include "trace/iorqlog.h"
 #include "trace/intlog.h"
@@ -137,26 +138,76 @@ static int cdl_name_has_json_ext ( const char *name ) {
 }
 
 
-void debugger_exit ( void ) {
-    /* CDL export při ukončení - dle nastaveného flag, cílového adresáře a názvu.
-     * Sestavíme plnou cestu meta.json: <dir>/<name>.json. Pokud user už dal
+/**
+ * @brief CDL save callback pro sdílenou reclife vrstvu.
+ *
+ * Implementuje @c st_RECLIFE_DESC.fn_save pro CDL (mhmap). Sjednocuje CDL
+ * se sdíleným recording lifecycle layerem, ale heuristiku sestavení cílové
+ * cesty (cdl_name_has_json_ext, resolve_work, <dir>/<name>.json) drží zde v
+ * CDL-specifickém kódu - generická vrstva ji NESMÍ obsahovat (jinak by
+ * vznikl "name.json.json").
+ *
+ * @param path  Pokud nenulové, exportuje se přímo do této cesty (UI "Export
+ *              now"). Pokud NULL, sestaví se default cesta z configu
+ *              (cdl_export_dir/cdl_export_name) - chování shodné s
+ *              původním exit-gate exportem.
+ * @return 0 OK, -1 chyba nebo CDL export nepovolen/nenakonfigurován.
+ */
+static int cdl_reclife_save ( const char *path ) {
+    if ( path && path[ 0 ] ) {
+        return mhmap_export ( path );
+    }
+
+    /* path == NULL: sestav default cestu z configu. Stejná logika jako
+     * původní debugger_exit gate. Pokud dir/name nejsou nastaveny, export
+     * se neprovede (návrat -1). */
+    if ( !g_debugger.cdl_export_dir || !g_debugger.cdl_export_dir[ 0 ]
+         || !g_debugger.cdl_export_name || !g_debugger.cdl_export_name[ 0 ] ) {
+        return -1;
+    }
+    /* Sestavíme plnou cestu meta.json: <dir>/<name>.json. Pokud user už dal
      * .json extenzi v --cdl-name (nebo přes UI), nepřidávat další - jinak
      * by vznikl "mzdos.json.json" a matoucí region prefix "mzdos.json_". */
-    if ( g_debugger.cdl_export_on_exit
-         && g_debugger.cdl_export_dir && g_debugger.cdl_export_dir[ 0 ]
-         && g_debugger.cdl_export_name && g_debugger.cdl_export_name[ 0 ] ) {
-        char *fname = cdl_name_has_json_ext ( g_debugger.cdl_export_name )
-                      ? g_strdup ( g_debugger.cdl_export_name )
-                      : g_strdup_printf ( "%s.json", g_debugger.cdl_export_name );
-        /* Relativní cesty resolveme proti work_dir (export je výstupní operace
-         * v "user work" location), absolutní pass through. */
-        char *resolved_dir = sdlapp_paths_resolve_work ( g_sdlapp->paths,
-                                                          g_debugger.cdl_export_dir );
-        char *full = g_build_filename ( resolved_dir, fname, NULL );
-        mhmap_export ( full );
-        g_free ( full );
-        g_free ( resolved_dir );
-        g_free ( fname );
+    char *fname = cdl_name_has_json_ext ( g_debugger.cdl_export_name )
+                  ? g_strdup ( g_debugger.cdl_export_name )
+                  : g_strdup_printf ( "%s.json", g_debugger.cdl_export_name );
+    /* Relativní cesty resolveme proti work_dir (export je výstupní operace
+     * v "user work" location), absolutní pass through. */
+    char *resolved_dir = sdlapp_paths_resolve_work ( g_sdlapp->paths,
+                                                      g_debugger.cdl_export_dir );
+    char *full = g_build_filename ( resolved_dir, fname, NULL );
+    int ret = mhmap_export ( full );
+    g_free ( full );
+    g_free ( resolved_dir );
+    g_free ( fname );
+    return ret;
+}
+
+
+/* Sdílený lifecycle deskriptor pro CDL (mhmap). CDL používá z reclife jen
+ * save vrstvu (fn_save); aktivace zůstává mode-driven přes makro
+ * TEST_DEBUGGER_MHMAP_ACTIVE (mhmap nemá samostatný _active flag), proto
+ * mode_ptr/active_ptr/fn_start/fn_stop nejsou pro CDL relevantní a CDL
+ * NEpoužívá reclife_recompute_active ani reclife_finalize. fn_reset =
+ * mhmap_reset pro budoucí použití (např. UI "Clear coverage"). */
+static const st_RECLIFE_DESC s_cdl_reclife = {
+    .subsys_name = "cdl",
+    .mode_ptr    = NULL,
+    .active_ptr  = NULL,
+    .fn_start    = NULL,
+    .fn_stop     = NULL,
+    .fn_reset    = mhmap_reset,
+    .fn_save     = cdl_reclife_save,
+};
+
+
+void debugger_exit ( void ) {
+    /* CDL export při ukončení - dle nastaveného flag. Cesta a heuristika se
+     * sestavují v cdl_reclife_save (NULL path = default z configu). Export
+     * přes sdílenou reclife vrstvu, chování beze změny oproti původnímu
+     * inline gate. */
+    if ( g_debugger.cdl_export_on_exit ) {
+        reclife_save ( &s_cdl_reclife, NULL );
     };
 
     /* trace-suite - flush + close pokud běží recording. */

@@ -93,11 +93,11 @@ file-based, žádný transport call).
 | `emulator://docs/memory_layout` | Per-platform Z80 paměťové mapy, banking 0xE0..0xE6, ROM entry pointy, IRQ vektory |
 | `emulator://docs/bp_dsl` | BP condition expression syntax (registry, mem[], port[], operators, built-in funkce, $vars) |
 | `emulator://docs/smart_vars` | `$name` user variables - action DSL, persistence, lifecycle |
-| `emulator://docs/action_dsl` | BP Action DSL grammar - 11 příkazů (`log`, `set <reg>`, `poke`, `mark`, `$var` zápisy, `if/then/else`, `enable`/`disable`, `clear_vars`), `log` format specs, stop vs continue semantika |
+| `emulator://docs/action_dsl` | BP Action DSL grammar - 11 příkazů (`log`, `set <reg>`, `poke`, `mark`, `$var` zápisy, `if/then/else`, `enable`/`disable`, `clear_vars`) + forwarding příkazy (`cdl_*`/`trace_*`/`snapshot`), `log` format specs, stop vs continue semantika |
 | `emulator://docs/watch_dsl` | Watch expression syntax (`address` / `expr_scalar` / `expr_deref` + type tagy) |
 | `emulator://docs/eventlog_mask` | EventLog 64-bit category mask - bit assignments + recipes |
 | `emulator://docs/sharp_display_code` | Sharp MZ ASCII vs display code vs std ASCII (decode `video/text_dump` + `mzascii` watch) |
-| `emulator://docs/mz800_keyboard` | Klávesnice MZ-800 - layout, matice, modifikátory, znakové vrstvy, jména kláves pro `emu_send_keys`, recepty na speciální znaky (MZ-700/1500 jako diff) |
+| `emulator://docs/mz800_keyboard` | Klávesnice MZ-800 - layout, matice, modifikátory, znakové vrstvy, jména kláves pro `emu_input_send_keys`, recepty na speciální znaky (MZ-700/1500 jako diff) |
 | `emulator://docs/cmt_workflow` | CMT workflow - reálná páska vs cmthack, transport, WAV recording, rychlostní poměry, SIMPLE_TAPE multi-blok seek + per-blok speed |
 
 AI klient by měl číst `emulator://docs/index` jako první - poskytne

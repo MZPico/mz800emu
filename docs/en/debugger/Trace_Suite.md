@@ -49,6 +49,17 @@ Hwlog also has:
   `100`-`1000` for troubleshooting or `1` for a full trace of a short
   section.)
 
+Cputrack also has (range-scoped tracking):
+- `--cputrack-pc-lo=<addr>` and `--cputrack-pc-hi=<addr>` (default `0`
+  and `0xFFFF` = the whole address space, i.e. no filter). Limits the
+  recording to only the instructions whose PC lies in the range
+  `[lo, hi]` inclusive. Instructions outside the range are not recorded.
+  Typical use: track only the TPA (e.g.
+  `--cputrack-pc-lo=0x100 --cputrack-pc-hi=0xBFFF`) and skip the ROM/OS
+  routines. Values accept dec or hex (`0x` prefix) and are masked to 16
+  bits. The filter is cputrack-only - the other subsystems always log
+  everything.
+
 #### Shorthand `--all-traces-*`
 
 ```bash
@@ -67,6 +78,13 @@ user did not pass a per-subsys option.
 Debugger Settings -> Trace Suite -> [CPU Track | IORQ Log | Interrupt Log | HW Log | Marker Log]
 
 Per-subsystem: radio (Off / Only With Debug Window / Always) + Save on Exit toggle.
+
+The CPU Track submenu additionally has a "PC range filter [lo,hi]:"
+field with two hex inputs (lo, hi) and a "Reset range (whole space)"
+item. It sets the same range-scope filter as the CLI
+`--cputrack-pc-lo` / `--cputrack-pc-hi` (record only for PC in range).
+Reset returns the range to `0000`-`FFFF` (= the whole address space, no
+filter).
 
 #### Status indicator in the window title
 
@@ -110,6 +128,8 @@ name=cputrack
 chunk_mb=64
 max_total_mb=0
 save_on_exit=1
+pc_range_lo=0                    # range-scope filter: lower PC bound (default 0)
+pc_range_hi=65535               # upper PC bound (default 0xFFFF = no filter)
 
 [TRACE_IORQLOG]
 ... (same structure)
@@ -129,6 +149,67 @@ max_total_mb=0
 save_on_exit=1
 stdout_enabled=1                # back-compat printout [BP-MARK] to stdout
 ```
+
+## Runtime control (MCP + Breakpoint Action)
+
+Besides the static setup (CLI / GUI / INI), trace recording can also be
+controlled at runtime - either from an MCP client (AI agent) or
+automatically from a breakpoint action. This lets you bracket the
+recording precisely around the section of interest, without having to
+save only at emulator exit.
+
+### Via MCP
+
+The MCP server exposes a full lifecycle for the 4 binary channels
+(`cputrack`, `iorqlog`, `intlog`, `hwlog`):
+
+| Tool | What it does |
+|------|--------------|
+| `emu_trace_start` | Starts recording the selected channel (= ALWAYS mode) |
+| `emu_trace_stop`  | Stops recording the channel (the segment is closed and saved) |
+| `emu_trace_reset` | Clears the current channel segment (= clean baseline) |
+| `emu_trace_save`  | Saves/redirects the channel segment to a new path |
+
+Each tool has a mandatory `channel` argument (one of
+`cputrack`/`iorqlog`/`intlog`/`hwlog`). `emu_trace_save` additionally
+has an optional `path` (target path of the following segment; without
+it the current segment is just closed and reopened = "save now"). The
+interface mirrors the CDL lifecycle tools (`emu_cdl_start` / `_stop` /
+`_reset` / `_export`). For details and return values see the
+[MCP tools overview](../mcp-server/tools-overview.md).
+
+A typical flow: warp through the uninteresting part, `emu_trace_start`
+just before the section of interest, run, then `emu_trace_stop` and
+`emu_trace_save` with a segment name.
+
+### From a breakpoint action
+
+A breakpoint action (Custom mode) can run the same recording operations
+automatically when the BP fires - so instead of dozens of manual MCP
+calls, a single well-placed breakpoint is enough. Available forward
+commands:
+
+- `cdl_start` / `cdl_stop` / `cdl_reset` - CDL lifecycle.
+- `cdl_export "file"` - export the CDL to a file.
+- `trace_start <channel>` / `trace_stop <channel>` - start/stop a trace
+  channel (channel = `cputrack`/`iorqlog`/`intlog`/`hwlog`,
+  case-sensitive).
+- `trace_save <channel>, "file"` - save/redirect the channel segment.
+- `snapshot "file"` - save a .mzs snapshot (works from a continuing
+  breakpoint too, one that does not stop the emulator).
+
+The file name in `cdl_export`, `trace_save` and `snapshot` is a
+template with the same specifiers and `$variables` as the `log` command
+- so you can generate numbered files, e.g.:
+
+```
+snapshot "snap-%d.mzs", $id
+trace_save cputrack, "seg-%d.bin", $id
+$id += 1
+```
+
+For the full description of the breakpoint action see
+[Breakpoint - action on trigger](breakpoints/action-dsl.md).
 
 ## Mode semantics
 
@@ -271,7 +352,7 @@ Covered event classes:
 
 ### hwlog (24 B)
 
-See the separate `docs/cz/debugger/formats/HW-log_format.md`.
+See the separate `docs/en/debugger/formats/HW-log_format.md`.
 
 Covered per-chip register write hooks for:
 - **GDG** (mz800 + mz1500) - MODE / BANKING / HWSCROLL / COLORS / WFRF
@@ -287,7 +368,7 @@ Covered per-chip register write hooks for:
 Plus an initial state binary snapshot in `<dir>/<name>_initial_state.bin`
 (TLV per chip - chip_id + length + payload, EOF marker 0xFF). Each
 payload is a field-by-field little-endian serialization independent of
-compiler ABI - layout see `docs/cz/debugger/formats/HW-log_INITIAL_STATE_format.md`.
+compiler ABI - layout see `docs/en/debugger/formats/HW-log_INITIAL_STATE_format.md`.
 
 The header contains per-chip dividers:
 `psgclk_divider_cpuclk`, `tempo_divider_screen_rows`,
@@ -295,7 +376,7 @@ The header contains per-chip dividers:
 
 ### marklog (24 B)
 
-See the separate `docs/cz/debugger/formats/MARK-log_format.md`.
+See the separate `docs/en/debugger/formats/MARK-log_format.md`.
 
 Logs user markers triggered from the BP action `mark "name"`. The
 marker name is pre-registered during BP parse and is represented in the

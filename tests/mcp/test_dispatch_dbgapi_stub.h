@@ -57,6 +57,44 @@ typedef struct st_DISPATCH_STUB_STATE {
     bool                 fill_regs;    /**< Pro GET_ALL_REGS - naplnit deterministický pattern. */
     int                  fill_bp_id;   /**< Pro BP_ADD - jaké id přidělit. */
     int                  fill_bp_list_count; /**< Pro BP_LIST - kolik BP vrátit. */
+
+    /* F015b - typed BP + condition round-trip + leak smoke:
+     *
+     * BP_LIST rozšířené naplnění:
+     *   bp_list_fake_type      - hodnota do bp[0].type (default 0 = PC_EXEC).
+     *   bp_list_fake_zone      - hodnota do bp[0].zone (default 0 = CPU_VIEW).
+     *   bp_list_fake_bank_id   - hodnota do bp[0].bank_id.
+     *   bp_list_fake_hits      - hodnota do bp[0].hits.
+     *   bp_list_fake_condition - pokud != NULL, stub do bp[0].condition zapíše
+     *                            g_strdup() této hodnoty (= simulace dbgapi
+     *                            ownership kontraktu; caller MUSÍ uvolnit).
+     *                            Pole bp[1..] zůstanou bez condition (NULL).
+     *
+     * BP_CREATE_WITH_INIT zachycení (typed create path):
+     *   bp_create_calls        - kolikrát stub viděl BP_CREATE_WITH_INIT.
+     *   bp_create_last_type    - kopie p->type z posledního volání.
+     *   bp_create_last_addr    - kopie p->addr.
+     *   bp_create_last_mask    - kopie p->update_mask.
+     *   bp_create_last_expr    - kopie p->expr (g_strdup, NULL pokud nebyl;
+     *                            uvolňuje dispatch_stub_reset).
+     *   bp_create_fake_id      - hodnota kterou stub zapíše do p->id
+     *                            (= simulace přiděleného ID; default 7). */
+    uint8_t              bp_list_fake_type;
+    uint8_t              bp_list_fake_zone;
+    uint8_t              bp_list_fake_bank_id;
+    uint64_t             bp_list_fake_hits;
+    const char          *bp_list_fake_condition;
+    int                  bp_create_calls;
+    uint8_t              bp_create_last_type;
+    uint16_t             bp_create_last_addr;
+    uint64_t             bp_create_last_mask;
+    char                *bp_create_last_expr;
+    int                  bp_create_fake_id;
+    /* H2 - enum string parse ověření (string -> kanonický enum index):
+     *   bp_create_last_zone           - kopie p->zone z posledního create.
+     *   bp_create_last_event_trigger  - kopie p->event_trigger. */
+    uint8_t              bp_create_last_zone;
+    uint8_t              bp_create_last_event_trigger;
     /* V0.B.3 - MEM_WRITE_CHECKED scenario:
      *   mem_write_fail = true => stub vrátí success=0 (region check fail)
      *                            s adresou first_failed_addr a kind
@@ -258,6 +296,19 @@ typedef struct st_DISPATCH_STUB_STATE {
     char                *cdl_export_last_path;
     int                  cdl_export_fake_result;
     int                  cdl_export_fake_region_count;
+
+    /* 0017 FÁZE 1 - Tracking lifecycle (trace-suite):
+     *   trace_start/stop/reset/save_calls - countery volání.
+     *   trace_last_channel - en_DBGAPI_TRACE_CHANNEL z posledního volání.
+     *   trace_save_last_path - kopie path z posledního TRACE_SAVE.
+     *   trace_fake_result - hodnota kterou stub zapíše do out_result. */
+    int                  trace_start_calls;
+    int                  trace_stop_calls;
+    int                  trace_reset_calls;
+    int                  trace_save_calls;
+    int                  trace_last_channel;
+    char                *trace_save_last_path;
+    int                  trace_fake_result;
 
     /* V1.A.5 - chip-level fault injection scenario:
      *

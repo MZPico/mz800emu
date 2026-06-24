@@ -72,8 +72,12 @@
  *
  * mzdos request 0009 doplnil screenshot_save_to_file (server-side PNG
  * zápis na disk, přidán na KONEC cmd_map[]) = 157 + 1 = 158.
+ *
+ * 0017 FÁZE 1 doplnil 4 Tracking lifecycle Tools (= trace_start,
+ * trace_stop, trace_reset, trace_save, přidány na KONEC cmd_map[])
+ * = 158 + 4 = 162.
  */
-#define MCP_EXPECTED_CMD_COUNT 158
+#define MCP_EXPECTED_CMD_COUNT 162
 
 
 /* ====================================================================== */
@@ -466,11 +470,298 @@ void test_bp_list_returns_array(void) {
     TEST_ASSERT_EQUAL_INT(3, json_object_get_int_member(data, "count"));
     JsonArray *arr = json_object_get_array_member(data, "breakpoints");
     TEST_ASSERT_EQUAL_INT(3, json_array_get_length(arr));
-    /* Pierwsze BP: id=100, addr=0x1000, enabled=true */
+    /* První BP: id=100, addr=0x1000, enabled=true */
     JsonObject *bp0 = json_array_get_object_element(arr, 0);
     TEST_ASSERT_EQUAL_INT(100, json_object_get_int_member(bp0, "id"));
     TEST_ASSERT_EQUAL_INT(0x1000, json_object_get_int_member(bp0, "addr"));
     TEST_ASSERT_TRUE(json_object_get_boolean_member(bp0, "enabled"));
+    g_object_unref(parser);
+
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+/* ====================================================================== */
+/* F015b - typed BP create + bp_list serializace + leak smoke             */
+/* ====================================================================== */
+
+/*
+ * Typed BP přes bp_create_with_init musí předat backendu (dbgapi) správný
+ * en_BPT_TYPE a UM_TYPE bit + případný condition expr. type=2 = BPT_TYPE_MEM_W
+ * (breakpoints.h:103), což je přesně cesta, kterou Python emu_bp_add(memw)
+ * remapuje na bp_create_with_init (F015a). Ověřujeme zachycení ve stubu, ne
+ * jen "vrátilo OK".
+ */
+void test_bp_create_typed_passes_type_to_dbgapi(void) {
+    g_stub_state.bp_create_fake_id = 7;
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"req_id\":20,\"cmd\":\"bp_create_with_init\","
+        "\"data\":{\"fields\":[\"type\",\"addr\",\"expr\"],"
+        "\"type\":2,\"addr\":4660,\"expr\":\"A==1\"}}");
+    char *resp = NULL;
+
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_BP_CREATE_WITH_INIT,
+                          g_stub_state.last_cmd);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_ORIGIN_MCP, g_stub_state.last_origin);
+    /* Backend dostal typed parametry, ne addr-only. */
+    TEST_ASSERT_EQUAL_INT(1, g_stub_state.bp_create_calls);
+    TEST_ASSERT_EQUAL_UINT8(2, g_stub_state.bp_create_last_type); /* MEM_W */
+    TEST_ASSERT_EQUAL_UINT16(4660, g_stub_state.bp_create_last_addr);
+    TEST_ASSERT_NOT_NULL(g_stub_state.bp_create_last_expr);
+    TEST_ASSERT_EQUAL_STRING("A==1", g_stub_state.bp_create_last_expr);
+    /* update_mask musí mít TYPE + ADDR + EXPR bity (= fields[] respektováno). */
+    TEST_ASSERT_TRUE(g_stub_state.bp_create_last_mask & DBGAPI_BP_UM_TYPE);
+    TEST_ASSERT_TRUE(g_stub_state.bp_create_last_mask & DBGAPI_BP_UM_ADDR);
+    TEST_ASSERT_TRUE(g_stub_state.bp_create_last_mask & DBGAPI_BP_UM_EXPR);
+
+    JsonParser *parser = NULL;
+    JsonObject *obj = _parse_response_object(resp, &parser);
+    JsonObject *data = json_object_get_object_member(obj, "data");
+    TEST_ASSERT_EQUAL_INT(7, json_object_get_int_member(data, "id"));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(data, "created"));
+    g_object_unref(parser);
+
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+/*
+ * bp_list musí serializovat type/zone přes kanonické UPPER_SNAKE řetězce a
+ * vrátit bank_id/hits/condition. Stub naplní bp[0] typed atributy + condition.
+ * (type=2 -> "MEM_W", zone=3 -> "RAM" - viz breakpoints.c s_bpt_type_names /
+ * s_bp_zone_names.)
+ */
+void test_bp_list_serializes_typed_fields(void) {
+    g_stub_state.fill_bp_list_count = 1;
+    g_stub_state.bp_list_fake_type      = 2;   /* MEM_W */
+    g_stub_state.bp_list_fake_zone      = 3;   /* RAM */
+    g_stub_state.bp_list_fake_bank_id   = 5;
+    g_stub_state.bp_list_fake_hits      = 42;
+    g_stub_state.bp_list_fake_condition = "B>0x10";
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"req_id\":21,\"cmd\":\"bp_list\"}");
+    char *resp = NULL;
+
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+
+    JsonParser *parser = NULL;
+    JsonObject *obj = _parse_response_object(resp, &parser);
+    JsonObject *data = json_object_get_object_member(obj, "data");
+    TEST_ASSERT_EQUAL_INT(1, json_object_get_int_member(data, "count"));
+    JsonArray *arr = json_object_get_array_member(data, "breakpoints");
+    JsonObject *bp0 = json_array_get_object_element(arr, 0);
+    TEST_ASSERT_EQUAL_STRING("MEM_W",
+        json_object_get_string_member(bp0, "type"));
+    TEST_ASSERT_EQUAL_STRING("RAM",
+        json_object_get_string_member(bp0, "zone"));
+    TEST_ASSERT_EQUAL_INT(5, json_object_get_int_member(bp0, "bank_id"));
+    TEST_ASSERT_EQUAL_INT(42, json_object_get_int_member(bp0, "hits"));
+    TEST_ASSERT_EQUAL_STRING("B>0x10",
+        json_object_get_string_member(bp0, "condition"));
+    g_object_unref(parser);
+
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+/*
+ * Neznámé jméno v poli fields[] = invalid_params (= "neznámý type" cesta z
+ * akceptačního kritéria; remap by takový vstup neměl propustit do backendu).
+ */
+void test_bp_create_unknown_field_invalid_params(void) {
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"req_id\":22,\"cmd\":\"bp_create_with_init\","
+        "\"data\":{\"fields\":[\"no_such_field\"],\"addr\":4096}}");
+    char *resp = NULL;
+
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    /* Backend nesmí být vůbec osloven. */
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.bp_create_calls);
+
+    JsonParser *parser = NULL;
+    JsonObject *obj = _parse_response_object(resp, &parser);
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(obj, "success"));
+    g_object_unref(parser);
+
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+/*
+ * Leak smoke: bp_clear nad BP s condition výrazem. Před F015b _handle_bp_clear
+ * uvolnil jen result, NE bp[i].condition (= leak heap stringu per BP). Stub
+ * nyní condition g_strdup()-uje; tento test ji protočí přes bp_clear a ověří
+ * korektní count. Sám leak detekuje až ASan/Valgrind, ale test pojistí, že
+ * cesta projde a sjednocený helper _free_bp_list_result se použije bez crashe.
+ */
+void test_bp_clear_with_condition_smoke(void) {
+    g_stub_state.fill_bp_list_count = 1;
+    g_stub_state.bp_list_fake_condition = "PC==0x2000";
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"req_id\":23,\"cmd\":\"bp_clear\"}");
+    char *resp = NULL;
+
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+
+    JsonParser *parser = NULL;
+    JsonObject *obj = _parse_response_object(resp, &parser);
+    JsonObject *data = json_object_get_object_member(obj, "data");
+    /* 1 BP nalezen -> 1 odstraněn (BP_REMOVE stub vrací success). */
+    TEST_ASSERT_EQUAL_INT(1, json_object_get_int_member(data, "count"));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(data, "cleared"));
+    g_object_unref(parser);
+
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+/* ====================================================================== */
+/* H2 - enum string hranice (type/zone/event_trigger/match_mode)          */
+/* ====================================================================== */
+
+/*
+ * Enum pole posílaná jako kanonický UPPER_SNAKE string se musí přeložit na
+ * správný enum index a dorazit do backendu. "MEM_W" -> 2 (BPT_TYPE_MEM_W),
+ * "RAM" -> 3 (BP_ZONE_RAM). Ověřuje sjednocenou string cestu z H2 (NE jen
+ * číselnou z F015a).
+ */
+void test_bp_create_type_zone_string_parsed(void) {
+    g_stub_state.bp_create_fake_id = 9;
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"req_id\":30,\"cmd\":\"bp_create_with_init\","
+        "\"data\":{\"fields\":[\"type\",\"zone\",\"addr\"],"
+        "\"type\":\"MEM_W\",\"zone\":\"RAM\",\"addr\":4096}}");
+    char *resp = NULL;
+
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(1, g_stub_state.bp_create_calls);
+    TEST_ASSERT_EQUAL_UINT8(2, g_stub_state.bp_create_last_type);  /* MEM_W */
+    TEST_ASSERT_EQUAL_UINT8(3, g_stub_state.bp_create_last_zone);  /* RAM */
+    TEST_ASSERT_EQUAL_UINT16(4096, g_stub_state.bp_create_last_addr);
+
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+/*
+ * event_trigger používá vlastní lowercase slovník (bp_event.c s_trigger_names:
+ * rising/falling/changed/low/high). "high" -> BP_EVT_TRIG_HIGH (4). Ověřuje, že
+ * H2 sjednocení sahá i na non-UPPER_SNAKE enum konvertor.
+ */
+void test_bp_create_event_trigger_string_parsed(void) {
+    g_stub_state.bp_create_fake_id = 11;
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"req_id\":31,\"cmd\":\"bp_create_with_init\","
+        "\"data\":{\"fields\":[\"type\",\"event_name\",\"event_trigger\"],"
+        "\"type\":\"HW_EVENT\",\"event_name\":\"vsync\","
+        "\"event_trigger\":\"high\"}}");
+    char *resp = NULL;
+
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(1, g_stub_state.bp_create_calls);
+    TEST_ASSERT_EQUAL_UINT8(6, g_stub_state.bp_create_last_type);  /* HW_EVENT */
+    TEST_ASSERT_EQUAL_UINT8(4, g_stub_state.bp_create_last_event_trigger); /* HIGH */
+
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+/*
+ * Číselný type zůstává akceptován (zpětná kompat) i po H2 sjednocení.
+ * type=4 (int) -> BPT_TYPE_IORQ_W. Bez tohoto by H2 rozbilo číselné klienty.
+ */
+void test_bp_create_type_number_still_works(void) {
+    g_stub_state.bp_create_fake_id = 12;
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"req_id\":32,\"cmd\":\"bp_create_with_init\","
+        "\"data\":{\"fields\":[\"type\",\"port\"],"
+        "\"type\":4,\"port\":206}}");
+    char *resp = NULL;
+
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(1, g_stub_state.bp_create_calls);
+    TEST_ASSERT_EQUAL_UINT8(4, g_stub_state.bp_create_last_type);  /* IORQ_W */
+
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+/*
+ * Neznámý enum string (zde lowercase "memw", který NENÍ v kanonickém slovníku)
+ * musí vrátit invalid_params, NE tichý fallback na PC_EXEC (0). Backend nesmí
+ * být osloven. Toto je hlavní akceptační kritérium H2.
+ */
+void test_bp_create_unknown_type_string_invalid_params(void) {
+    g_stub_state.bp_create_calls = 0;
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"req_id\":33,\"cmd\":\"bp_create_with_init\","
+        "\"data\":{\"fields\":[\"type\",\"addr\"],"
+        "\"type\":\"memw\",\"addr\":4096}}");
+    char *resp = NULL;
+
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.bp_create_calls);
+
+    JsonParser *parser = NULL;
+    JsonObject *obj = _parse_response_object(resp, &parser);
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(obj, "success"));
+    const char *err = json_object_get_string_member(obj, "error");
+    TEST_ASSERT_NOT_NULL(err);
+    /* Chybová zpráva pojmenuje konkrétní pole. */
+    TEST_ASSERT_NOT_NULL(strstr(err, "type"));
+    g_object_unref(parser);
+
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+/*
+ * bp_update sdílí stejnou fill cestu - neznámý zone string také musí vrátit
+ * invalid_params bez oslovení backendu.
+ */
+void test_bp_update_unknown_zone_string_invalid_params(void) {
+    g_stub_state.call_count = 0;
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"req_id\":34,\"cmd\":\"bp_update\","
+        "\"data\":{\"id\":1,\"fields\":[\"zone\"],\"zone\":\"NOSUCH\"}}");
+    char *resp = NULL;
+
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+
+    JsonParser *parser = NULL;
+    JsonObject *obj = _parse_response_object(resp, &parser);
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(obj, "success"));
+    const char *err = json_object_get_string_member(obj, "error");
+    TEST_ASSERT_NOT_NULL(err);
+    TEST_ASSERT_NOT_NULL(strstr(err, "zone"));
     g_object_unref(parser);
 
     free(resp);
@@ -2809,6 +3100,123 @@ void test_cdl_export_missing_path(void) {
 
 
 /* ====================================================================== */
+/* 0017 FÁZE 1 - Tracking lifecycle Tools tests                            */
+/* ====================================================================== */
+
+void test_trace_start_stop_reset_lifecycle(void) {
+    /* Sekvence start -> stop -> reset na kanálu cputrack. Každé volání
+     * inkrementuje příslušný counter ve stubu a předá správný channel. */
+    dispatch_stub_reset();
+
+    st_JSONL_MESSAGE *req1 = _make_request(
+        "{\"type\":\"request\",\"id\":1201,\"cmd\":\"trace_start\","
+        "\"data\":{\"channel\":\"cputrack\"}}");
+    char *resp1 = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK,
+                           mcp_dispatch_request(req1, &resp1));
+    TEST_ASSERT_EQUAL_INT(1, g_stub_state.trace_start_calls);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_TRACE_CHANNEL_CPUTRACK,
+                           g_stub_state.trace_last_channel);
+    TEST_ASSERT_TRUE(strstr(resp1, "\"started\":true") != NULL);
+    free(resp1);
+    jsonl_msg_free(req1);
+
+    st_JSONL_MESSAGE *req2 = _make_request(
+        "{\"type\":\"request\",\"id\":1202,\"cmd\":\"trace_stop\","
+        "\"data\":{\"channel\":\"cputrack\"}}");
+    char *resp2 = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK,
+                           mcp_dispatch_request(req2, &resp2));
+    TEST_ASSERT_EQUAL_INT(1, g_stub_state.trace_stop_calls);
+    TEST_ASSERT_TRUE(strstr(resp2, "\"stopped\":true") != NULL);
+    free(resp2);
+    jsonl_msg_free(req2);
+
+    st_JSONL_MESSAGE *req3 = _make_request(
+        "{\"type\":\"request\",\"id\":1203,\"cmd\":\"trace_reset\","
+        "\"data\":{\"channel\":\"cputrack\"}}");
+    char *resp3 = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK,
+                           mcp_dispatch_request(req3, &resp3));
+    TEST_ASSERT_EQUAL_INT(1, g_stub_state.trace_reset_calls);
+    TEST_ASSERT_TRUE(strstr(resp3, "\"reset\":true") != NULL);
+    free(resp3);
+    jsonl_msg_free(req3);
+}
+
+
+void test_trace_save_with_path(void) {
+    /* trace_save s path na kanálu iorqlog - stub zachytí channel + path. */
+    dispatch_stub_reset();
+    g_stub_state.trace_fake_result = 0;
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"id\":1204,\"cmd\":\"trace_save\","
+        "\"data\":{\"channel\":\"iorqlog\",\"path\":\"/tmp/seg1.bin\"}}");
+    char *resp = NULL;
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_TRACE_SAVE, g_stub_state.last_cmd);
+    TEST_ASSERT_EQUAL_INT(1, g_stub_state.trace_save_calls);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_TRACE_CHANNEL_IORQLOG,
+                           g_stub_state.trace_last_channel);
+    TEST_ASSERT_NOT_NULL(g_stub_state.trace_save_last_path);
+    TEST_ASSERT_EQUAL_STRING("/tmp/seg1.bin",
+                              g_stub_state.trace_save_last_path);
+    TEST_ASSERT_TRUE(strstr(resp, "\"saved\":true") != NULL);
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+void test_trace_save_without_path(void) {
+    /* trace_save bez path => OK, path v paramu NULL, odpověď path:null. */
+    dispatch_stub_reset();
+    g_stub_state.trace_fake_result = 0;
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"id\":1205,\"cmd\":\"trace_save\","
+        "\"data\":{\"channel\":\"hwlog\"}}");
+    char *resp = NULL;
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(1, g_stub_state.trace_save_calls);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_TRACE_CHANNEL_HWLOG,
+                           g_stub_state.trace_last_channel);
+    TEST_ASSERT_NULL(g_stub_state.trace_save_last_path);
+    TEST_ASSERT_TRUE(strstr(resp, "\"path\":null") != NULL);
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+void test_trace_missing_channel(void) {
+    /* trace_start bez channel => INVALID_PARAMS. */
+    dispatch_stub_reset();
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"id\":1206,\"cmd\":\"trace_start\","
+        "\"data\":{}}");
+    char *resp = NULL;
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+void test_trace_unknown_channel(void) {
+    /* trace_start s neznámým channel => INVALID_PARAMS. */
+    dispatch_stub_reset();
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"id\":1207,\"cmd\":\"trace_start\","
+        "\"data\":{\"channel\":\"bogus\"}}");
+    char *resp = NULL;
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+/* ====================================================================== */
 /* V1.A.7 - Profiler Tools tests                                            */
 /* ====================================================================== */
 
@@ -3407,6 +3815,57 @@ void test_input_send_key_lifecycle(void) {
     TEST_ASSERT_EQUAL_INT(7, g_stub_state.hid_last_bit);
     free(resp);
     jsonl_msg_free(req);
+}
+
+
+/**
+ * @brief Ověří, že send_key i send_keys signalizují landing caveat.
+ *
+ * Fix 0016: response NESMÍ hlásit holý success bez upozornění, že guest
+ * landing není garantovaný. Oba handlery proto vrací v data objektu
+ * `landing_verified: false`. Test ověří přítomnost a hodnotu flagu pro
+ * send_key (klávesa "A") i send_keys (text "RUN").
+ */
+void test_input_send_key_landing_caveat(void) {
+    dispatch_stub_reset();
+
+    /* send_key */
+    st_JSONL_MESSAGE *req1 = _make_request(
+        "{\"type\":\"request\",\"id\":2010,\"cmd\":\"input_send_key\","
+        "\"data\":{\"key\":\"A\",\"frames\":1}}");
+    char *resp1 = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK,
+                          mcp_dispatch_request(req1, &resp1));
+    TEST_ASSERT_NOT_NULL(resp1);
+    JsonParser *p1 = NULL;
+    JsonObject *o1 = _parse_response_object(resp1, &p1);
+    JsonObject *d1 = json_object_get_object_member(o1, "data");
+    TEST_ASSERT_NOT_NULL(d1);
+    TEST_ASSERT_TRUE(json_object_has_member(d1, "landing_verified"));
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(d1, "landing_verified"));
+    g_object_unref(p1);
+    free(resp1);
+    jsonl_msg_free(req1);
+
+    /* send_keys */
+    dispatch_stub_reset();
+    st_JSONL_MESSAGE *req2 = _make_request(
+        "{\"type\":\"request\",\"id\":2011,\"cmd\":\"input_send_keys\","
+        "\"data\":{\"text\":\"RUN\",\"encoding\":\"ascii\","
+        "\"frame_per_key\":1}}");
+    char *resp2 = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK,
+                          mcp_dispatch_request(req2, &resp2));
+    TEST_ASSERT_NOT_NULL(resp2);
+    JsonParser *p2 = NULL;
+    JsonObject *o2 = _parse_response_object(resp2, &p2);
+    JsonObject *d2 = json_object_get_object_member(o2, "data");
+    TEST_ASSERT_NOT_NULL(d2);
+    TEST_ASSERT_TRUE(json_object_has_member(d2, "landing_verified"));
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(d2, "landing_verified"));
+    g_object_unref(p2);
+    free(resp2);
+    jsonl_msg_free(req2);
 }
 
 
@@ -5349,6 +5808,17 @@ int main(void) {
     RUN_TEST(test_bp_add_returns_assigned_id);
     RUN_TEST(test_bp_list_returns_array);
 
+    /* F015b - typed BP create + bp_list serializace + leak smoke */
+    RUN_TEST(test_bp_create_typed_passes_type_to_dbgapi);
+    RUN_TEST(test_bp_list_serializes_typed_fields);
+    RUN_TEST(test_bp_create_unknown_field_invalid_params);
+    RUN_TEST(test_bp_create_type_zone_string_parsed);
+    RUN_TEST(test_bp_create_event_trigger_string_parsed);
+    RUN_TEST(test_bp_create_type_number_still_works);
+    RUN_TEST(test_bp_create_unknown_type_string_invalid_params);
+    RUN_TEST(test_bp_update_unknown_zone_string_invalid_params);
+    RUN_TEST(test_bp_clear_with_condition_smoke);
+
     /* Error paths */
     RUN_TEST(test_unknown_cmd_returns_error_response);
     RUN_TEST(test_mem_read_invalid_params_rejected);
@@ -5459,6 +5929,12 @@ int main(void) {
     RUN_TEST(test_cdl_start_stop_reset_lifecycle);
     RUN_TEST(test_cdl_export_happy);
     RUN_TEST(test_cdl_export_missing_path);
+    /* 0017 FÁZE 1 - Tracking lifecycle Tools */
+    RUN_TEST(test_trace_start_stop_reset_lifecycle);
+    RUN_TEST(test_trace_save_with_path);
+    RUN_TEST(test_trace_save_without_path);
+    RUN_TEST(test_trace_missing_channel);
+    RUN_TEST(test_trace_unknown_channel);
 
     /* V1.A.7 - Profiler Tools (7 testů) */
     RUN_TEST(test_profiler_start_stop_lifecycle);
@@ -5493,6 +5969,7 @@ int main(void) {
 
     /* V1.C.1 - HID Tools */
     RUN_TEST(test_input_send_key_lifecycle);
+    RUN_TEST(test_input_send_key_landing_caveat);
     RUN_TEST(test_input_send_key_unknown_rejected);
     RUN_TEST(test_input_send_keys_ascii_mapping);
     RUN_TEST(test_input_send_keys_key_names_parsing);

@@ -253,6 +253,42 @@ async def test_c_send_request_self_heals_desync() -> None:
         await server.wait_closed()
 
 
+async def test_d_class_a_tools_surface_error() -> None:
+    """Reprezentativní tooly dříve třídy (a) surfacují error, ne {}.
+
+    Regresní guard pro H1 (jednotná návratová konvence): po hromadné
+    záměně ``resp.get("data", {})`` -> ``_data_or_error(resp)`` nesmí
+    žádný tool na backend error (``success==false``, bez ``data``)
+    vrátit holé ``{}``. Testuje vzorek napříč rodinami (V0, CPU-details,
+    eventlog) přes monkeypatch ``_send_request`` na error response.
+    """
+    orig = m._send_request
+
+    async def _fake_send(cmd, data=None):
+        return {"req_id": 1, "success": False,
+                "error": f"backend error for cmd={cmd}"}
+
+    # Vzorek toolů bez transport-guardu (volají rovnou _send_request) a
+    # bez povinných argumentů. Pokrývá rodiny V0 / V1.E.2 / eventlog.
+    sample = [
+        ("emu_pause", m.emu_pause),
+        ("emu_get_registers", m.emu_get_registers),
+        ("emu_reset", m.emu_reset),
+        ("emu_eventlog_start", m.emu_eventlog_start),
+    ]
+    m._send_request = _fake_send
+    try:
+        for name, fn in sample:
+            out = await fn()
+            obj = json.loads(out)
+            assert "error" in obj, \
+                f"{name} nesurfacoval error, dostal jsem: {out!r}"
+            assert obj != {}, \
+                f"{name} vrátil holé {{}} na chybu backendu"
+    finally:
+        m._send_request = orig
+
+
 async def _amain() -> int:
     tests = [
         ("A: velký region_read nezasekne bridge",
@@ -261,6 +297,8 @@ async def _amain() -> int:
          test_b_error_response_is_surfaced),
         ("C: _send_request self-heal off-by-one desync",
          test_c_send_request_self_heals_desync),
+        ("D: tooly třídy (a) surfacují error (H1 konvence)",
+         test_d_class_a_tools_surface_error),
     ]
     failed = 0
     for name, fn in tests:

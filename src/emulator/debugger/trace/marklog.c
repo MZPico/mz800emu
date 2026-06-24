@@ -25,6 +25,7 @@
 #include "libs/cfgfile/cfgmodule.h"
 #include "emulator/cfgmain.h"
 #include "emulator/debugger/trace/tlog_common.h"
+#include "emulator/debugger/trace/reclife.h"
 #include "emulator/debugger/trace/eventlog.h"
 #include "emulator/mzarch/mzarch.h"
 
@@ -311,20 +312,21 @@ int marklog_is_truncated ( void )
 }
 
 
+/* Sdílený lifecycle deskriptor (reclife) - viz cputrack.c pro detaily vzoru. */
+static const st_RECLIFE_DESC s_marklog_reclife = {
+    .subsys_name = "marklog",
+    .mode_ptr    = (int *) &g_marklog_config.mode,
+    .active_ptr  = &g_marklog_active,
+    .fn_start    = marklog_start,
+    .fn_stop     = marklog_stop,
+    .fn_reset    = NULL,
+    .fn_save     = NULL,
+};
+
+
 void marklog_recompute_active ( int debugger_active )
 {
-    int new_active = 0;
-    switch ( g_marklog_config.mode ) {
-        case TLOG_MODE_OFF:         new_active = 0; break;
-        case TLOG_MODE_WITH_WINDOW: new_active = debugger_active; break;
-        case TLOG_MODE_ALWAYS:      new_active = 1; break;
-    }
-    if ( new_active && !g_marklog_active ) {
-        if ( marklog_start ( ) == 0 ) g_marklog_active = 1;
-    } else if ( !new_active && g_marklog_active ) {
-        marklog_stop ( );
-        g_marklog_active = 0;
-    }
+    reclife_recompute_active ( &s_marklog_reclife, debugger_active );
 }
 
 

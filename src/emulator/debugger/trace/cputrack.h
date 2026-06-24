@@ -54,6 +54,19 @@ extern "C"
  *
  * Drží uživatelské nastavení (mode, dir, name, limity). Ekvivalent
  * mhmap polí v g_debugger.
+ *
+ * @section range_scope Range-scoped tracking (PC filtr)
+ *
+ * @c pc_range_lo / @c pc_range_hi omezují záznam jen na instrukce, jejichž
+ * adresa (PC před vykonáním) leží v intervalu @c [lo, hi] (oboustranně
+ * uzavřeném). Výchozí hodnota @c lo=0, @c hi=0xFFFF pokrývá celý adresový
+ * prostor, tj. žádný filtr. Vyhodnocení probíhá v hot-path hooku
+ * (@ref mzarch_main_emulator_run) jako dvě porovnání na registrech UVNITŘ
+ * již existujícího @c TEST_TRACE_CPUTRACK_ACTIVE bloku - při neaktivním
+ * subsystému se neprovede žádné porovnání navíc (zero impact v OFF stavu).
+ *
+ * Typické použití: TPA-only metodika MZ DOS (@c lo=0x0100, @c hi=0xDBFF) -
+ * záznam jen kódu transient-program-area, bez balastu z BDOS/BIOS.
  */
 typedef struct st_CPUTRACK_CONFIG
 {
@@ -63,6 +76,8 @@ typedef struct st_CPUTRACK_CONFIG
     unsigned chunk_mb;            /**< Per-chunk velikost v MB (0 = default) */
     unsigned max_total_mb;        /**< Max total v MB (0 = unlimited) */
     unsigned save_on_exit;        /**< Při ukončení emu vyflushnout zbytek (default 1) */
+    uint16_t pc_range_lo;         /**< Dolní mez PC pro range-scope filtr (vč.) */
+    uint16_t pc_range_hi;         /**< Horní mez PC pro range-scope filtr (vč.) */
 } st_CPUTRACK_CONFIG;
 
 extern st_CPUTRACK_CONFIG g_cputrack_config;
@@ -82,6 +97,23 @@ void cputrack_init ( void );
  * `--cputrack-dir`, `--cputrack-name` atd.
  */
 void cputrack_apply_cli_options ( void );
+
+/**
+ * @brief Živá aplikace range-scope mezí @c pc_range_lo / @c pc_range_hi.
+ *
+ * Přečte aktuální hodnoty elementů @c TRACE_CPUTRACK/pc_range_lo a
+ * @c .../pc_range_hi z @c g_cfgmain (= to, co právě zapsal MCP
+ * @c settings_set přes @ref cfgelement_set_unsigned_value) a propíše je
+ * do @ref g_cputrack_config (ořez na uint16_t). Hot-path filtr v
+ * @ref cputrack_hot_path_hook čte přímo @c g_cputrack_config, takže nové
+ * meze se uplatní při dalším záznamu bez restartu emulátoru.
+ *
+ * @pre Volat z emulátorového vlákna (typicky z dbgapi SETTINGS_SET
+ *      handleru), aby zápis do @c g_cputrack_config byl thread-safe vůči
+ *      hot-path čtení.
+ * @note Pokud modul @c TRACE_CPUTRACK není zaregistrovaný, je no-op.
+ */
+void cputrack_apply_pc_range_live ( void );
 
 /**
  * @brief Test, zda je cputrack aktivně recordující.
@@ -140,6 +172,33 @@ void cputrack_on_instruction_complete ( uint16_t pc,
                                         uint32_t wait_extra_tstates );
 
 /**
+ * @brief Cold-path obal hot-path hooku (range-check + výpočet + emit).
+ *
+ * @section hot_path_compactness Důvod existence
+ *
+ * Hot per-instrukční smyčka @ref mzarch_main_emulator_run volá tuto funkci
+ * jen v aktivním stavu, uvnitř @c if(TEST_TRACE_CPUTRACK_ACTIVE). Veškerá
+ * práce range-scope filtru (porovnání @c pc_range_lo / @c pc_range_hi),
+ * odečet WAIT cyklů a volání @ref cputrack_on_instruction_complete je
+ * přesunuta SEM, do samostatné funkce s atributem @c noinline. Tím zůstane
+ * tělo hot smyčky kompaktní (menší code footprint -> stabilnější instrukční
+ * cache / code-layout) a přidaný range-scope kód žije v této "studené"
+ * funkci, do které se v OFF stavu (g_cputrack_active==0) vůbec nezavolá.
+ *
+ * Funkce NIKDY nesmí být inlinovaná do mzarch_main - to je celý smysl
+ * (jinak by se přidaná práce a zarovnání vrátily zpět do hot smyčky).
+ *
+ * @param pc                Adresa právě vykonané instrukce (PC před stepem).
+ * @param insn_tstates      Celkový počet T-states instrukce vč. WAIT.
+ * @param wait_extra_tstates Extra WAIT cykly (mimo standardní délku); 0 = žádný.
+ *
+ * @pre Volat jen když @c TEST_TRACE_CPUTRACK_ACTIVE (caller gatuje).
+ */
+void cputrack_hot_path_hook ( uint16_t pc,
+                              uint32_t insn_tstates,
+                              uint32_t wait_extra_tstates );
+
+/**
  * @brief Reset stavu collapse logiky (volat při emu reset).
  */
 void cputrack_reset_collapse_state ( void );
@@ -148,6 +207,30 @@ void cputrack_reset_collapse_state ( void );
  * @brief Force flush + finalize (volá se z debugger_exit pokud save_on_exit=1).
  */
 void cputrack_finalize ( void );
+
+/**
+ * @brief Uzavřít (uložit) aktuální recording segment, volitelně přesměrovat.
+ *
+ * Runtime analogie @c mhmap_export pro streamovaný tlog. Dosud bylo finalizace
+ * možné jen přes exit-gate (@c save_on_exit). Tato funkce umožní finalizovat
+ * segment za běhu přes MCP (@c DBGAPI_CMD_TRACE_SAVE).
+ *
+ * Chování:
+ *  - Pokud běží recording, uzavře aktuální segment (flush + close => zapíše
+ *    poslední částečný chunk a finalní meta.json).
+ *  - Pokud je @p path zadané, přesměruje @c dir/name z @p path (split na
+ *    dirname + basename, přípona se nechá jako prefix) PŘED restartem.
+ *  - Pokud recording běžel, otevře čerstvý segment (pokračování záznamu);
+ *    při zadaném @p path už do nové lokace.
+ *
+ * Pozn.: již zapsané chunk soubory se NEpřejmenovávají - tlog writer váže
+ * jména v okamžiku @ref cputrack_start. @p path tedy směruje NÁSLEDNÝ segment.
+ *
+ * @param path  Cílová cesta dalšího segmentu, nebo NULL pro ponechání
+ *              stávajícího @c dir/name (= jen flush+restart na stejné místo).
+ * @return 0 OK, -1 chyba (např. restart writeru selhal).
+ */
+int cputrack_save_segment ( const char *path );
 
 /**
  * @brief Test, zda byl recording zastaven kvůli max_total_mb limitu.

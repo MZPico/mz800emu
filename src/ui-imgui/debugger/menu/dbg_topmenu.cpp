@@ -67,6 +67,8 @@
 #include "i18n.h"
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
+#include <cstdint>
 #include "emulator/emulator.h"
 #include "mzarch/mzarch_platform_functions.h"
 #include "debugger/debugger.h"
@@ -329,8 +331,57 @@ static void dbg_menu_settings(void)
                 ImGui::EndMenu(); \
             }
 
-            TRACE_SUBMENU("CPU Track", g_cputrack_config,
-                          mzarch_platform_fn_debugger_state_changed(TEST_DEBUGGER_ACTIVE));
+            /* CPU Track: stejné mode/save jako ostatní (přes macro) + navíc
+             * Z17b range-scope filtr (dvě hex pole pro PC lo/hi). */
+            if (ImGui::BeginMenu(_L("CPU Track")))
+            {
+                bool m_off  = (g_cputrack_config.mode == TLOG_MODE_OFF);
+                bool m_win  = (g_cputrack_config.mode == TLOG_MODE_WITH_WINDOW);
+                bool m_alw  = (g_cputrack_config.mode == TLOG_MODE_ALWAYS);
+                if (ImGui::MenuItem(_L("Off"), NULL, m_off)) {
+                    g_cputrack_config.mode = TLOG_MODE_OFF;
+                    mzarch_platform_fn_debugger_state_changed(TEST_DEBUGGER_ACTIVE); }
+                if (ImGui::MenuItem(_L("Only With Debug Window"), NULL, m_win)) {
+                    g_cputrack_config.mode = TLOG_MODE_WITH_WINDOW;
+                    mzarch_platform_fn_debugger_state_changed(TEST_DEBUGGER_ACTIVE); }
+                if (ImGui::MenuItem(_L("Always"), NULL, m_alw)) {
+                    g_cputrack_config.mode = TLOG_MODE_ALWAYS;
+                    mzarch_platform_fn_debugger_state_changed(TEST_DEBUGGER_ACTIVE); }
+                ImGui::Separator();
+                bool save = (g_cputrack_config.save_on_exit != 0);
+                if (ImGui::MenuItem(_L("Save on Exit"), NULL, save)) {
+                    g_cputrack_config.save_on_exit = save ? 0 : 1; }
+
+                ImGui::Separator();
+                /* Range-scope PC filtr. Buffery se inicializují z config při
+                 * každém vykreslení (menu je krátkodobé, držet syncované je
+                 * levné a vyhne se "stale buffer" stavu). Hex parsing přes
+                 * strtoul, hodnoty ořezané na 16 bitů. */
+                ImGui::TextDisabled("%s", _("PC range filter [lo,hi]:"));
+                char lo_buf[8];
+                char hi_buf[8];
+                snprintf(lo_buf, sizeof(lo_buf), "%04X", (unsigned)g_cputrack_config.pc_range_lo);
+                snprintf(hi_buf, sizeof(hi_buf), "%04X", (unsigned)g_cputrack_config.pc_range_hi);
+                ImGui::SetNextItemWidth(64.0f);
+                if (ImGui::InputText(_L("lo (hex)"), lo_buf, sizeof(lo_buf),
+                                     ImGuiInputTextFlags_CharsHexadecimal |
+                                     ImGuiInputTextFlags_CharsUppercase |
+                                     ImGuiInputTextFlags_EnterReturnsTrue)) {
+                    g_cputrack_config.pc_range_lo = (uint16_t)(strtoul(lo_buf, NULL, 16) & 0xFFFF);
+                }
+                ImGui::SetNextItemWidth(64.0f);
+                if (ImGui::InputText(_L("hi (hex)"), hi_buf, sizeof(hi_buf),
+                                     ImGuiInputTextFlags_CharsHexadecimal |
+                                     ImGuiInputTextFlags_CharsUppercase |
+                                     ImGuiInputTextFlags_EnterReturnsTrue)) {
+                    g_cputrack_config.pc_range_hi = (uint16_t)(strtoul(hi_buf, NULL, 16) & 0xFFFF);
+                }
+                if (ImGui::MenuItem(_L("Reset range (whole space)"))) {
+                    g_cputrack_config.pc_range_lo = 0x0000;
+                    g_cputrack_config.pc_range_hi = 0xFFFF;
+                }
+                ImGui::EndMenu();
+            }
             TRACE_SUBMENU("IORQ Log", g_iorqlog_config,
                           mzarch_platform_fn_debugger_state_changed(TEST_DEBUGGER_ACTIVE));
             TRACE_SUBMENU("Interrupt Log", g_intlog_config,

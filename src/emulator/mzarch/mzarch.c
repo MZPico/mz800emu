@@ -935,6 +935,13 @@ static void mzarch_main_reset(void)
     /* PC se změnilo na 0000 - zruš případný BP skip vázaný na předchozí PC,
      * aby se BP na nové adrese (typicky 0000) správně aktivoval. */
     g_debugger.skip_bp_at_pc = -1;
+    /* Frame-bounded run (mcp-debug-control request 0021): pokud reset přijde
+     * za běhu frame-bounded runu, zrušíme aktivní flag. Cílová hodnota
+     * run_frames_target byla vázána na předreset screens; po resetu (gdg_reset
+     * vynuluje screens) by porovnání mohlo dát nedeterministický výsledek.
+     * Bezpečné je run-bounded operaci zrušit - klient dostane zastavený stav
+     * přes fallback v dispatch vrstvě. */
+    g_debugger.run_frames_active = 0;
     /* D.3 - HW event BP hook (reset). */
     if ( g_bp_event_active[ BP_EVENT_CPU_RESET ] ) {
         bp_event_fire ( BP_EVENT_CPU_RESET, 0 );
@@ -1112,20 +1119,15 @@ void mzarch_main(void)
          * paths (jediná místa volající z80_add_wait_states v hot loop).
          * V T-states units (z80 ISA), saturated na 0xFFFFFFFF. */
         if ( TEST_TRACE_CPUTRACK_ACTIVE ) {
-            /* instruction_tstates po z80_step zahrnuje i pridane WAIT
-             * cycles. Pro cputrack chceme "standard length" (= ISA-derived,
-             * bez WAIT). insn_tstates = instruction_tstates - wait_tstates.
-             * Saturujeme do uint8_t (Z80 ISA max ~23 T-states). */
-            unsigned standard_t = (unsigned) g_mzarch_main.instruction_tstates;
-            if ( standard_t >= g_mzarch_main.instruction_wait_tstates ) {
-                standard_t -= g_mzarch_main.instruction_wait_tstates;
-            } else {
-                standard_t = 0;
-            }
-            if ( standard_t > 0xFFu ) standard_t = 0xFFu;
-            cputrack_on_instruction_complete (
+            /* RPFIX: celá práce hooku (Z17b range-scope filtr, odečet WAIT,
+             * emit) je vynesena do NOINLINE cold helperu cputrack_hot_path_hook,
+             * aby tělo této hot smyčky zůstalo kompaktní (stabilnější
+             * code-layout / icache - viz cputrack.h @section hot_path_compactness).
+             * V OFF stavu (g_cputrack_active==0) se sem řízení vůbec nedostane
+             * = zero impact na hot path. */
+            cputrack_hot_path_hook (
                 (uint16_t) g_mzarch_main.instruction_addr,
-                (uint8_t) standard_t,
+                g_mzarch_main.instruction_tstates,
                 g_mzarch_main.instruction_wait_tstates );
         }
 
@@ -1197,6 +1199,28 @@ void mzarch_main(void)
 
             /* Ceka na nas nejaky interrupt? */
             mzarch_main_process_interrupt();
+
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+            /* Frame-bounded run (emu_run blokující path, mcp-debug-control
+             * request 0021): emu se pausne DETERMINISTICKY přesně na cílové
+             * frame hranici (ne async PAUSE z dispatch vlákna - to zastavovalo
+             * na wall-clock-nedeterministickém cycle bodě). mzarch_main_process_events()
+             * právě inkrementoval g_gdg.total_elapsed.screens (přes
+             * gdg_on_screen_done_event makro), takže porovnání vidí aktuální
+             * hodnotu. Po emulator_pause(true) stávající EMULATOR_TEST_PAUSED
+             * blok níže okamžitě vstoupí do pause loopu.
+             *
+             * PERF: check je UVNITŘ per-frame bloku (~50 Hz), NE v
+             * per-instruction hot path -> zanedbatelný dopad. V default stavu
+             * (run_frames_active == 0) branch predictor naučí "vždy false". */
+            if ( g_debugger.run_frames_active
+                 && g_gdg.total_elapsed.screens >= g_debugger.run_frames_target )
+            {
+                g_debugger.run_frames_active = 0;
+                g_emulator.pause_reason = EMU_PAUSE_REASON_FRAMES;
+                emulator_pause ( true );
+            };
+#endif
 
             /* jsme v pauze? */
             if (EMULATOR_TEST_PAUSED)

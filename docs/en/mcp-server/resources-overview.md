@@ -95,11 +95,11 @@ transport call).
 | `emulator://docs/memory_layout` | Per-platform Z80 memory maps, banking 0xE0..0xE6, ROM entry points, IRQ vectors |
 | `emulator://docs/bp_dsl` | Breakpoint condition expression syntax (registers, mem[], port[], operators, built-ins, $vars) |
 | `emulator://docs/smart_vars` | `$name` user variables - action DSL, persistence, lifecycle |
-| `emulator://docs/action_dsl` | BP Action DSL grammar - 11 commands (`log`, `set <reg>`, `poke`, `mark`, `$var` writes, `if/then/else`, `enable`/`disable`, `clear_vars`), `log` format specs, stop vs continue semantics |
+| `emulator://docs/action_dsl` | BP Action DSL grammar - 11 commands (`log`, `set <reg>`, `poke`, `mark`, `$var` writes, `if/then/else`, `enable`/`disable`, `clear_vars`) + forwarding commands (`cdl_*`/`trace_*`/`snapshot`), `log` format specs, stop vs continue semantics |
 | `emulator://docs/watch_dsl` | Watch expression syntax (`address` / `expr_scalar` / `expr_deref` + type tags) |
 | `emulator://docs/eventlog_mask` | EventLog 64-bit category mask - bit assignments + recipes |
 | `emulator://docs/sharp_display_code` | Sharp MZ ASCII vs display code vs std ASCII (decoding `video/text_dump` + `mzascii` watch) |
-| `emulator://docs/mz800_keyboard` | MZ-800 keyboard - layout, matrix, modifiers, character layers, key names for `emu_send_keys`, special-character recipes (MZ-700/1500 as a diff) |
+| `emulator://docs/mz800_keyboard` | MZ-800 keyboard - layout, matrix, modifiers, character layers, key names for `emu_input_send_keys`, special-character recipes (MZ-700/1500 as a diff) |
 | `emulator://docs/cmt_workflow` | CMT workflow - real tape vs cmthack, transport, WAV recording, speed ratios, SIMPLE_TAPE multi-block seek + per-block speed |
 
 AI clients should read `emulator://docs/index` first - it shows what

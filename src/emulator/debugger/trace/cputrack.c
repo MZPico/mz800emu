@@ -30,6 +30,7 @@
 #include "emulator/mzarch/mzarch_config.h"
 #include "emulator/debugger/debugger.h"
 #include "emulator/debugger/trace/tlog_common.h"
+#include "emulator/debugger/trace/reclife.h"
 #include "hw-generic/memory/memory.h"
 #include "hw-generic/memory/memext.h"
 
@@ -42,6 +43,13 @@
 /* Globální konfigurace + stav */
 st_CPUTRACK_CONFIG g_cputrack_config;
 int g_cputrack_active = 0;
+
+/* INI mezičlánky pro range-scope filtr. cfgfile CFGENTYPE_UNSIGNED handler
+ * zapisuje sizeof(unsigned) (= 4 B, cfgelement.c:856/908), proto nelze
+ * navázat přímo na uint16_t pole g_cputrack_config.pc_range_{lo,hi} (přepis
+ * sousedních bytů). Načteme do unsigned a po propagate ořízneme na uint16_t. */
+static unsigned s_ini_pc_range_lo = 0x0000;
+static unsigned s_ini_pc_range_hi = 0xFFFF;
 
 /* Writer + collapse stav (private) */
 static st_TLOG_WRITER s_writer;
@@ -136,6 +144,49 @@ void cputrack_reset_collapse_state ( void )
 }
 
 
+/**
+ * @brief Cold-path obal hot-path hooku - viz @ref cputrack_hot_path_hook.
+ *
+ * Atribut @c noinline drží tělo @ref mzarch_main_emulator_run kompaktní:
+ * range-scope filtr (@c pc_range_lo / @c pc_range_hi), odečet WAIT cyklů
+ * a volání @ref cputrack_on_instruction_complete žijí zde, mimo hot smyčku.
+ * V OFF stavu (g_cputrack_active==0) se sem nikdy nezavolá.
+ *
+ * Logika je bit-identická s původním in-line kódem hot smyčky (Z17b), jen
+ * fyzicky přesunutá - žádná změna chování (Gate A: framebuffer/trace beze
+ * změny).
+ */
+__attribute__((noinline))
+void cputrack_hot_path_hook ( uint16_t pc,
+                              uint32_t insn_tstates,
+                              uint32_t wait_extra_tstates )
+{
+    /* Z17b range-scoped tracking: nahrávej jen instrukce, jejichž PC leží
+     * v [pc_range_lo, pc_range_hi] (oboustranně uzavřeno). Default lo=0/
+     * hi=0xFFFF pokrývá celý prostor (= bez filtru). */
+    if ( pc < g_cputrack_config.pc_range_lo ||
+         pc > g_cputrack_config.pc_range_hi ) {
+        return;
+    }
+
+    /* insn_tstates po z80_step zahrnuje i pridane WAIT cycles. Pro cputrack
+     * chceme "standard length" (= ISA-derived, bez WAIT). standard_t =
+     * insn_tstates - wait_extra_tstates. Saturujeme do uint8_t (Z80 ISA max
+     * ~23 T-states). */
+    unsigned standard_t = (unsigned) insn_tstates;
+    if ( standard_t >= wait_extra_tstates ) {
+        standard_t -= wait_extra_tstates;
+    } else {
+        standard_t = 0;
+    }
+    if ( standard_t > 0xFFu ) standard_t = 0xFFu;
+
+    cputrack_on_instruction_complete ( pc,
+                                       (uint8_t) standard_t,
+                                       wait_extra_tstates );
+}
+
+
 void cputrack_on_instruction_complete ( uint16_t pc,
                                         uint8_t insn_tstates,
                                         uint32_t wait_extra_tstates )
@@ -210,6 +261,11 @@ static int write_bin_file ( const char *dir, const char *basename,
     if ( rc != 0 ) {
         fprintf ( stderr, "[trace-suite] cputrack: short write to '%s' (%zu/%zu)\n",
                   path, wrote, n );
+    } else {
+        /* 0019 v3: initial-state dump (RAM/VRAM/EXVRAM/memext) reálně zapsán
+         * -> kumulativní disk čítač (byte backstop). Per fire ~640 KB, takže
+         * undercount byl jen kvůli g_stat na index souboru (viz V19). */
+        tlog_common_disk_bytes_add ( (uint64_t) wrote );
     }
     g_free ( path );
     return rc;
@@ -442,27 +498,71 @@ int cputrack_is_truncated ( void )
 }
 
 
+int cputrack_save_segment ( const char *path )
+{
+    /* Analogie mhmap_export, ale pro streamovaný tlog: chunk soubory se
+     * zapisují průběžně do g_cputrack_config.dir/name. "Save" tedy znamená
+     * uzavřít (flush+close) aktuální segment, čímž se finalizuje meta.json a
+     * poslední částečný chunk na disku.
+     *
+     * Pokud je @p path zadané, přesměruje se dir+name z path PŘED restartem,
+     * takže NÁSLEDNÝ segment streamuje do požadované lokace. Už zapsané chunk
+     * soubory tím přejmenovány NEjsou - tlog writer váže jména při open. */
+    int was_active = ( g_cputrack_active != 0 );
+
+    /* Prázdná cesta = "force save now": flush rozdělaného segmentu na disk
+     * (pending chunk + meta.json) BEZ uzavření/reopenu - segment pokračuje do
+     * TÉHOŽ manifestu. Dřív se segment uzavřel a hned otevřel nový na stejném
+     * jméně, který přepsal meta.json (chunks=[]) i initial_*.bin předchozího
+     * segmentu; pokud pak nepřitekla žádná další data (hned trace_stop),
+     * zůstala právě nahraná data osiřelá (mzdos 0022). */
+    if ( !( path && path[ 0 ] ) ) {
+        if ( s_writer_open ) {
+            uint64_t now_px = tlog_common_get_pxclk_total ( );
+            uint64_t now_cpu = tlog_common_get_cpuclk_total ( );
+            uint32_t now_sc = tlog_common_get_screens_total ( );
+            tlog_writer_flush_chunk ( &s_writer, now_px, now_cpu, now_sc );
+        }
+        return 0;
+    }
+
+    /* Neprázdná cesta = přesměrování výstupu na NOVÝ segment: uzavřít aktuální
+     * (finalizuje meta), přesměrovat dir+name, otevřít čerstvý segment. Už
+     * zapsané chunk soubory tím přejmenovány NEjsou - tlog writer váže jména
+     * při open. */
+    if ( s_writer_open ) {
+        cputrack_stop ( );
+    }
+    reclife_redirect_path ( &g_cputrack_config.dir, &g_cputrack_config.name, path );
+    if ( was_active ) {
+        return cputrack_start ( );
+    }
+    return 0;
+}
+
+
 /* ===========================================================================
  *  Mode logic + active recompute
  * =========================================================================== */
 
+/* Sdílený lifecycle deskriptor (reclife). mode je první pole configu, tedy
+ * &g_cputrack_config.mode == (int*)&g_cputrack_config; en_TLOG_MODE je
+ * int-kompatibilní s en_RECLIFE_MODE (hodnoty 0/1/2). fn_reset = reset
+ * collapse stavu, fn_save = uzavření/přesměrování segmentu. */
+static const st_RECLIFE_DESC s_cputrack_reclife = {
+    .subsys_name = "cputrack",
+    .mode_ptr    = (int *) &g_cputrack_config.mode,
+    .active_ptr  = &g_cputrack_active,
+    .fn_start    = cputrack_start,
+    .fn_stop     = cputrack_stop,
+    .fn_reset    = cputrack_reset_collapse_state,
+    .fn_save     = cputrack_save_segment,
+};
+
+
 void cputrack_recompute_active ( int debugger_active )
 {
-    int new_active = 0;
-    switch ( g_cputrack_config.mode ) {
-        case TLOG_MODE_OFF:         new_active = 0; break;
-        case TLOG_MODE_WITH_WINDOW: new_active = debugger_active; break;
-        case TLOG_MODE_ALWAYS:      new_active = 1; break;
-    }
-
-    if ( new_active && !g_cputrack_active ) {
-        if ( cputrack_start ( ) == 0 ) {
-            g_cputrack_active = 1;
-        }
-    } else if ( !new_active && g_cputrack_active ) {
-        cputrack_stop ( );
-        g_cputrack_active = 0;
-    }
+    reclife_recompute_active ( &s_cputrack_reclife, debugger_active );
 }
 
 
@@ -477,6 +577,9 @@ void cputrack_init ( void )
     g_cputrack_config.chunk_mb = TLOG_DEFAULT_CHUNK_MB;
     g_cputrack_config.max_total_mb = TLOG_DEFAULT_MAX_TOTAL_MB;
     g_cputrack_config.save_on_exit = 1;
+    /* Range-scope filtr: výchozí celý adresový prostor (= bez filtru). */
+    g_cputrack_config.pc_range_lo = 0x0000;
+    g_cputrack_config.pc_range_hi = 0xFFFF;
 
     CFGMOD *cmod = cfgroot_register_new_module ( g_cfgmain, "TRACE_CPUTRACK" );
     CFGELM *elm;
@@ -503,12 +606,41 @@ void cputrack_init ( void )
     elm = cfgmodule_register_new_element ( cmod, "save_on_exit", CFGENTYPE_BOOL, 1 );
     cfgelement_set_handlers ( elm, (void*) &g_cputrack_config.save_on_exit, (void*) &g_cputrack_config.save_on_exit );
 
+    /* Range-scope filtr - viz s_ini_pc_range_* (4 B mezičlánky, ořez po propagate).
+     * Rozsah 0..0xFFFF, default lo=0 / hi=0xFFFF = celý adresový prostor (bez filtru). */
+    elm = cfgmodule_register_new_element ( cmod, "pc_range_lo", CFGENTYPE_UNSIGNED, 0x0000, 0, 0xFFFF );
+    cfgelement_set_handlers ( elm, (void*) &s_ini_pc_range_lo, (void*) &s_ini_pc_range_lo );
+
+    elm = cfgmodule_register_new_element ( cmod, "pc_range_hi", CFGENTYPE_UNSIGNED, 0xFFFF, 0, 0xFFFF );
+    cfgelement_set_handlers ( elm, (void*) &s_ini_pc_range_hi, (void*) &s_ini_pc_range_hi );
+
     /* Načíst hodnoty z .ini (pokud sekce existuje) a propagovat do g_cputrack_config.
      * Bez tohoto kroku zůstanou pole NULL (zejm. dir/name) i když cfgmodule_register
      * deklaruje default values - ty se aplikují až přes propagate. CLI override pak
      * běží nad propagovanými hodnotami v cputrack_apply_cli_options(). */
     cfgmodule_parse ( cmod );
     cfgmodule_propagate ( cmod );
+
+    /* Ořez 4 B INI mezičlánků do uint16_t config polí. */
+    g_cputrack_config.pc_range_lo = (uint16_t) ( s_ini_pc_range_lo & 0xFFFF );
+    g_cputrack_config.pc_range_hi = (uint16_t) ( s_ini_pc_range_hi & 0xFFFF );
+}
+
+
+void cputrack_apply_pc_range_live ( void )
+{
+    CFGMOD *cmod = cfgroot_get_module_by_name ( g_cfgmain, (char *) "TRACE_CPUTRACK" );
+    if ( !cmod ) return;
+
+    /* Aktuální hodnota elementu = to, co právě zapsal settings_set
+     * (cfgelement_set_unsigned_value -> CFGELVAR_VALUE). Bound mezičlánky
+     * s_ini_pc_range_* ani g_cputrack_config se přes settings_set samy
+     * neaktualizují, proto čteme přímo z elementu a ořízneme na uint16_t. */
+    unsigned lo = cfgmodule_get_element_unsigned_value_by_name ( cmod, (char *) "pc_range_lo" );
+    unsigned hi = cfgmodule_get_element_unsigned_value_by_name ( cmod, (char *) "pc_range_hi" );
+
+    g_cputrack_config.pc_range_lo = (uint16_t) ( lo & 0xFFFF );
+    g_cputrack_config.pc_range_hi = (uint16_t) ( hi & 0xFFFF );
 }
 
 
@@ -549,6 +681,12 @@ void cputrack_apply_cli_options ( void )
         else if ( g_ascii_strcasecmp ( v, "off" ) == 0 ) g_cputrack_config.save_on_exit = 0;
         else fprintf ( stderr, "Invalid --cputrack-save-on-exit value: %s (expected on|off)\n", v );
     }
+    /* Range-scope filtr. Akceptuje dec i hex (0x prefix). Hodnota se ořízne
+     * na 16 bitů (adresový prostor Z80). */
+    v = sdlapp_option_value ( "--cputrack-pc-lo" );
+    if ( v ) g_cputrack_config.pc_range_lo = (uint16_t) ( g_ascii_strtoull ( v, NULL, 0 ) & 0xFFFF );
+    v = sdlapp_option_value ( "--cputrack-pc-hi" );
+    if ( v ) g_cputrack_config.pc_range_hi = (uint16_t) ( g_ascii_strtoull ( v, NULL, 0 ) & 0xFFFF );
 }
 
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */

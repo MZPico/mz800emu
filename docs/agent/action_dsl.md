@@ -34,7 +34,7 @@ on `$hits >= N`, or use Stop mode without a Custom script.
   inline error in the UI and at runtime behaves as empty action
   (= stop fallback).
 
-## 11 commands (cheat sheet)
+## Commands (cheat sheet)
 
 | Command | One-liner | Example |
 |---------|-----------|---------|
@@ -49,6 +49,12 @@ on `$hits >= N`, or use Stop mode without a Custom script.
 | `$name = <expr>` (+ compound ops) | Assign to user variable | `$hits += 1` |
 | `clear_vars` | Reset all `$name` values to 0 (entries preserved) | `clear_vars` |
 | `if <expr> then <stmt> [else <stmt>]` | Single-line conditional | `if $hits >= 5 then disable_self` |
+| `cdl_start` / `cdl_stop` / `cdl_reset` | CDL (Memory Heatmap) lifecycle | `cdl_start` |
+| `cdl_export "fmt"[, expr...]` | Export CDL data to file (templated name) | `cdl_export "dump-%d.cdl", $id` |
+| `trace_start <chan>` | Start a trace channel | `trace_start cputrack` |
+| `trace_stop <chan>` | Stop a trace channel | `trace_stop cputrack` |
+| `trace_save <chan>, "fmt"[, expr...]` | Save / redirect channel segment | `trace_save cputrack, "seg-%d.bin", $id` |
+| `snapshot "fmt"[, expr...]` | Save `.mzs` snapshot (works from a continuing BP too) | `snapshot "snap-%X.mzs", PC` |
 
 ## `log` format specifiers
 
@@ -231,6 +237,123 @@ $count += 1
 if $count >= 100 then set PC 0x8000
 if $count >= 100 then $count = 0
 ```
+
+## Forwarding commands (CDL / trace / snapshot)
+
+These commands automate the "one smart BP instead of dozens of manual
+MCP calls" workflow. When the BP fires they synchronously trigger the
+exact same effect as the matching MCP / dbgapi call - the trace
+commands share the very same core (`dbgapi_trace_lifecycle`) that the
+MCP `trace_*` tools use, CDL commands call `mhmap_*` directly, and
+`snapshot` calls `snapshot_save`. No drift between the DSL and MCP
+paths.
+
+### CDL (Memory Heatmap)
+
+| Command | Effect |
+|---------|--------|
+| `cdl_start` | `mhmap_set_mode(ALWAYS)` - start recording |
+| `cdl_stop` | `mhmap_set_mode(OFF)` - stop, data kept |
+| `cdl_reset` | `mhmap_reset()` - zero all counters, mode unchanged |
+| `cdl_export "fmt"[, args]` | `mhmap_export(rendered)` - write meta JSON + `*_bus.cdl`/`*_ram.cdl` files |
+
+### Trace suite
+
+`<chan>` is one of `cputrack`, `iorqlog`, `intlog`, `hwlog`
+(case-sensitive). Unknown channel = parse error.
+
+| Command | Effect |
+|---------|--------|
+| `trace_start <chan>` | Channel mode -> ALWAYS + callback recompute |
+| `trace_stop <chan>` | Channel mode -> OFF |
+| `trace_save <chan>, "fmt"[, args]` | Flush + redirect segment to the rendered path (NEXT segment) |
+
+`trace_save` semantics follow the dbgapi `TRACE_SAVE` handler: it
+closes the current segment and points the next one at the rendered
+filename. Already-written chunk files are not renamed (the tlog writer
+binds names at open time - see Z17a result).
+
+### Snapshot
+
+`snapshot "fmt"[, args]` writes a `.mzs` snapshot to the rendered path.
+It works from BOTH a stopping BP and a **continuing** BP (non-empty
+action = implicit continue). The action enforce callback runs on the
+emulator thread between instructions (a safe-point, CPU not advancing),
+so the `snapshot` command raises a dedicated `snapshot_safepoint` flag
+for the duration of the save and clears it afterwards. This flag is an
+independent channel from the `paused` guard (the save-time check in
+`snapshot_mgr.c` accepts either), kept separate so it does not disturb
+the headless frame counter the way a transient `paused` toggle did
+(0018/0019). This realises the "one BP"
+vision (0018): trace segment + `.mzs` snapshot from a single continuing
+BP, no client round-trip.
+
+### Filename templates and `$vars`
+
+The filename argument of `cdl_export`, `trace_save` and `snapshot` is
+a printf-style template using the **same renderer and specifiers as
+`log`** (`%X %x %d %u %b %c %s %%`, no width/padding) with the same
+comma-separated expression arguments. This makes numbered segments
+trivial:
+
+```
+$id += 1
+trace_save cputrack, "seg-%d.bin", $id
+```
+
+### Runtime errors
+
+Forwarding commands are tolerant: an I/O failure, an unknown channel
+or a snapshot on a running emulator prints a stderr warning
+(`[BP-ACTION] <cmd> '<path>' failed ...`) and is a no-op; the emulator
+keeps running.
+
+### Rate limit on heavy forward actions (0019)
+
+`snapshot` and `trace_save` are heavy disk I/O actions. To prevent a
+hot breakpoint from saturating the disk, each breakpoint enforces a
+per-BP rate limit before the action runs:
+
+- `fwd_min_interval_ms` - minimum delay between two fires (default `0`
+  = fall back to the global default, then the built-in `250` ms).
+  Firing earlier is silently skipped (soft guard).
+- `fwd_max_fires` - hard cap on successful fires per session (default
+  `0` = unlimited). Reaching the cap disables the breakpoint itself.
+
+Both override fields are settable from production via `emu_bp_update`
+/ `emu_bp_create_with_init` (`fields: ["fwd_min_interval_ms",
+"fwd_max_fires"]`) and persist into the `.bpt` file. The global
+default for breakpoints without an explicit override is the INI key
+`[BREAKPOINTS] fwd_default_min_interval_ms`. A cumulative byte
+backstop (`[BREAKPOINTS] fwd_byte_limit_mb`, default 256 MB) auto-pauses
+the emulator if heavy actions keep writing past the threshold.
+
+Control-plane robustness: a continuing BP running a heavy forward
+action no longer wedges the emulator. The drain happens at the BP
+action boundary, so `pause`, `stop` and breakpoint-clear always take
+effect even mid-action.
+
+## Vision 0017: one smart BP on `0x0005`
+
+The classic mzdos-team workflow used dozens of manual MCP calls to
+checkpoint state around the CP/M BDOS entry (`0x0005`). With the
+forwarding commands a single BP does it synchronously:
+
+BP on PC == `0x0005`, range-scoped (Z17b) to the area of interest,
+action:
+
+```
+$id += 1
+trace_save cputrack, "bdos-%d.bin", $id
+snapshot "bdos-%d.mzs", $id
+```
+
+Each hit closes the previous trace segment, opens a fresh one and
+(when the BP stops the emulator) writes a matching snapshot, all keyed
+by the incrementing `$id`. No round-trip to an external MCP client per
+event. Note that dynamic BP creation from an action (original 0017
+item 5) is intentionally **not** implemented - the range-scope feature
+(Z17b) covers that need.
 
 ## Common gotchas
 

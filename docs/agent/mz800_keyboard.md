@@ -210,7 +210,7 @@ cursor movement).
 
 ## 6. Key names for MCP key injection
 
-The agent sends keys via the MCP tools `input_send_key` / `input_press_key`.
+The agent sends keys via the MCP tools `emu_input_send_key` / `emu_input_press_key`.
 Supported symbolic names (case-insensitive):
 
 | Name(s) | Key |
@@ -232,6 +232,20 @@ Supported symbolic names (case-insensitive):
 
 Single ASCII characters can also be sent (`{"key":"A"}` or `{"key":"ASCII:@"}`);
 they are translated to the (column, bit, shift) matrix position automatically.
+
+Multi-key typing uses `emu_input_send_keys` (`encoding` = `ascii` or `key_names`).
+
+**Landing readback.** A successful response means the host-side
+press/hold/release injection into the virtual keyboard matrix happened. Whether
+the guest actually read the key is reported by the `landing_verified` field
+(and `keys_landed` for `emu_input_send_keys`): while the key is held the emulator
+watches the PPI Port B reads, and `landing_verified` is `true` only if the guest
+scanned the key's column during the hold (i.e. it read the injected key), `false`
+otherwise. A running program with the ROM unmapped may scan only a narrow subset
+of keyboard columns and not read keys aimed at other columns - that now shows as
+`landing_verified: false` (no more silent swallow). If a key does not land, hold
+it longer (`frames`), make sure the guest is at a prompt that scans the keyboard,
+or reset the emulator (which remaps the ROM monitor with a full keyboard scan).
 
 ---
 

@@ -58,6 +58,12 @@ mz_add_test(bp_match
     LABELS   "emu;debugger"
 )
 
+mz_add_test(bp_ratelimit
+    TYPE     EMU
+    SOURCES  test_bp_ratelimit.c
+    LABELS   "emu;debugger"
+)
+
 mz_add_test(bp_persist_bc
     TYPE     EMU
     SOURCES  test_bp_persist_bc.c

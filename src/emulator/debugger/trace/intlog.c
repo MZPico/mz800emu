@@ -23,6 +23,7 @@
 #include "libs/cfgfile/cfgmodule.h"
 #include "emulator/cfgmain.h"
 #include "emulator/debugger/trace/tlog_common.h"
+#include "emulator/debugger/trace/reclife.h"
 #include "emulator/debugger/trace/eventlog.h"
 #include "emulator/mzarch/mzarch.h"
 #if HAVE_PIOZ80
@@ -394,20 +395,51 @@ int intlog_is_truncated ( void )
 }
 
 
+int intlog_save_segment ( const char *path )
+{
+    /* Uzavřít aktuální segment + volitelně přesměrovat na path. Vzor sdílený
+     * s cputrack_save_segment - viz tam pro detaily semantiky. */
+    int was_active = ( g_intlog_active != 0 );
+
+    /* Prázdná cesta = "force save now": flush rozdělaného segmentu BEZ
+     * uzavření/reopenu (segment pokračuje do téhož manifestu). Viz
+     * cputrack_save_segment + mzdos 0022 pro detaily. */
+    if ( !( path && path[ 0 ] ) ) {
+        if ( s_writer_open ) {
+            uint64_t now_px = tlog_common_get_pxclk_total ( );
+            uint64_t now_cpu = tlog_common_get_cpuclk_total ( );
+            uint32_t now_sc = tlog_common_get_screens_total ( );
+            tlog_writer_flush_chunk ( &s_writer, now_px, now_cpu, now_sc );
+        }
+        return 0;
+    }
+
+    if ( s_writer_open ) {
+        intlog_stop ( );
+    }
+    reclife_redirect_path ( &g_intlog_config.dir, &g_intlog_config.name, path );
+    if ( was_active ) {
+        return intlog_start ( );
+    }
+    return 0;
+}
+
+
+/* Sdílený lifecycle deskriptor (reclife) - viz cputrack.c pro detaily vzoru. */
+static const st_RECLIFE_DESC s_intlog_reclife = {
+    .subsys_name = "intlog",
+    .mode_ptr    = (int *) &g_intlog_config.mode,
+    .active_ptr  = &g_intlog_active,
+    .fn_start    = intlog_start,
+    .fn_stop     = intlog_stop,
+    .fn_reset    = NULL,
+    .fn_save     = intlog_save_segment,
+};
+
+
 void intlog_recompute_active ( int debugger_active )
 {
-    int new_active = 0;
-    switch ( g_intlog_config.mode ) {
-        case TLOG_MODE_OFF:         new_active = 0; break;
-        case TLOG_MODE_WITH_WINDOW: new_active = debugger_active; break;
-        case TLOG_MODE_ALWAYS:      new_active = 1; break;
-    }
-    if ( new_active && !g_intlog_active ) {
-        if ( intlog_start ( ) == 0 ) g_intlog_active = 1;
-    } else if ( !new_active && g_intlog_active ) {
-        intlog_stop ( );
-        g_intlog_active = 0;
-    }
+    reclife_recompute_active ( &s_intlog_reclife, debugger_active );
 }
 
 

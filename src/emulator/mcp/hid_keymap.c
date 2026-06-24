@@ -300,7 +300,12 @@ void hid_keymap_release(int col, int bit, bool also_shift) {
 
 
 void hid_keymap_release_all(void) {
-    memset(&g_pio8255.vkbd_matrix, 0xff, sizeof(g_pio8255.vkbd_matrix));
+    /* Použij kanonický PIO8255 vkbd reset (makro PIO8255_VKBD_MATRIX_RESET
+     * -> pio8255_vkbd_matrix_reset, pio8255.c). Dřív zde byl duplikovaný
+     * memset(0xff); makro do té doby nemělo žádného runtime callera
+     * (jen definici). Sjednocení odstraní duplikaci a dá makru caller
+     * stejným vzorem jako PIO8255_KEYBOARD_MATRIX_RESET (fix 0016). */
+    PIO8255_VKBD_MATRIX_RESET();
 }
 
 

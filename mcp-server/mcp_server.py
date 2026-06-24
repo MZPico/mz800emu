@@ -884,7 +884,7 @@ async def emu_status() -> str:
         return json.dumps({"running": False, "connected": False})
 
     resp = await _send_request("get_state")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -897,7 +897,7 @@ async def emu_ping() -> str:
     mode) on first call.
     """
     resp = await _send_request("ping")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -908,7 +908,7 @@ async def emu_pause() -> str:
     when emulator is already paused).
     """
     resp = await _send_request("pause")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -923,7 +923,7 @@ async def emu_get_registers() -> str:
     ``emu_pause``.
     """
     resp = await _send_request("get_registers")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -951,7 +951,7 @@ async def emu_set_register(reg: str, value: int) -> str:
     if not (0 <= value <= 0xFFFF):
         return json.dumps({"error": "value must be in range 0..65535"})
     resp = await _send_request("set_register", {"reg": reg, "value": value})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -975,7 +975,7 @@ async def emu_dasm(addr: int, count: int = 16) -> str:
     if not (1 <= count <= 256):
         return json.dumps({"error": "count must be in range 1..256"})
     resp = await _send_request("dasm", {"addr": addr, "count": count})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -993,7 +993,7 @@ async def emu_history_get() -> str:
     ``addr`` to ``emu_dasm(addr, 1)`` to obtain it.
     """
     resp = await _send_request("history_get")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1013,7 +1013,7 @@ async def emu_mem_read(addr: int, length: int = 16) -> str:
         length: number of bytes to read (1-256). Defaults to 16.
     """
     resp = await _send_request("mem_read", {"addr": addr, "len": length})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1061,7 +1061,7 @@ async def emu_mem_write(addr: int, data_hex: str) -> str:
         "mem_write", {"addr": addr, "data_hex": data_hex})
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "mem_write failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1074,12 +1074,17 @@ async def emu_run(frames: int) -> str:
     post-run state snapshot. Use this for fine-grained stepping during
     debugging sessions.
 
-    Blocking semantics: the backend watches the per-frame counter
-    incremented by the emu thread; the tool returns only after N
-    frames have elapsed. Response includes ``actual_frames`` (= what
-    really happened, may be < requested if user paused or safety
-    timeout fired) and ``complete`` (= true if requested delta was
-    reached).
+    Blocking semantics: the emulator stops itself DETERMINISTICALLY
+    exactly at the N-th frame boundary (emu-side frame-bounded stop),
+    not via an asynchronous pause from the dispatch thread. Running the
+    same number of frames from the same state is therefore bit-reproducible
+    - important when tracing timing-sensitive programs.
+
+    Response includes ``actual_frames`` (frames actually run), ``stopped_by``
+    (why it stopped: ``"frames"`` = ran the full count, ``"breakpoint"`` = a
+    breakpoint paused it first, ``"manual"`` = a manual/UI pause, ``"timeout"``
+    = safety timeout, ``"unknown"`` = other) and ``complete`` (= true only when
+    the full requested count was reached, i.e. ``stopped_by == "frames"``).
 
     Args:
         frames: number of frames to run (1-1000).
@@ -1087,7 +1092,7 @@ async def emu_run(frames: int) -> str:
     if frames < 1 or frames > 1000:
         return json.dumps({"error": "frames must be in range 1..1000"})
     resp = await _send_request("run", {"frames": frames})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1099,7 +1104,20 @@ async def emu_reset() -> str:
     Does not unload any inserted media (cartridges, floppies, tapes).
     """
     resp = await _send_request("reset")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
+
+
+# Mapa short forem na číselný index en_BPT_TYPE (breakpoints.h:100-112).
+# Drží C jako jedinou pravdu: short forma se zde převede na enum index,
+# který _bp_fill_param_from_json čte přímo (dispatch.c:2451). Plné
+# UPPER_SNAKE názvy (PC_EXEC/MEM_R/...) jsou kanonické na C straně.
+_BP_ADD_TYPE_TO_ENUM: dict[str, int] = {
+    "exec": 0,   # BPT_TYPE_PC_EXEC
+    "memr": 1,   # BPT_TYPE_MEM_R
+    "memw": 2,   # BPT_TYPE_MEM_W
+    "ior": 3,    # BPT_TYPE_IORQ_R
+    "iow": 4,    # BPT_TYPE_IORQ_W
+}
 
 
 @mcp.tool()
@@ -1112,38 +1130,69 @@ async def emu_bp_add(addr: int, type: str = "exec",
     phases). Currently the tool only registers the BP; event forwarding
     is planned for a later phase.
 
+    A plain execution breakpoint (``type="exec"``, no condition) goes
+    through the lightweight ``bp_add`` path. A typed breakpoint
+    (``memr`` / ``memw`` / ``ior`` / ``iow``) or one with a ``condition``
+    is transparently created via ``bp_create_with_init`` (= the single
+    typed-breakpoint code path); ``emu_bp_create_with_init`` exposes the
+    full field set directly. Verify the resulting type with
+    ``emu_bp_list``.
+
     Args:
         addr: Z80 address (0-65535).
         type: breakpoint type, one of: ``exec`` (instruction fetch),
             ``memr`` (memory read), ``memw`` (memory write),
             ``ior`` (I/O read), ``iow`` (I/O write). Defaults to
-            ``exec``.
+            ``exec``. An unknown short form returns an error.
         condition: optional condition expression using the bp_expr DSL
             (e.g. ``A == 0x42``). Empty string means unconditional.
             See ``emulator://docs/bp_dsl`` for the full condition
             expression syntax (registers, memory deref, operators,
             built-in functions, ``$vars``). See
             ``emulator://docs/action_dsl`` for the action script
-            syntax used by the ``action`` field on update.
+            syntax used by the ``action`` field on
+            ``emu_bp_create_with_init`` / ``emu_bp_update``.
+
+    Returns:
+        JSON ``{"id": <int>, ...}`` on success, ``{"error": "..."}`` on
+        an unknown ``type`` short form.
     """
-    data: dict[str, Any] = {"addr": addr, "type": type}
+    if type not in _BP_ADD_TYPE_TO_ENUM:
+        return json.dumps({
+            "error": f"unknown breakpoint type '{type}' "
+                     f"(expected one of {sorted(_BP_ADD_TYPE_TO_ENUM)})"
+        })
+    # Exec BP bez condition = lehká bp_add cesta (addr-only).
+    if type == "exec" and not condition:
+        resp = await _send_request("bp_add", {"addr": addr})
+        return json.dumps(_data_or_error(resp))
+    # Typed nebo conditional BP = transparentní remap na
+    # bp_create_with_init (jediná typed cesta, sdílí fields-mask).
+    fields = ["type"]
+    values: dict[str, Any] = {"type": _BP_ADD_TYPE_TO_ENUM[type]}
     if condition:
-        data["condition"] = condition
-    resp = await _send_request("bp_add", data)
-    return json.dumps(resp.get("data", {}))
+        fields.append("expr")
+        values["expr"] = condition
+    return await emu_bp_create_with_init(addr=addr, fields=fields,
+                                         values=values)
 
 
 @mcp.tool()
 async def emu_bp_list() -> str:
     """List all active breakpoints.
 
-    Returns a JSON array of breakpoint records, each with fields:
-    ``id`` (int), ``addr`` (int), ``type`` (string), ``hits`` (int,
-    trigger counter), ``enabled`` (bool), ``condition`` (string,
-    empty if unconditional).
+    Returns a JSON object ``{"count": int, "breakpoints": [...]}`` where
+    each breakpoint record carries the fields:
+    ``id`` (int), ``addr`` (int), ``enabled`` (bool),
+    ``type`` (string, canonical UPPER_SNAKE: ``PC_EXEC`` / ``MEM_R`` /
+    ``MEM_W`` / ``IORQ_R`` / ``IORQ_W`` / ...),
+    ``zone`` (string, memory zone: ``CPU_VIEW`` / ``RAM`` / ...),
+    ``bank_id`` (int, bank index for ``MMEXT_BANK`` zone),
+    ``hits`` (int, trigger counter),
+    ``condition`` (string or null if unconditional).
     """
     resp = await _send_request("bp_list")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === V0.B.6 tools (7 missing V0 Tools) ================================
@@ -1168,7 +1217,7 @@ async def emu_bp_remove(id: int) -> str:
     resp = await _send_request("bp_remove", {"id": id})
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "bp_remove failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1183,7 +1232,7 @@ async def emu_bp_clear() -> str:
         the number of breakpoints that were removed.
     """
     resp = await _send_request("bp_clear")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1205,7 +1254,7 @@ async def emu_bp_enable(id: int, enabled: bool) -> str:
     resp = await _send_request("bp_enable", {"id": id, "enabled": enabled})
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "bp_enable failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1227,7 +1276,7 @@ async def emu_step_into() -> str:
     resp = await _send_request("step_into")
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "step_into failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1248,7 +1297,7 @@ async def emu_step_over() -> str:
     resp = await _send_request("step_over")
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "step_over failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1276,7 +1325,7 @@ async def emu_step_n(count: int) -> str:
     resp = await _send_request("step_n", {"count": count})
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "step_n failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1310,7 +1359,7 @@ async def emu_run_until_addr(addr: int, max_cycles: int = 10_000_000) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "run_until_addr failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === V1.A.1 - Snapshot Tools + cooperation hint ======================
@@ -1347,7 +1396,7 @@ async def emu_snapshot_save(path: str, description: str = "") -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "snapshot_save failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1373,7 +1422,7 @@ async def emu_snapshot_save_buffer(description: str = "") -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "snapshot_save_buffer failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1396,7 +1445,7 @@ async def emu_snapshot_load(path: str) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "snapshot_load failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1420,7 +1469,7 @@ async def emu_snapshot_load_buffer(bytes_b64: str) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "snapshot_load_buffer failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1465,7 +1514,7 @@ async def emu_cooperation_hint_set(mode: str, until: str = "") -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "cooperation_hint_set failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === Symbol management Tools (V1.A.2) ================================
@@ -1524,7 +1573,7 @@ async def emu_symbol_add(addr: int, name: str,
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "symbol_add failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1558,7 +1607,7 @@ async def emu_symbol_remove(name: str = "", addr: int = -1) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "symbol_remove failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1596,7 +1645,7 @@ async def emu_bookmark_add(input: str, comment: str = "") -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "bookmark_add failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1620,7 +1669,7 @@ async def emu_bookmark_remove(id: int) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "bookmark_remove failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === CMT-A - cassette tape transport + recording + cmthack toggle =====
@@ -1660,7 +1709,7 @@ async def emu_cmt_play() -> str:
     resp = await _send_request("cmt_transport", {"action": "play"})
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "cmt_play failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1680,7 +1729,7 @@ async def emu_cmt_play_paused() -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "cmt_play_paused failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1698,7 +1747,7 @@ async def emu_cmt_stop() -> str:
     resp = await _send_request("cmt_transport", {"action": "stop"})
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "cmt_stop failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1720,7 +1769,7 @@ async def emu_cmt_pause(paused: bool = True) -> str:
         "cmt_transport", {"action": "pause", "pause": bool(paused)})
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "cmt_pause failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1739,7 +1788,7 @@ async def emu_cmt_eject() -> str:
     resp = await _send_request("cmt_transport", {"action": "eject"})
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "cmt_eject failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1768,7 +1817,7 @@ async def emu_cmt_record(path: str) -> str:
     resp = await _send_request("cmt_record", {"path": path})
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "cmt_record failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1797,7 +1846,7 @@ async def emu_cmt_hack_set(enabled: bool) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "cmt_hack_set failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # CMT-B - tape speed ratio keys -> en_CMTSPEED integer values.
@@ -1874,7 +1923,7 @@ async def emu_cmt_set_speed(speed) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "cmt_set_speed failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1899,7 +1948,7 @@ async def emu_cmt_set_polarity(inverted: bool) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "cmt_set_polarity failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1925,7 +1974,7 @@ async def emu_cmt_set_cpu_boost(enabled: bool) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "cmt_set_cpu_boost failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1951,7 +2000,7 @@ async def emu_cmt_set_mzfsize_check(enabled: bool) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "cmt_set_mzfsize_check failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -1983,7 +2032,7 @@ async def emu_cmt_open(path: str, play_immediately: bool = False) -> str:
                      "play_immediately": bool(play_immediately)})
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "cmt_open failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2007,7 +2056,7 @@ async def emu_cmt_tape_seek(block_id: int) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "cmt_tape_seek failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2039,7 +2088,7 @@ async def emu_cmt_tape_set_block_speed(block_id: int, speed) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "cmt_tape_set_block_speed failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2069,7 +2118,7 @@ async def emu_symbol_lookup(query: str) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "symbol_lookup failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2097,7 +2146,7 @@ async def emu_symbol_list(prefix: str = "", limit: int = 100) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "symbol_list failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === V1.A.3 - step out + run_until_* Tools (4 nové) ==================
@@ -2137,7 +2186,7 @@ async def emu_step_out(max_cycles: int = 10_000_000) -> str:
     resp = await _send_request("step_out", {"max_cycles": max_cycles})
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "step_out failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2178,7 +2227,7 @@ async def emu_run_until_raster(line: int, col: int = -1,
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "run_until_raster failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2218,7 +2267,7 @@ async def emu_run_until_tstate(target_total_cycles: int,
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "run_until_tstate failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2261,7 +2310,7 @@ async def emu_run_until_event(kind: str,
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "run_until_event failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === V1.A.4 - EVENT subscribe + TRAP forwarding Tools ================
@@ -2314,7 +2363,7 @@ async def emu_event_subscribe(topics: list[str]) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "event_subscribe failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2337,7 +2386,7 @@ async def emu_event_unsubscribe(topics: list[str] = None) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "event_unsubscribe failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2370,7 +2419,7 @@ async def emu_event_poll(timeout_ms: int = 0,
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "event_poll failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2411,7 +2460,7 @@ async def emu_trap_respond(trap_id: int, action: str) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "trap_respond failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === V1.A.5 - Chip-level fault injection Tools (5 tools) ==============
@@ -2445,7 +2494,7 @@ async def emu_io_read(port: int) -> str:
     resp = await _send_request("io_read", {"port": port})
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "io_read failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2474,7 +2523,7 @@ async def emu_io_write(port: int, value: int) -> str:
     resp = await _send_request("io_write", {"port": port, "value": value})
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "io_write failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2506,7 +2555,7 @@ async def emu_irq_inject(source: str = "manual", vector: int = -1) -> str:
         "irq_inject", {"source": source, "vector": vector})
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "irq_inject failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2526,7 +2575,7 @@ async def emu_nmi_inject() -> str:
     resp = await _send_request("nmi_inject")
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "nmi_inject failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2560,7 +2609,7 @@ async def emu_mem_write_force(addr: int, data_hex: str) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "mem_write_force failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === V1.A.6 - Watch + Callstack + CDL Tools (9 nových) ===============
@@ -2624,7 +2673,7 @@ async def emu_watch_add(name: str = "", addr: int = 0,
     resp = await _send_request("watch_add", data)
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "watch_add failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2652,7 +2701,7 @@ async def emu_watch_remove(name: str = "", index: int = -1) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "watch_remove failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2667,7 +2716,7 @@ async def emu_watch_list() -> str:
     resp = await _send_request("watch_list")
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "watch_list failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2710,7 +2759,7 @@ async def emu_watch_eval(name: str = "", index: int = -1,
     resp = await _send_request("watch_eval", data)
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "watch_eval failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2747,7 +2796,7 @@ async def emu_callstack_get(max_depth: int = 64) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "callstack_get failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2770,7 +2819,7 @@ async def emu_cdl_start() -> str:
     resp = await _send_request("cdl_start")
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "cdl_start failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2788,7 +2837,7 @@ async def emu_cdl_stop() -> str:
     resp = await _send_request("cdl_stop")
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "cdl_stop failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2805,7 +2854,7 @@ async def emu_cdl_reset() -> str:
     resp = await _send_request("cdl_reset")
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "cdl_reset failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2835,7 +2884,150 @@ async def emu_cdl_export(path: str) -> str:
     resp = await _send_request("cdl_export", {"path": path})
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "cdl_export failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
+
+
+# === 0017 FÁZE 1 - Tracking lifecycle Tools (4) ======================
+#
+# Mirror of the CDL tools (emu_cdl_*) for the trace-suite recording
+# subsystems. Unlike CDL (a single Memory Heatmap), the trace suite has
+# four independent channels, so every tool takes a ``channel`` argument.
+#
+#   channel | subsystem | what it records
+#   --------|-----------|--------------------------------------------
+#   cputrack| cputrack  | one event per completed Z80 instruction
+#   iorqlog | iorqlog   | I/O port reads / writes (incl. ghost bus)
+#   intlog  | intlog    | interrupt / PIO state transitions
+#   hwlog   | hwlog     | HW signal edges (CTC, PSG, ...)
+#
+# The data streams continuously to chunk files under the channel's
+# configured dir/name. ``emu_trace_save`` finalizes the current segment
+# (flush + close) and may redirect the NEXT segment to a named path.
+
+# Valid trace channel identifiers (kept in sync with the C dispatch
+# layer in src/emulator/mcp/dispatch.c::_trace_parse_channel).
+_TRACE_CHANNELS = ("cputrack", "iorqlog", "intlog", "hwlog")
+
+
+def _trace_validate_channel(channel: str) -> "str | None":
+    """Return an error message if ``channel`` is not a valid trace channel.
+
+    Args:
+        channel: Channel identifier supplied by the caller.
+
+    Returns:
+        ``None`` when the channel is valid, otherwise a human-readable
+        error string to be returned as ``{"error": ...}``.
+    """
+    if not isinstance(channel, str) or channel not in _TRACE_CHANNELS:
+        return ("channel must be one of: "
+                + ", ".join(_TRACE_CHANNELS))
+    return None
+
+
+@mcp.tool()
+async def emu_trace_start(channel: str) -> str:
+    """Start trace recording for a trace-suite channel.
+
+    Switches the selected channel's mode to ``ALWAYS`` and triggers the
+    same callback recompute used by the debugger, so recording begins
+    from the current emulator state.
+
+    Args:
+        channel: One of ``cputrack``, ``iorqlog``, ``intlog``, ``hwlog``.
+
+    Returns:
+        JSON ``{"started": true}`` on success or ``{"error": "..."}``.
+    """
+    err = _trace_validate_channel(channel)
+    if err is not None:
+        return json.dumps({"error": err})
+    resp = await _send_request("trace_start", {"channel": channel})
+    if not resp.get("success", False):
+        return json.dumps({"error": resp.get("error", "trace_start failed")})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_trace_stop(channel: str) -> str:
+    """Stop trace recording for a trace-suite channel.
+
+    Switches the selected channel's mode to ``OFF`` and flushes + closes
+    the current segment. The recorded chunk files stay on disk.
+
+    Args:
+        channel: One of ``cputrack``, ``iorqlog``, ``intlog``, ``hwlog``.
+
+    Returns:
+        JSON ``{"stopped": true}`` on success or ``{"error": "..."}``.
+    """
+    err = _trace_validate_channel(channel)
+    if err is not None:
+        return json.dumps({"error": err})
+    resp = await _send_request("trace_stop", {"channel": channel})
+    if not resp.get("success", False):
+        return json.dumps({"error": resp.get("error", "trace_stop failed")})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_trace_reset(channel: str) -> str:
+    """Reset (discard) the current trace segment of a channel.
+
+    The streamed trace logs have no counters like CDL, so a reset means
+    closing the current segment and reopening a fresh one (the previous
+    contents become a separate, finalized segment). For ``cputrack`` the
+    HALT/self-loop collapse state is reset as well.
+
+    Args:
+        channel: One of ``cputrack``, ``iorqlog``, ``intlog``, ``hwlog``.
+
+    Returns:
+        JSON ``{"reset": true}`` on success or ``{"error": "..."}``.
+    """
+    err = _trace_validate_channel(channel)
+    if err is not None:
+        return json.dumps({"error": err})
+    resp = await _send_request("trace_reset", {"channel": channel})
+    if not resp.get("success", False):
+        return json.dumps({"error": resp.get("error", "trace_reset failed")})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_trace_save(channel: str, path: str = "") -> str:
+    """Finalize the current trace segment, optionally redirect output.
+
+    When ``path`` is given, the current segment is CLOSED (its manifest
+    finalized) and the channel's output dir/name is derived from path so
+    the NEXT segment streams to that location - already written chunk files
+    are NOT renamed (the tlog writer binds names at segment open).
+    With an empty ``path`` the current segment is flushed to disk IN PLACE
+    (pending chunk + manifest) and recording CONTINUES into the SAME segment
+    (force save now); the manifest stays valid. Finalize a recording with
+    ``trace_stop`` - that closes the segment with the correct manifest.
+
+    Args:
+        channel: One of ``cputrack``, ``iorqlog``, ``intlog``, ``hwlog``.
+        path: Optional output path for the next segment (the basename
+            becomes the chunk-file prefix; the directory is created if
+            missing on the next start). Empty string = keep current
+            dir/name.
+
+    Returns:
+        JSON ``{"saved": true, "path": <str|null>}`` on success or
+        ``{"error": "..."}`` on failure.
+    """
+    err = _trace_validate_channel(channel)
+    if err is not None:
+        return json.dumps({"error": err})
+    data = {"channel": channel}
+    if isinstance(path, str) and path:
+        data["path"] = path
+    resp = await _send_request("trace_save", data)
+    if not resp.get("success", False):
+        return json.dumps({"error": resp.get("error", "trace_save failed")})
+    return json.dumps(_data_or_error(resp))
 
 
 # === V1.A.7 - Profiler Tools (5) =====================================
@@ -2875,7 +3067,7 @@ async def emu_profiler_start() -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "profiler_start failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2893,7 +3085,7 @@ async def emu_profiler_stop() -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "profiler_stop failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2911,7 +3103,7 @@ async def emu_profiler_reset() -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "profiler_reset failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2944,7 +3136,7 @@ async def emu_profiler_export(path: str, format: str = "csv") -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "profiler_export failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -2981,7 +3173,7 @@ async def emu_profiler_get(limit: int = 50) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "profiler_get failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === V1.B.1 - Media Tools (5) ========================================
@@ -3035,7 +3227,7 @@ async def emu_media_load_mzf(path: str = "", bytes_b64: str = "") -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "media_load_mzf failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 def _parse_mzf_header(raw: bytes) -> dict:
@@ -3184,7 +3376,7 @@ async def emu_media_load_binary(path: str, addr: int) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "media_load_binary failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -3245,7 +3437,7 @@ async def emu_media_insert(
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "media_insert failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -3274,7 +3466,7 @@ async def emu_media_eject(slot: str) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "media_eject failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -3293,7 +3485,7 @@ async def emu_media_state() -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "media_state failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === V1.B.2 - Platform + Config Tools (5 new tools) ==================
@@ -3319,6 +3511,8 @@ _VALID_SETTINGS_KEYS = (
     "DISPLAY/custom_fps",
     "QDISK/filename",
     "QDISK/write_protected",
+    "TRACE_CPUTRACK/pc_range_lo",
+    "TRACE_CPUTRACK/pc_range_hi",
 )
 
 _VALID_PLATFORM_KINDS = ("mz700", "mz800", "mz1500")
@@ -3343,6 +3537,8 @@ async def emu_settings_set(key: str, value: str) -> str:
         DISPLAY/custom_fps                   - unsigned
         QDISK/filename             - Quick Disk image path (text)
         QDISK/write_protected      - bool
+        TRACE_CPUTRACK/pc_range_lo - cputrack PC-range filter low bound (0..65535)
+        TRACE_CPUTRACK/pc_range_hi - cputrack PC-range filter high bound (0..65535)
 
     Value is type-coerced server-side (unsigned: integer literal;
     bool: 'true'/'false' or '1'/'0'; text: passed as-is; float:
@@ -3369,7 +3565,7 @@ async def emu_settings_set(key: str, value: str) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "settings_set failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -3395,7 +3591,7 @@ async def emu_settings_get(key: str) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "settings_get failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === BACKLOG D - emulation speed control ==============================
@@ -3445,7 +3641,7 @@ async def emu_set_speed(
     resp = await _send_request("set_speed", data)
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "set_speed failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -3468,7 +3664,7 @@ async def emu_speed_step(delta: int) -> str:
     resp = await _send_request("set_speed", data)
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "set_speed failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -3515,7 +3711,7 @@ async def emu_platform_set(
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "platform_set failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -3558,7 +3754,7 @@ async def emu_periph_attach(
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "periph_attach failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -3584,7 +3780,7 @@ async def emu_periph_detach(kind: str) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "periph_detach failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === V1.C.1 - HID input Tools ========================================
@@ -3619,7 +3815,20 @@ async def emu_input_send_key(key: str, frames: int = 3) -> str:
 
     Returns:
         JSON ``{"key": str, "col": int, "bit": int, "shift": bool,
-        "frames": int, "sent": true}`` or ``{"error": "..."}``.
+        "frames": int, "sent": true, "landing_verified": bool}`` or
+        ``{"error": "..."}``.
+
+        NOTE: ``sent: true`` only means the host-side key injection was
+        performed; it is NOT a guarantee the guest read the key.
+        ``landing_verified`` is a real readback: while the key is held
+        the emulator watches the PPI Port B reads, and the flag is
+        ``true`` only if the guest scanned the key's column during the
+        hold (i.e. it actually read the key), ``false`` otherwise. The
+        guest may miss the key if it currently scans only a narrow
+        subset of keyboard columns (e.g. a running program with the ROM
+        unmapped) or if ``frames`` is 0. If a key does not land, hold it
+        longer (``frames``), make sure the guest is at a prompt that
+        scans the keyboard, or reset the emulator.
     """
     if not key:
         return json.dumps({"error": "key must be non-empty"})
@@ -3629,7 +3838,7 @@ async def emu_input_send_key(key: str, frames: int = 3) -> str:
         "input_send_key", {"key": key, "frames": frames})
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "input_send_key failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -3648,8 +3857,23 @@ async def emu_input_send_keys(
         frame_per_key: Frames to hold each key (default 3).
 
     Returns:
-        JSON ``{"keys_sent": int, "total_frames": int,
-        "encoding": str}`` or ``{"error": "..."}``.
+        JSON ``{"keys_sent": int, "keys_landed": int,
+        "total_frames": int, "encoding": str,
+        "landing_verified": bool}`` or ``{"error": "..."}``.
+
+        NOTE: ``keys_sent`` counts host-side key injections into the
+        virtual matrix, NOT keys the guest actually read.
+        ``keys_landed`` is a real readback counting how many of them the
+        guest actually read: while each key is held the emulator watches
+        the PPI Port B reads, and a key lands only if the guest scanned
+        its column during the hold. ``landing_verified`` is ``true``
+        only when every sent key landed (``keys_landed == keys_sent``
+        and ``keys_sent > 0``), ``false`` otherwise. The guest may miss
+        keys if it currently scans only a narrow subset of keyboard
+        columns (e.g. a running program with the ROM unmapped). If keys
+        do not land, hold them longer (``frame_per_key``), make sure the
+        guest is at a prompt that scans the keyboard, or reset the
+        emulator.
     """
     if encoding not in ("ascii", "key_names"):
         return json.dumps({"error": f"Invalid encoding: {encoding}"})
@@ -3662,7 +3886,7 @@ async def emu_input_send_keys(
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "input_send_keys failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -3689,7 +3913,7 @@ async def emu_input_press_key(key: str) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "input_press_key failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -3709,7 +3933,7 @@ async def emu_input_release_key(key: str = "") -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "input_release_key failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -3746,7 +3970,7 @@ async def emu_input_send_joystick(
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "input_send_joystick failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -3779,7 +4003,7 @@ async def emu_input_send_keys_with_delays(events: list) -> str:
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "input_send_keys_with_delays failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === V1.B.3 - hot-swap workflow Tools (pipe transport only) ==========
@@ -3946,7 +4170,7 @@ async def emu_get_reg(reg: str) -> str:
         ``{"error": "..."}`` for unknown names / dispatch failures.
     """
     resp = await _send_request("get_reg", {"reg": reg})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -3963,7 +4187,7 @@ async def emu_force_pause() -> str:
         JSON ``{"paused": true}`` on success.
     """
     resp = await _send_request("force_pause")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -3991,7 +4215,7 @@ async def emu_set_user_cycle_origin(value: int = -1) -> str:
                 {"error": "value must be in range 0..0xFFFFFFFF"})
         payload["value"] = value
     resp = await _send_request("set_user_cycle_origin", payload or None)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4010,7 +4234,7 @@ async def emu_get_im2_vector() -> str:
         ``pio_source`` is ``0`` for PIO-A, ``1`` for PIO-B.
     """
     resp = await _send_request("get_im2_vector")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4029,7 +4253,7 @@ async def emu_get_raster_pos() -> str:
         (= 312 for MZ-800 PAL).
     """
     resp = await _send_request("get_raster_pos")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4049,7 +4273,7 @@ async def emu_get_cpu_flags() -> str:
         "op_tstate": int, "i": int, "r": int}``.
     """
     resp = await _send_request("get_cpu_flags")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4109,7 +4333,7 @@ async def emu_set_cpu_flags(iff1: int = -1, iff2: int = -1,
             {"error": "no field specified - provide at least one of "
                        "iff1/iff2/im/i/r"})
     resp = await _send_request("set_cpu_flags", payload)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4134,7 +4358,7 @@ async def emu_get_last_instr() -> str:
         of 1..4 bytes; ``length`` is the instruction length in bytes.
     """
     resp = await _send_request("get_last_instr")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4176,7 +4400,7 @@ async def emu_get_cpu_panel_batch(want_im2: bool = False,
     if want_last_instr:
         payload["want_last_instr"] = True
     resp = await _send_request("get_cpu_panel_batch", payload or None)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === V1.E.3 - Debugger control + PIO-Z80 IM2 vector ==================
@@ -4204,7 +4428,7 @@ async def emu_debugger_activate() -> str:
         on backend failure.
     """
     resp = await _send_request("debugger_activate")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4222,7 +4446,7 @@ async def emu_debugger_deactivate() -> str:
         on backend failure.
     """
     resp = await _send_request("debugger_deactivate")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4238,7 +4462,7 @@ async def emu_is_debugger_active() -> str:
         and heatmap recording are running in the WITH_WINDOW preset.
     """
     resp = await _send_request("is_debugger_active")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4277,7 +4501,7 @@ async def emu_set_pioz80_interrupt_vector(port: int, vector: int) -> str:
         return json.dumps({"error": "vector must be in range 0..255"})
     payload = {"port": port, "vector": vector}
     resp = await _send_request("set_pioz80_interrupt_vector", payload)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === V1.E.4 - BP advanced + Stack analytics Tools ====================
@@ -4305,11 +4529,17 @@ async def emu_bp_create_with_init(addr: int,
         fields: Names of payload fields to apply. Valid names match
             the ``DBGAPI_BP_UM_*`` mask bits, e.g. ``"enabled"``,
             ``"name"``, ``"type"``, ``"expr"``, ``"action"``,
-            ``"hit_count"``, ``"im2_vector_filter"``, ...
+            ``"hit_count"``, ``"im2_vector_filter"``,
+            ``"fwd_min_interval_ms"``, ``"fwd_max_fires"``, ...
         values: Map of field name to value. Only fields listed in
             ``fields`` are read from this map; surplus keys are
             ignored. ``name`` / ``expr`` / ``action`` / ``event_name``
             accept ``None`` to clear the value.
+            ``fwd_min_interval_ms`` (int ms; ``0`` = use the global /
+            built-in default) and ``fwd_max_fires`` (int; ``0`` =
+            unlimited) override the per-breakpoint rate limit for heavy
+            forward actions (``snapshot`` / ``trace_save``); they guard
+            against disk saturation on a hot breakpoint.
 
     See ``emulator://docs/bp_dsl`` for the ``expr`` condition syntax,
     ``emulator://docs/action_dsl`` for the action script syntax used
@@ -4331,7 +4561,7 @@ async def emu_bp_create_with_init(addr: int,
             if k not in payload:
                 payload[k] = v
     resp = await _send_request("bp_create_with_init", payload)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4348,7 +4578,7 @@ async def emu_bp_set_parent(id: int, parent_id: int) -> str:
     """
     payload = {"id": id, "parent_id": parent_id}
     resp = await _send_request("bp_set_parent", payload)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4366,6 +4596,8 @@ async def emu_bp_update(id: int,
         id: ID of an existing breakpoint.
         fields: Names of fields to apply (subset of
             ``DBGAPI_BP_UM_*``). An empty list is a successful no-op.
+            Includes ``"fwd_min_interval_ms"`` / ``"fwd_max_fires"``
+            for the per-breakpoint heavy-forward-action rate limit.
         values: Map of field name to value. Same conventions as
             ``emu_bp_create_with_init``.
 
@@ -4383,7 +4615,7 @@ async def emu_bp_update(id: int,
             if k not in payload:
                 payload[k] = v
     resp = await _send_request("bp_update", payload)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4402,7 +4634,7 @@ async def emu_bpgrp_add(name: str, parent: int = -1) -> str:
         return json.dumps({"error": "name must be non-empty"})
     payload = {"name": name, "parent": parent}
     resp = await _send_request("bpgrp_add", payload)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4421,7 +4653,7 @@ async def emu_bpgrp_remove(id: int) -> str:
     """
     payload = {"id": id}
     resp = await _send_request("bpgrp_remove", payload)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4465,7 +4697,7 @@ async def emu_bpgrp_update(id: int,
     if parent is not None:
         payload["parent"] = int(parent)
     resp = await _send_request("bpgrp_update", payload)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4487,7 +4719,7 @@ async def emu_stack_history_enable(enabled: bool) -> str:
     """
     payload = {"enabled": bool(enabled)}
     resp = await _send_request("stack_history_enable", payload)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4503,7 +4735,7 @@ async def emu_stack_history_reset() -> str:
         JSON ``{"reset": true}`` on success.
     """
     resp = await _send_request("stack_history_reset")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4526,7 +4758,7 @@ async def emu_stack_regions_add(name: str, base: int, limit: int) -> str:
         return json.dumps({"error": "base and limit must be 0..65535"})
     payload = {"name": name, "base": base, "limit": limit}
     resp = await _send_request("stack_regions_add", payload)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4557,7 +4789,7 @@ async def emu_stack_regions_edit(index: int, name: str,
     payload = {"index": index, "name": name,
                "base": base, "limit": limit}
     resp = await _send_request("stack_regions_edit", payload)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4577,7 +4809,7 @@ async def emu_stack_regions_remove(index: int) -> str:
         return json.dumps({"error": "index must be >= 0"})
     payload = {"index": index}
     resp = await _send_request("stack_regions_remove", payload)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4599,7 +4831,7 @@ async def emu_stack_regions_reset_watermark(index: int) -> str:
         return json.dumps({"error": "index must be >= 0"})
     payload = {"index": index}
     resp = await _send_request("stack_regions_reset_watermark", payload)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === V1.E.5 - Eventlog/TLOG Tools (6 Tools) =========================
@@ -4635,7 +4867,7 @@ async def emu_regions_list() -> str:
           visible in the Z80 address space (banking-aware).
     """
     resp = await _send_request("regions_list")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4747,7 +4979,13 @@ async def emu_file_load_to_region(path: str, region_id: int,
                                {"region_id": region_id,
                                 "offset": dest_offset,
                                 "data_b64": b64})
-    out = resp.get("data", {})
+    # Augmented payload: na úspěch přidáme zdrojový soubor/offset.
+    # Na chybu backendu MUSÍ projít error dict beze změny - jinak by
+    # se src_file/src_offset vložily do error dictu a zamaskovaly by
+    # selhání (bug 0011, augmented-{} varianta).
+    out = _data_or_error(resp)
+    if "error" in out:
+        return json.dumps(out)
     out["src_file"] = path
     out["src_offset"] = src_offset
     return json.dumps(out)
@@ -4804,7 +5042,7 @@ async def emu_eventlog_start() -> str:
         buffer cannot be allocated.
     """
     resp = await _send_request("eventlog_start")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4819,7 +5057,7 @@ async def emu_eventlog_stop() -> str:
         already-stopped log is a no-op).
     """
     resp = await _send_request("eventlog_stop")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4833,7 +5071,7 @@ async def emu_eventlog_clear() -> str:
         JSON ``{"cleared": bool}``.
     """
     resp = await _send_request("eventlog_clear")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4856,7 +5094,7 @@ async def emu_eventlog_set_capacity(capacity: int) -> str:
         return json.dumps({"error": "capacity must be >= 0"})
     payload = {"capacity": capacity}
     resp = await _send_request("eventlog_set_capacity", payload)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4899,7 +5137,7 @@ async def emu_eventlog_set_mask(mask) -> str:
     else:
         return json.dumps({"error": "mask must be int or hex string"})
     resp = await _send_request("eventlog_set_mask", payload)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -4933,7 +5171,7 @@ async def emu_eventlog_get_event(idx: int) -> str:
         return json.dumps({"error": "idx must be >= 0"})
     payload = {"idx": idx}
     resp = await _send_request("eventlog_get_event", payload)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === MCP Resources (V0.B.7 - 7 read-only Resources) ==================
@@ -5011,7 +5249,7 @@ async def resource_cpu_registers() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_registers")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://memory/{addr_hex}/{length}")
@@ -5048,7 +5286,7 @@ async def resource_memory(addr_hex: str, length: str) -> str:
     resp = await _send_request("mem_read", {"addr": addr, "len": n})
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "mem_read failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://breakpoints")
@@ -5061,7 +5299,7 @@ async def resource_breakpoints() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False, "breakpoints": []})
     resp = await _send_request("bp_list")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://platform/info")
@@ -5110,7 +5348,7 @@ async def resource_platform_info() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_platform_info")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://config/mcp")
@@ -5125,7 +5363,7 @@ async def resource_config_mcp() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_mcp_config")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://config/peripherals")
@@ -5168,7 +5406,7 @@ async def resource_config_settings() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_config_settings")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://media/state")
@@ -5183,7 +5421,7 @@ async def resource_media_state() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_media_state")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://speed")
@@ -5201,7 +5439,7 @@ async def resource_speed() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_speed")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://cpu/im2_vector")
@@ -5220,7 +5458,7 @@ async def resource_cpu_im2_vector() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_cpu_im2_vector")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://cpu/interrupt_bus")
@@ -5241,7 +5479,7 @@ async def resource_cpu_interrupt_bus() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_cpu_interrupt_bus")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://cooperation/policy")
@@ -5256,7 +5494,7 @@ async def resource_cooperation_policy() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_cooperation_policy")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://security/profile")
@@ -5273,7 +5511,7 @@ async def resource_security_profile() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_security_profile")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://memory/map")
@@ -5291,7 +5529,7 @@ async def resource_memory_map() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_memory_map")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://memext/info")
@@ -5311,7 +5549,7 @@ async def resource_memext_info() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_memext_info")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === V1.D.2.A - Easy reuse Resources (5 new endpoints) ===============
@@ -5344,7 +5582,7 @@ async def resource_callstack() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_callstack")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://profiler")
@@ -5370,7 +5608,7 @@ async def resource_profiler() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_profiler")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://symbols")
@@ -5391,7 +5629,7 @@ async def resource_symbols() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_symbols")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://stack/history")
@@ -5411,7 +5649,7 @@ async def resource_stack_history() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_stack_history")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://stack/regions")
@@ -5431,7 +5669,7 @@ async def resource_stack_regions() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_stack_regions")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === V1.D.2.B medium debug Resources ==================================
@@ -5458,7 +5696,7 @@ async def resource_watch() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_watch")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://watch/snapshot/{name}")
@@ -5499,7 +5737,7 @@ async def resource_watch_snapshot(name: str) -> str:
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error",
                                               "get_watch_snapshot failed")})
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://stack")
@@ -5520,7 +5758,7 @@ async def resource_stack() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_stack")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://vars")
@@ -5542,7 +5780,7 @@ async def resource_vars() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_vars")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://bookmarks")
@@ -5565,7 +5803,7 @@ async def resource_bookmarks() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_bookmarks")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://periph/i8255")
@@ -5596,7 +5834,7 @@ async def resource_periph_i8255() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_periph_i8255")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://periph/i8253")
@@ -5624,7 +5862,7 @@ async def resource_periph_i8253() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_periph_i8253")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://periph/z80_pio")
@@ -5660,7 +5898,7 @@ async def resource_periph_z80_pio() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_periph_z80_pio")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://periph/sn76489")
@@ -5703,7 +5941,7 @@ async def resource_periph_sn76489() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_periph_sn76489")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://periph/ay3_8910")
@@ -5723,7 +5961,7 @@ async def resource_periph_ay3_8910() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_periph_ay3_8910")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://periph/gdg")
@@ -5766,7 +6004,7 @@ async def resource_periph_gdg() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_periph_gdg")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://periph/wd1793")
@@ -5810,7 +6048,7 @@ async def resource_periph_wd1793() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_periph_wd1793")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://periph/cmt")
@@ -5846,7 +6084,7 @@ async def resource_periph_cmt() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_periph_cmt")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://periph/cmt/tape")
@@ -5877,7 +6115,7 @@ async def resource_periph_cmt_tape() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("cmt_tape_list")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://periph/qd")
@@ -5914,7 +6152,7 @@ async def resource_periph_qd() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_periph_qd")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://input/keyboard/state")
@@ -5950,7 +6188,7 @@ async def resource_input_keyboard_state() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_input_keyboard_state")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://input/keyboard/matrix_info")
@@ -5980,7 +6218,7 @@ async def resource_input_keyboard_matrix_info() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_input_keyboard_matrix_info")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://input/joystick/state")
@@ -6019,7 +6257,7 @@ async def resource_input_joystick_state() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_input_joystick_state")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://frame/framebuffer/info")
@@ -6050,7 +6288,7 @@ async def resource_frame_framebuffer_info() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_frame_framebuffer_info")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://frame/screenshot.raw")
@@ -6079,7 +6317,7 @@ async def resource_frame_screenshot_raw() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_frame_screenshot_raw")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://frame/screenshot")
@@ -6103,7 +6341,7 @@ async def resource_frame_screenshot() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_frame_screenshot")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
@@ -6137,7 +6375,7 @@ async def emu_screenshot_save_to_file(path: str, format: str = "png") -> str:
     if format:
         data["format"] = format
     resp = await _send_request("screenshot_save_to_file", data)
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://video/text_dump")
@@ -6171,7 +6409,7 @@ async def resource_video_text_dump() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_video_text_dump")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://periph/beeper")
@@ -6211,7 +6449,7 @@ async def resource_periph_beeper() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_periph_beeper")
-    return json.dumps(resp.get("data", {}))
+    return json.dumps(_data_or_error(resp))
 
 
 # === MCP docs Resources (autoregistrace) =============================

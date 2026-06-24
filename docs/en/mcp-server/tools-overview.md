@@ -21,8 +21,8 @@ documented separately in [Resources overview](resources-overview.md).
 | `emu_history_get` | no | 32 most recently executed instructions (ring buffer) |
 | `emu_mem_read` | no | Reads bytes from Z80 memory (base64) |
 | `emu_mem_write` | **YES** | Writes bytes into RAM - region checked, **destructive** |
-| `emu_bp_add` | no | Adds an execution breakpoint |
-| `emu_bp_list` | no | Lists existing breakpoints |
+| `emu_bp_add` | no | Adds a breakpoint (exec, or typed memw/memr/ior/iow + condition) |
+| `emu_bp_list` | no | Lists breakpoints (id/addr/enabled + type/zone/bank_id/hits/condition) |
 | `emu_bp_remove` | no | Removes a specific BP by ID |
 | `emu_bp_clear` | no | Removes all breakpoints at once |
 | `emu_bp_enable` | no | Toggles BP enabled flag (no removal) |
@@ -63,6 +63,10 @@ documented separately in [Resources overview](resources-overview.md).
 | `emu_cdl_stop` | no | Stop CDL recording (data preserved) |
 | `emu_cdl_reset` | no | Clear CDL counters |
 | `emu_cdl_export` | no | Export CDL bitmap + meta to files |
+| `emu_trace_start` | no | Start trace recording of a channel (cputrack/iorqlog/intlog/hwlog) |
+| `emu_trace_stop` | no | Stop trace recording of a channel (segment closed) |
+| `emu_trace_reset` | no | Clear the current trace channel segment |
+| `emu_trace_save` | no | Save/redirect a trace channel segment (optional path) |
 | `emu_profiler_start` | no | Start CPU profiler (hot-path overhead) |
 | `emu_profiler_stop` | no | Stop profiler (data preserved) |
 | `emu_profiler_reset` | no | Clear profiler aggregator |
@@ -158,6 +162,16 @@ not, the tool fails with `MEM_WRITE region check failed`. For explicit
 fault injection (= writes into regions outside RAM) use
 `emu_mem_write_force`.
 
+## Error return convention
+
+On a backend failure every tool returns an object with an `error`
+field (`{"error": "<description>"}`). Previously some tools returned a
+bare empty response (`{}`) in such a case, so the client could not tell
+that the call had failed. Now an error is always explicit - the client
+can reliably test for the presence of `error` in the response. On
+success the response carries the tool-specific data fields (see the
+descriptions below); a successful response has no `error` field.
+
 ## Per-tool description
 
 ### `emu_status`
@@ -186,20 +200,26 @@ emu pauses automatically. Argument:
 
 If `frames` exceeds the limit, the tool returns an error.
 
-**Blocking semantics:** The tool returns only after N
-frames have completed, not immediately after unpause. Between
-unpause and pause the backend watches the `fbsnapshot_screen_id`
-counter (incremented per video frame by the emu thread). For
-PAL (= 50 Hz) `emu_run(frames=100)` blocks for ~2 s; for NTSC
-(= 60 Hz) ~1.67 s.
+**Blocking semantics:** The tool returns only after N frames have
+completed, not immediately after unpause. The emulator stops ITSELF
+deterministically exactly at the N-th frame boundary (emu-side
+frame-bounded stop), not via an asynchronous pause from the dispatch
+thread. Running the same number of frames from the same state is therefore
+bit-reproducible - important when tracing timing-sensitive programs. For
+PAL (= 50 Hz) `emu_run(frames=100)` blocks for ~2 s; for NTSC (= 60 Hz)
+~1.67 s.
 
 Response contains:
 
 - `running: false` - emu is paused after completion
-- `actual_frames` (int) - actual frames that elapsed (may be
-  < requested due to safety timeout or user pause)
+- `actual_frames` (int) - actual frames that elapsed (= N, fewer if stopped
+  by a breakpoint or a safety timeout)
 - `requested_frames` (int) - what was requested
-- `complete` (bool) - true if actual == requested and pause OK
+- `stopped_by` (string) - why it stopped: `"frames"` (ran the full count),
+  `"breakpoint"` (a breakpoint paused it), `"manual"` (manual/UI pause),
+  `"timeout"` (safety timeout), `"unknown"` (other)
+- `complete` (bool) - true only if the full frame count was reached
+  (= `stopped_by` is `"frames"`)
 
 If `frames == 0` (or missing), the tool just submits unpause and
 returns `running: true` asynchronously (= legacy fire-and-forget,
@@ -259,15 +279,38 @@ the tool fails with `MEM_WRITE region check failed`.
 
 ### `emu_bp_add`
 
-Adds an execution breakpoint (= pause when PC = address). Arguments:
+Adds a breakpoint. By default an execution BP (= pause when PC =
+address), but it also supports typed (memory / I/O) BPs and a
+condition. Arguments:
 
-- `address` (int, 0..0xFFFF) - PC to pause on
+- `address` (int, 0..0xFFFF) - BP address (PC for exec; watched
+  address / port for typed)
+- `type` (string, optional, default `"exec"`) - BP type: `"exec"`
+  (execution), `"memr"` (memory read), `"memw"` (memory write),
+  `"ior"` (I/O IN), `"iow"` (I/O OUT)
+- `condition` (string, optional) - condition expression (bp_expr DSL,
+  e.g. `A == 0x42`). Empty = unconditional BP.
 
-Returns the breakpoint handle (ID).
+A plain exec BP without a condition takes the lightweight path. A typed
+BP or a BP with a condition is transparently created via
+`emu_bp_create_with_init` (= the single typed-breakpoint code path) -
+there is no need to call create manually. Returns the breakpoint handle
+(ID).
 
 ### `emu_bp_list`
 
-Returns the list of current breakpoints with IDs and addresses.
+Returns the list of current breakpoints. Return:
+`{"count": <int>, "breakpoints": [...]}`, where each record carries:
+
+- `id` (int) - breakpoint handle
+- `addr` (int) - address
+- `enabled` (bool)
+- `type` (string) - canonical UPPER_SNAKE type (`PC_EXEC` / `MEM_R` /
+  `MEM_W` / `IORQ_R` / `IORQ_W` / ...)
+- `zone` (string) - memory zone (`CPU_VIEW` / `RAM` / ...)
+- `bank_id` (int) - bank index (for the `MMEXT_BANK` zone)
+- `hits` (int) - BP trigger counter
+- `condition` (string or null if unconditional)
 
 ### `emu_bp_remove`
 
@@ -756,6 +799,45 @@ Cell layout = 16 B (`r`, `w`, `x`, `s` as uint32 LE counters).
 Returns `{"path": "...", "region_count": <int>}`. `region_count` is
 the number of region files emitted (platform-dependent).
 
+## Trace tools
+
+Runtime lifecycle control of the 4 binary trace-suite channels
+(`cputrack`, `iorqlog`, `intlog`, `hwlog`). The interface mirrors the
+CDL tools - it lets an AI client bracket the recording precisely around
+the section of interest instead of saving only at emulator exit. For
+the output format details see [Trace Suite](../debugger/Trace_Suite.md).
+
+All 4 tools have a mandatory argument:
+
+- `channel` (string, required) - one of `cputrack` / `iorqlog` /
+  `intlog` / `hwlog`.
+
+### `emu_trace_start`
+
+Starts recording the channel (= ALWAYS mode). Returns
+`{"started": true}`.
+
+### `emu_trace_stop`
+
+Stops recording the channel; the segment is closed (flush + close).
+Returns `{"stopped": true}`.
+
+### `emu_trace_reset`
+
+Clears the current channel segment (closes + reopens the segment; for
+cputrack also resets the HALT/self-loop collapse). Returns
+`{"reset": true}`.
+
+### `emu_trace_save`
+
+Saves / redirects the channel segment. Argument:
+
+- `path` (string, optional) - target path of the FOLLOWING segment.
+  Without `path` the current segment is just closed and reopened on the
+  existing dir/name (= "save now").
+
+Returns `{"saved": true, "path": <str|null>}`.
+
 ## Profiler tools
 
 The CPU profiler aggregates per-function statistics (calls, exclusive
@@ -1032,6 +1114,7 @@ Whitelist:
 - `DISPLAY/custom_fps` (unsigned)
 - `QDISK/filename` (text)
 - `QDISK/write_protected` (bool)
+- `TRACE_CPUTRACK/pc_range_lo` .. `TRACE_CPUTRACK/pc_range_hi` (unsigned, 0..65535; runtime PC trace filter)
 
 ### `emu_settings_get`
 
@@ -1207,6 +1290,19 @@ All HID tools carry a **WARNING** token in their description - user
 simulation can trigger unintended behavior (= RUN+RETURN, BASIC
 program overwrite, AI-controlled game in unexpected contexts).
 
+**Key landing readback (`landing_verified`):** `emu_input_send_keys`
+returns `{"keys_sent": N, "keys_landed": N, "total_frames": N, "encoding": str,
+"landing_verified": <bool>}`. `keys_sent` counts host-side injections
+into the virtual matrix; `keys_landed` counts how many of them the guest
+actually read. Previously the tool reported success even when the guest
+swallowed the keys (a running program with the ROM disconnected scans only
+a narrow subset of the matrix) - that was a silent failure. `landing_verified`
+is now a real readback: while the key is held the emulator watches the PPI
+Port B reads and the flag is `true` only if the guest scanned the key's column
+during the hold (i.e. it actually read the key), `false` otherwise. If a key
+does not land, hold it longer (`frame_per_key`), make sure the guest is at a
+prompt that scans the keyboard, or reset the emulator.
+
 ### Practical examples
 
 **ASCII encoding** (= default, simple text + `\r` for RETURN):
@@ -1327,13 +1423,19 @@ Args:
   `"im2_vector_mask"`, `"im2_isr_filter"`,
   `"im2_isr_match_mode"`, `"im2_isr_addr_end"`, `"im2_isr_mask"`,
   `"im0_enabled"`, `"im1_enabled"`, `"im2_enabled"`,
-  `"im0_rst_mask"`, `"irq_sig_source_mask"`.
+  `"im0_rst_mask"`, `"irq_sig_source_mask"`,
+  `"fwd_min_interval_ms"`, `"fwd_max_fires"`.
 - `values` (dict) - map of field name to value. Only fields listed
   in `fields` are read. String fields (`name`, `expr`, `action`,
   `event_name`) accept `None` to clear.
 
 Returns: JSON `{"id": int, "created": bool}`. `id` is `-1` on
 failure.
+
+The `fwd_min_interval_ms` and `fwd_max_fires` fields are a per-BP
+override of the forward-action (snapshot / trace_save) rate limit -
+see the "Forward action protection (rate limit + saturation)" section
+below.
 
 ### `emu_bp_set_parent`
 
@@ -1345,6 +1447,33 @@ Quick reparent a breakpoint into a group. Args: `id`, `parent_id`
 Selectively update fields of an existing breakpoint. Args: `id`,
 `fields` (field names), `values` (value map). An empty `fields`
 list is a successful no-op. Returns: `{"updated": bool}`.
+
+Like `emu_bp_create_with_init`, it also accepts the
+`fwd_min_interval_ms` and `fwd_max_fires` fields for a per-BP
+override of the forward-action rate limit - see the "Forward action
+protection (rate limit + saturation)" section below.
+
+### Forward action protection (rate limit + saturation)
+
+Forward actions in a BP script that write to disk (snapshot,
+trace_save) have built-in protection against flooding the emulator
+and the disk when a BP fires very frequently:
+
+- **Per-BP rate limit.** `fwd_min_interval_ms` is the minimum delay
+  in ms between two forward actions of the same BP; firing faster is
+  silently skipped. `fwd_max_fires` is a hard cap on successful fires
+  per session - once reached, the BP disables itself. Both fields are
+  settable via `emu_bp_create_with_init` / `emu_bp_update`
+  (`fields: ["fwd_min_interval_ms", "fwd_max_fires"]`). Without an
+  explicit override the global default from configuration applies.
+- **Byte saturation.** A cumulative byte limit on the volume written
+  by forward actions (snapshot + trace, including flush-side
+  accounting) - once the threshold is exceeded the emulator
+  auto-pauses and emits a saturation event / warning with a reason.
+  The threshold is configurable.
+- **Control-plane robustness.** Even when a continuing BP triggers a
+  heavy forward action, pause / stop / clear-breakpoint commands
+  always take effect - the emulator does not get stuck.
 
 ### `emu_bpgrp_add`
 

@@ -32,8 +32,13 @@
  *    `MSG_NOSIGNAL` potlačí `SIGPIPE` při zápisu na zavřený peer.
  *
  * Scope V0.A.5:
- *  - Žádný auth / TLS, žádný EVENT broadcast, žádný TRAP forward,
- *    žádný multi-client.
+ *  - Žádný auth / TLS, žádný multi-client.
+ *  - Žádný server-push EVENT broadcast - eventy se přesto doručují
+ *    pull modelem: 0019 follow-up inicializuje event bus i v TCP startu
+ *    (viz mcp_tcp_server_start), takže klient je vyzvedává přes
+ *    dispatch handler event_poll (sdílený s pipe transportem).
+ *  - Žádný TRAP forward kanál (trap manager je inicializován, ale
+ *    push notifikace TRAPu na socket není implementována).
  *
  * Reference: `mcp-server/plans/INSTRUKCE-faze-V0.A.5-tcp-listener.md`,
  * `debugger/rozbory/budoucnost/mcp-server/README.md` sekce 6.2.
@@ -109,6 +114,8 @@ typedef int SOCKET;             /**< @brief POSIX socket deskriptor. */
 #include "jsonl_io.h"
 #include "dispatch.h"
 #include "cooperation.h"
+#include "event_bus.h"
+#include "trap_manager.h"
 
 
 /* ====================================================================== */
@@ -724,6 +731,28 @@ en_MCP_TCP_START_RESULT mcp_tcp_server_start(st_MCP_TCP_SERVER *srv,
      * nesmí zabít živou GUI session uživatele). */
     mcp_dispatch_init();
     mcp_dispatch_set_transport_kind(MCP_DISPATCH_TRANSPORT_TCP);
+
+    /* 0019 follow-up: EVENT bus + TRAP manager init i pro TCP transport.
+     *
+     * Bez tohoto volání zůstával event bus inicializovaný JEN v pipe módu
+     * (main_pipe.c) - přes TCP listener (--mcp-tcp-port / GUI Start) byl
+     * g_bus_initialized=FALSE, takže event_bus_attach/subscribe vracely
+     * brzy a klient (mzdos jede přes TCP) nedostal ŽÁDNÝ event (vč.
+     * paused / L3 byte-backstop auto-pauzy). Dispatch handlery event_*
+     * jsou sdílené mezi pipe i TCP a používají fixní conn_id
+     * EVENT_BUS_CONN_PIPE, takže jediné, co pro TCP chybělo, byla
+     * inicializace busu.
+     *
+     * Oba init jsou idempotentní (statický `once` guard v
+     * event_bus_init/trap_manager_init), takže:
+     *  - opakovaný Start/Stop TCP serveru je benigní,
+     *  - souběh s pipe transportem (kdyby kdy nastal) nevolá init 2x
+     *    destruktivně.
+     * Shutdown busu zde ZÁMĚRNĚ nevoláme - destruktivní event_bus_shutdown
+     * by kvůli `once` guardu zabránil re-inicializaci při dalším Startu;
+     * cleanup proběhne až s ukončením procesu (OS). */
+    event_bus_init();
+    trap_manager_init();
 
     /* V0.B.4: bind_addr může být NULL -> default 127.0.0.1 (loopback).
      * "0.0.0.0" = wildcard pro všechna rozhraní (vyžaduje vědomé

@@ -90,6 +90,13 @@ extern "C"
         char *cdl_export_dir;                     /**< Cesta k cílovému adresáři CDL exportu (default "./cdl-export/") */
         char *cdl_export_name;                    /**< Basename pro meta.json bez extenze (default "cdl-export") */
         unsigned step_call;
+        /* Frame-bounded run (mcp-debug-control request 0021) - deterministický
+         * stop emulace přesně na N-té frame hranici. Nastavuje se v handleru
+         * DBGAPI_CMD_RUN_FRAMES, vyhodnocuje v mzarch_main hot loopu (per-frame
+         * blok). Cílem je nahradit dřívější nedeterministický async PAUSE z
+         * dispatch vlákna (= emu zastavoval na wall-clock-závislém cycle bodě). */
+        unsigned run_frames_active;               /**< 1 = probíhá frame-bounded run; emu se sám pausne, jakmile g_gdg.total_elapsed.screens dosáhne run_frames_target. 0 = neaktivní. */
+        uint32_t run_frames_target;               /**< Cílová hodnota g_gdg.total_elapsed.screens, při jejímž dosažení (>=) se emu deterministicky pausne. Platné jen pokud run_frames_active != 0. */
         unsigned memop_call;                      /**< 1 = právě probíhá debugger-iniciovaný memory write (debugger_memory_write_byte). Sledováno vramctrl handlery pro detekci VRAM touch. */
         unsigned memop_vram_touched;              /**< Per-call signal z vramctrl handlerů: 1 = během aktuálního debugger_memory_write_byte() byl proveden zápis do VRAM/CGRAM (banking-aware). Čte se na konci debugger_memory_write_byte pro screen refresh on edit. Nastavuje se jen pokud memop_call != 0. */
         unsigned run_to_temporary_breakpoint;
@@ -140,6 +147,8 @@ extern "C"
 #define TEST_DEBUGGER_MEMOP_CALL (g_debugger.memop_call != 0)
 #define TEST_DEBUGGER_STEP_CALL (g_debugger.step_call != 0)
 #define TEST_DEBUGGER_ACTIVE (g_debugger.active != 0)
+/** Test, zda právě probíhá frame-bounded run (= emu se sám pausne na cílové frame hranici). */
+#define TEST_DEBUGGER_RUN_FRAMES_ACTIVE (g_debugger.run_frames_active != 0)
 
     /**
      * @brief Hook pro vramctrl write byte funkce - signalizace debuggeru,

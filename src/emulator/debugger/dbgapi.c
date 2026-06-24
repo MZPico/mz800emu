@@ -56,6 +56,10 @@
 #include "mhmap.h"
 #include "png_encode.h"
 #include "trace/eventlog.h"
+#include "trace/cputrack.h"
+#include "trace/iorqlog.h"
+#include "trace/intlog.h"
+#include "trace/hwlog.h"
 #include "snapshot/snapshot.h"
 #include "symbols/sym_db.h"
 #include "mzarch/mzarch.h"
@@ -664,6 +668,12 @@ static bool dbgapi_emu_bp_apply_update ( st_DBGAPI_BP_UPDATE_PARAM *p, bool allo
     if ( mask & DBGAPI_BP_UM_IRQ_SIG_SOURCE_MASK )
         ok &= breakpoints_set_irq_sig_source_mask ( target_id, p->irq_sig_source_mask );
 
+    /* === 0019 vrstva 2 - per-BP rate-limit override === */
+    if ( mask & DBGAPI_BP_UM_FWD_MIN_INTERVAL_MS )
+        ok &= breakpoints_set_fwd_min_interval_ms ( target_id, p->fwd_min_interval_ms );
+    if ( mask & DBGAPI_BP_UM_FWD_MAX_FIRES )
+        ok &= breakpoints_set_fwd_max_fires ( target_id, p->fwd_max_fires );
+
     return ok;
 }
 
@@ -773,6 +783,11 @@ const char *dbgapi_cmd_to_str(en_DBGAPI_CMD cmd)
         case DBGAPI_CMD_CDL_STOP:                  return "cdl_stop";
         case DBGAPI_CMD_CDL_RESET:                 return "cdl_reset";
         case DBGAPI_CMD_CDL_EXPORT:                return "cdl_export";
+        /* 0017 FÁZE 1 - Tracking lifecycle (trace-suite) */
+        case DBGAPI_CMD_TRACE_START:               return "trace_start";
+        case DBGAPI_CMD_TRACE_STOP:                return "trace_stop";
+        case DBGAPI_CMD_TRACE_RESET:               return "trace_reset";
+        case DBGAPI_CMD_TRACE_SAVE:                return "trace_save";
         /* V1.B.1 - Media Tools */
         case DBGAPI_CMD_MEDIA_LOAD_MZF:            return "media_load_mzf";
         case DBGAPI_CMD_MEDIA_LOAD_BINARY:         return "media_load_binary";
@@ -837,6 +852,8 @@ const char *dbgapi_cmd_to_str(en_DBGAPI_CMD cmd)
         case DBGAPI_CMD_CMT_TAPE_SEEK:                  return "cmt_tape_seek";
         case DBGAPI_CMD_CMT_TAPE_BLOCK_SPEED:           return "cmt_tape_block_speed";
         case DBGAPI_CMD_CMT_TAPE_LIST:                  return "cmt_tape_list";
+        /* mcp-debug-control request 0021 - deterministický frame-bounded run */
+        case DBGAPI_CMD_RUN_FRAMES:                     return "run_frames";
     };
     return "unknown";
 }
@@ -952,6 +969,99 @@ static void dbgapi_emit_mcp_action(st_DBGAPI_CMDRQ *rq)
 }
 
 
+/**
+ * @brief Popis jednoho trace kanálu pro DBGAPI_CMD_TRACE_* handlery.
+ *
+ * Sjednocuje přístup ke 4 trace-suite subsystémům (cputrack/iorqlog/intlog/
+ * hwlog) v dbgapi dispatchi - každý má vlastní mode pole, reset a save funkci.
+ * Aktivace se neprovádí přímo, ale přes @c mzarch_platform_fn_debugger_state_changed
+ * (= nastaví mode + recompute všech kanálů + swap CPU callbacků), analogicky
+ * k @c mhmap_set_mode.
+ *
+ * @invariant @c mode_ptr ukazuje na první (mode) pole configu kanálu po celou
+ *            dobu běhu; @c fn_save nesmí být NULL (všechny kanály save podporují).
+ */
+typedef struct st_DBGAPI_TRACE_CHAN_DESC
+{
+    int  *mode_ptr;                  /**< Ukazatel na mode kanálu (en_TLOG_MODE). */
+    void (*fn_reset) ( void );       /**< Reset stavu segmentu (NULL = jen restart). */
+    int  (*fn_save) ( const char * );/**< Uložit/přesměrovat segment na path. */
+} st_DBGAPI_TRACE_CHAN_DESC;
+
+/**
+ * @brief Vyřešit deskriptor trace kanálu podle en_DBGAPI_TRACE_CHANNEL.
+ *
+ * @param channel  Vybraný kanál.
+ * @param out       Výstupní deskriptor (vyplněn jen při návratu true).
+ * @return true při platném kanálu, false u neznámé hodnoty.
+ */
+static bool dbgapi_resolve_trace_channel ( en_DBGAPI_TRACE_CHANNEL channel,
+                                           st_DBGAPI_TRACE_CHAN_DESC *out )
+{
+    switch ( channel )
+    {
+        case DBGAPI_TRACE_CHANNEL_CPUTRACK:
+            out->mode_ptr = (int *) &g_cputrack_config.mode;
+            out->fn_reset = cputrack_reset_collapse_state;
+            out->fn_save  = cputrack_save_segment;
+            return true;
+        case DBGAPI_TRACE_CHANNEL_IORQLOG:
+            out->mode_ptr = (int *) &g_iorqlog_config.mode;
+            out->fn_reset = NULL;
+            out->fn_save  = iorqlog_save_segment;
+            return true;
+        case DBGAPI_TRACE_CHANNEL_INTLOG:
+            out->mode_ptr = (int *) &g_intlog_config.mode;
+            out->fn_reset = NULL;
+            out->fn_save  = intlog_save_segment;
+            return true;
+        case DBGAPI_TRACE_CHANNEL_HWLOG:
+            out->mode_ptr = (int *) &g_hwlog_config.mode;
+            out->fn_reset = NULL;
+            out->fn_save  = hwlog_save_segment;
+            return true;
+        default:
+            return false;
+    }
+}
+
+
+int dbgapi_trace_lifecycle ( en_DBGAPI_TRACE_CHANNEL channel,
+                             en_DBGAPI_TRACE_OP op,
+                             const char *path )
+{
+    st_DBGAPI_TRACE_CHAN_DESC d;
+    if ( !dbgapi_resolve_trace_channel ( channel, &d ) )
+    {
+        return -1;
+    }
+
+    switch ( op )
+    {
+        case DBGAPI_TRACE_OP_START:
+        case DBGAPI_TRACE_OP_STOP:
+            /* Nastavit mode + recompute všech kanálů (swap CPU callbacků),
+             * analogie mhmap_set_mode pro CDL. */
+            *d.mode_ptr = ( op == DBGAPI_TRACE_OP_START )
+                          ? TLOG_MODE_ALWAYS : TLOG_MODE_OFF;
+            mzarch_platform_fn_debugger_state_changed ( TEST_DEBUGGER_ACTIVE );
+            return 0;
+
+        case DBGAPI_TRACE_OP_RESET:
+            /* Subsystem-specifický reset stavu (cputrack collapse) + flush/
+             * restart segmentu na stávající dir/name. */
+            if ( d.fn_reset ) d.fn_reset ( );
+            return d.fn_save ( NULL );
+
+        case DBGAPI_TRACE_OP_SAVE:
+            /* Uzavřít aktuální segment, volitelně přesměrovat na path. */
+            return d.fn_save ( path );
+    }
+
+    return -1;
+}
+
+
 void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
 {
     if (!rq)
@@ -1013,6 +1123,7 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
              * BREAK_EMULATION_PAUSED, audio pause, UI state update,
              * pokud TEST_DEBUGGER_ACTIVE pak hide spinner + reset
              * temporary BP. */
+            g_emulator.pause_reason = EMU_PAUSE_REASON_MANUAL;
             emulator_pause ( true );
             rq->success = true;
 #ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
@@ -1035,6 +1146,7 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
              * cestu která by ho mohla "přeskočit" (= žádný BP context
              * který by zámik bránil v aplikaci pauzy). Pokud v budoucnu
              * vznikne nepřeskočitelný kontext, FORCE_PAUSE bude bypass. */
+            g_emulator.pause_reason = EMU_PAUSE_REASON_MANUAL;
             emulator_pause ( true );
             rq->success = true;
             break;
@@ -1045,6 +1157,46 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
              * update, pokud TEST_DEBUGGER_ACTIVE pak show spinner +
              * window focus. Také vynuluje run_to_temporary_breakpoint
              * flag. */
+            emulator_pause ( false );
+            rq->success = true;
+            break;
+
+        case DBGAPI_CMD_RUN_FRAMES:
+            /* Frame-bounded run (mcp-debug-control request 0021):
+             * deterministický stop emulace přesně na N-té frame hranici.
+             *
+             * data_ptr je int* = počet framů N (>= 1). Nastavíme cílovou
+             * hodnotu run_frames_target = aktuální screens + N a aktivujeme
+             * run_frames_active. Hot loop v mzarch_main (per-frame blok) po
+             * dokončení každého framu zkontroluje screens >= target a sám
+             * zavolá emulator_pause(true). Tím se emu zastaví na deterministické
+             * frame hranici (= bezprostředně po inkrementu screens), nezávisle
+             * na wall-clock-závislém timingu dispatch vlákna.
+             *
+             * Side effecty: emulator_pause(false) unpausne emulaci (audio
+             * resume, UI state update, reset run_to_temporary_breakpoint flag).
+             *
+             * Pozn.: target používá modulární uint32_t aritmetiku stejně jako
+             * porovnání >= v hot loopu; přetečení screens (po cca 2.7 roku
+             * běhu při 50 Hz) by teoreticky zkreslilo cíl, ale frame-bounded
+             * run je krátkodobá operace (N <= 1000), takže to není praktický
+             * problém. */
+            if ( !rq->data_ptr )
+            {
+                rq->success = false;
+                break;
+            };
+            {
+                int frames = *((int *)rq->data_ptr);
+                if ( frames < 1 )
+                {
+                    rq->success = false;
+                    break;
+                };
+                g_debugger.run_frames_target =
+                    g_gdg.total_elapsed.screens + (uint32_t) frames;
+                g_debugger.run_frames_active = 1;
+            }
             emulator_pause ( false );
             rq->success = true;
             break;
@@ -1386,6 +1538,15 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                     r->bp[i].addr = b->addr;
                     r->bp[i].id = b->id;
                     r->bp[i].enabled = b->enabled;
+                    r->bp[i].type = (uint8_t)b->type;
+                    r->bp[i].zone = (uint8_t)b->zone;
+                    r->bp[i].bank_id = b->bank_id;
+                    r->bp[i].hits = b->hits;
+                    /* expr = condition výraz (NULL = unconditional). g_strdup
+                     * - dispatch handler je povinen uvolnit g_free(). */
+                    r->bp[i].condition =
+                        ( b->expr && b->expr[0] != '\0' )
+                        ? g_strdup ( b->expr ) : NULL;
                 };
                 r->count = n;
                 rq->success = true;
@@ -3552,6 +3713,36 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             break;
         }
 
+        /* --- Tracking lifecycle (0017 FÁZE 1, trace-suite) ---
+         *
+         * Vlastní logika je extrahována do dbgapi_trace_lifecycle(), aby ji
+         * beze změny chování sdílel i BP-action DSL forwarding (Z17d). Handler
+         * jen mapuje cmd -> op, validuje param a propisuje out_result. */
+        case DBGAPI_CMD_TRACE_START:
+        case DBGAPI_CMD_TRACE_STOP:
+        case DBGAPI_CMD_TRACE_RESET:
+        case DBGAPI_CMD_TRACE_SAVE:
+        {
+            st_DBGAPI_TRACE_PARAM *p = (st_DBGAPI_TRACE_PARAM *) rq->data_ptr;
+            if ( !p ) {
+                rq->success = false;
+                break;
+            }
+            en_DBGAPI_TRACE_OP op;
+            switch ( cmd ) {
+                case DBGAPI_CMD_TRACE_START: op = DBGAPI_TRACE_OP_START; break;
+                case DBGAPI_CMD_TRACE_STOP:  op = DBGAPI_TRACE_OP_STOP;  break;
+                case DBGAPI_CMD_TRACE_RESET: op = DBGAPI_TRACE_OP_RESET; break;
+                default:                     op = DBGAPI_TRACE_OP_SAVE;  break;
+            }
+            /* SAVE bere path z param; ostatní op path ignorují. */
+            const char *path = ( cmd == DBGAPI_CMD_TRACE_SAVE ) ? p->path : NULL;
+            int rc = dbgapi_trace_lifecycle ( p->channel, op, path );
+            p->out_result = rc;
+            rq->success = ( rc == 0 );
+            break;
+        }
+
         /* --- Media Tools (mutant mcp-server V1.B.1) --- */
         case DBGAPI_CMD_MEDIA_LOAD_MZF:
         {
@@ -4122,6 +4313,16 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                         break;
                     };
                     cfgelement_set_unsigned_value ( elm, (unsigned) v );
+                    /* Live-apply range-scope filtru cputrack: cfgelement
+                     * zápis sám nepropíše hodnotu do g_cputrack_config
+                     * (uint16_t pole čtené hot-path hookem), proto ji
+                     * propíšeme explicitně. Běžíme v emu vlákně => bezpečné. */
+                    if ( !strcmp ( p->module, "TRACE_CPUTRACK" )
+                         && ( !strcmp ( p->element, "pc_range_lo" )
+                              || !strcmp ( p->element, "pc_range_hi" ) ) )
+                    {
+                        cputrack_apply_pc_range_live ( );
+                    };
                     p->out_result = 0;
                     rq->success = true;
                     break;

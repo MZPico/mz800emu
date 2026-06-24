@@ -41,9 +41,39 @@ extern "C" {
 #endif
 
 
+    /** @brief Stav "probe" pro ověření dosednutí virtuální klávesy.
+     *
+     * Umožňuje MCP/HID vrstvě zjistit, zda guest během držení vstříknuté
+     * klávesy opravdu naskenoval cílový sloupec klávesnicové matice
+     * (= dostal vstříknutý bit přes Port B). Slouží jako reálný signál
+     * `landing_verified` (fix 0016 / cesta A) místo dřívějšího natvrdo
+     * false.
+     *
+     * Invarianty:
+     *  - Pokud `active == false`, probe je neaktivní a hot path Port B
+     *    read jej vůbec nevyhodnocuje (= žádný overhead, viz hook
+     *    v pio8255_read PORTB).
+     *  - `col` je v rozsahu 0..9 (cílový sloupec, kde leží vstříknutá
+     *    klávesa). `bit` se neporovnává (stačí, že guest skenuje sloupec,
+     *    fyzicky tak vidí všechny jeho bity včetně našeho).
+     *  - `seen` se nastaví na true jakmile guest přečte Port B se
+     *    selektovaným sloupcem == col; jednou nastavené už se nemaže
+     *    (sticky až do disarm/arm).
+     *
+     * Lifetime: arm -> (emu běží, guest čte) -> check -> disarm. Probe
+     * je čistě pozorovací, nemění návratovou hodnotu Port B ani matice.
+     */
+    typedef struct st_PIO8255_VKBD_PROBE {
+        bool active;    /**< true = probe sleduje čtení Port B */
+        uint8_t col;    /**< cílový sloupec klávesnice (0..9) */
+        uint8_t bit;    /**< cílový bit ve sloupci (jen informativně) */
+        bool seen;      /**< true = guest naskenoval sloupec col */
+    } st_PIO8255_VKBD_PROBE;
+
     typedef struct st_PIO8255 {
         uint8_t keyboard_matrix [ 10 ];
         uint8_t vkbd_matrix [ 10 ];
+        st_PIO8255_VKBD_PROBE vkbd_probe; /* readback dosednutí vkbd klávesy (fix 0016) */
         char *vkbd_autotype;
         int vkbd_autotype_col;
         uint8_t vkbd_autotype_ret;
@@ -82,12 +112,49 @@ extern "C" {
 
     extern void pio8255_init ( void );
     extern void pio8255_keyboard_matrix_reset ( void );
+
+    /** @brief Reset virtuální klávesnice (vkbd_matrix) na klidový stav.
+     *
+     * Vyplní `g_pio8255.vkbd_matrix` hodnotami 0xff (= žádná klávesa
+     * stisknutá; bit aktivní = 0). Použití: light input-reset pro
+     * vyčištění přiklepeného vkbd bitu. Definice v pio8255.c. */
+    extern void pio8255_vkbd_matrix_reset ( void );
     extern void pio8255_autotype_set_key_down_ms ( double ms );
     extern void pio8255_autotype_set_key_up_ms ( double ms );
     extern void pio8255_set_autotype ( char *txt );
     extern int pio8255_autotype_get_matrix ( char c, uint8_t *ret, bool *ret_shift );
     extern uint8_t pio8255_read ( int addr );
     extern void pio8255_write ( int addr, uint8_t value );
+
+    /** @brief Aktivuje probe pro ověření dosednutí vkbd klávesy.
+     *
+     * Nastaví `g_pio8255.vkbd_probe` na active s cílovým sloupcem/bitem
+     * a vynuluje `seen`. Od tohoto okamžiku každé čtení Port B se
+     * selektovaným sloupcem == col nastaví `seen` na true.
+     *
+     * @param[in] col cílový sloupec klávesnice (0..9). Mimo rozsah =
+     *                no-op (probe zůstane neaktivní).
+     * @param[in] bit cílový bit (jen informativně, neporovnává se).
+     *
+     * @note Volat z host/MCP vlákna před vstříknutím klávesy. Probe je
+     *       pozorovací, nemodifikuje matice ani Port B.
+     */
+    extern void pio8255_vkbd_probe_arm ( int col, int bit );
+
+    /** @brief Vrátí, zda guest naskenoval sledovaný sloupec.
+     *
+     * @return true pokud byl od posledního arm Port B přečten se
+     *         selektovaným sloupcem == probe.col (= klávesa dosedla);
+     *         false jinak (vč. neaktivní probe).
+     */
+    extern bool pio8255_vkbd_probe_check ( void );
+
+    /** @brief Deaktivuje probe (active = false).
+     *
+     * Po návratu hot path Port B read probe opět ignoruje. `seen`
+     * hodnota se nemaže (lze ji ještě přečíst přes check do dalšího arm).
+     */
+    extern void pio8255_vkbd_probe_disarm ( void );
 
     extern void pio8255_pc2_set ( int value );
     extern int pio8255_pc1_get ( void );

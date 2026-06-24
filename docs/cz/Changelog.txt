@@ -1,4 +1,16 @@
-	
+
+	- MCP server - události (events) jsou nyní dostupné i přes TCP (dříve jen přes pipe). Lze zakládat typované breakpointy (MEM_W, MEM_R, IORQ...). Instrukční trasování lze plně ovládat přes MCP (start/stop/reset/uložení, s volbou kanálu). MCP nástroje teď při chybě vždy vrací chybovou hlášku místo prázdné odpovědi.
+
+	- BUGFIX: MCP server - posílání kláves do emulátoru nově hlásí, zda klávesy skutečně dosedly. Dříve nástroj mohl ohlásit úspěch, i když je počítač nepřijal.
+
+	- Trasování lze nyní omezit na rozsah adres (PC filtr).
+
+	- Akce breakpointu umí spouštět další příkazy - ovládání trasování a CDL záznamu (start/stop/reset/uložení) a uložení snapshotu nebo segmentu paměti přímo z breakpointu (i z pokračujícího), včetně šablony jména souboru.
+
+	- BUGFIX: MCP server - emu_run nyní zastavuje emulaci deterministicky (přesně na zvoleném počtu snímků). Dříve se kvůli asynchronnímu pozastavení zastavil na proměnlivém místě, takže u časově citlivých programů mohlo trasování přes MCP nedeterministicky ovlivnit jejich běh.
+
+	- MCP server - odpověď emu_run nově uvádí pole stopped_by (proč se emulace zastavila: doběhl počet snímků, breakpoint, pauza nebo timeout); pole complete je nově true jen při úplném doběhnutí požadovaného počtu snímků.
+
 	- ZRYCHLENÍ: Emulace je v režimu MAX SPEED výrazně rychlejší. Díky optimalizaci Z80 jádra a přístupu do paměti běží nově o cca 42 % rychleji (na paměťově náročném kódu až ~47 %). Konkrétně: per-step varianta Z80 jádra bez vnitřní registrové cache (+27 %) a přímý (inline) přístup k běžné RAM místo přes ukazatel na funkci (+11,6 % až +15,6 %).
 
 	- BUGFIX: Unicard - pole s krátkým názvem souboru (formát 8.3) ve výpisu adresáře a ve stavu souboru obsahovalo u dlouhých názvů jen useknutý dlouhý název místo platného 8.3 jména. Nyní emulace generuje stejné 8.3 jméno jako reálná karta.

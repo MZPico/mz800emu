@@ -1211,6 +1211,106 @@ void test_mem_w_range_with_value_filter ( void ) {
 
 
 /* ========================================================================= */
+/*  0019 KUS 1 - Vrstva 1: control-plane drain na hranici BP akce            */
+/* ========================================================================= */
+
+
+/* g_dbgapi_cmdrq_queue + dbgapi_init/destroy + dequeue/dispatch/complete jsou
+ * deklarovány v debugger/dbgapi_emu.h (už includováno výše). */
+
+
+/**
+ * @brief White-box helper: vloží řídicí příkaz do CMDRQ fronty bez čekání.
+ *
+ * Replikuje enqueue část UI submitu (dbgapi.c), ale BEZ blokujícího čekání
+ * na odpověď (= v single-threaded testu nikdo frontu nedrainuje, sync submit
+ * by deadlockoval / vytekl timeoutem a slot vyčistil). Vloží PENDING slot na
+ * pozici tail a posune tail; drain ho pak dequeue/dispatch/complete.
+ *
+ * @param cmd Příkaz (en_DBGAPI_CMD).
+ */
+static void test_enqueue_cmd_no_wait ( en_DBGAPI_CMD cmd ) {
+    int next_tail = ( g_dbgapi_cmdrq_queue.tail + 1 ) % DBGAPI_CMDRQ_QUEUE_SIZE;
+    st_DBGAPI_CMDRQ *slot = &g_dbgapi_cmdrq_queue.cmdrq[ g_dbgapi_cmdrq_queue.tail ];
+    g_dbgapi_cmdrq_queue.tail = next_tail;
+    slot->cmd = cmd;
+    slot->cmd_origin = DBGAPI_CMD_ORIGIN_TEST;
+    slot->cmd_state = DBGAPI_CMDSTATE_PENDING;
+    slot->data_ptr = NULL;
+    slot->result_ptr = NULL;
+    slot->success = false;
+}
+
+
+/**
+ * Drain obslouží pending PAUSE i bez per-frame bodu (mzarch.c) - holý drain.
+ */
+void test_drain_handles_pending_pause ( void ) {
+    dbgapi_init ( &g_dbgapi_cmdrq_queue );
+
+    g_emulator.paused = false;
+    test_enqueue_cmd_no_wait ( DBGAPI_CMD_PAUSE );
+
+    /* Fronta má pending příkaz. */
+    TEST_ASSERT_TRUE ( dbgapi_emu_has_pending ( &g_dbgapi_cmdrq_queue ) );
+
+    breakpoints_drain_control_plane_at_bp_boundary ( );
+
+    /* PAUSE se obsloužila -> emu je v pauze, fronta prázdná. */
+    TEST_ASSERT_TRUE ( g_emulator.paused );
+    TEST_ASSERT_FALSE ( dbgapi_emu_has_pending ( &g_dbgapi_cmdrq_queue ) );
+
+    dbgapi_destroy ( &g_dbgapi_cmdrq_queue );
+}
+
+
+/**
+ * Pending PAUSE submitnutý během běžící BP akce (= continue) se obslouží
+ * na hranici akce, NE až per-frame. Tím je control-plane responzivní i na
+ * horké BP smyčce (akceptační kritérium 0019 vrstva 1).
+ */
+void test_pending_pause_handled_at_bp_action_boundary ( void ) {
+    dbgapi_init ( &g_dbgapi_cmdrq_queue );
+
+    g_emulator.paused = false;
+
+    /* BP s akcí, která vrací continue (= $x += 1, neblokuje). */
+    int id = make_bp ( BPT_TYPE_PC_EXEC, 0x1234 );
+    breakpoints_set_action ( id, "$x += 1" );
+
+    /* Simulace: control-plane PAUSE dorazila do fronty během akce (= UI/MCP
+     * klik na horké smyčce). Drain v enforce ji obslouží po dokončení akce. */
+    test_enqueue_cmd_no_wait ( DBGAPI_CMD_PAUSE );
+
+    breakpoints_enforce_pc_exec ( 0x1234 );
+
+    /* Akce proběhla (continue) A pending PAUSE byla obsloužena na hranici. */
+    TEST_ASSERT_EQUAL_INT32 ( 1, bp_var_get ( "x" ) );
+    TEST_ASSERT_TRUE ( g_emulator.paused );
+    TEST_ASSERT_FALSE ( dbgapi_emu_has_pending ( &g_dbgapi_cmdrq_queue ) );
+
+    dbgapi_destroy ( &g_dbgapi_cmdrq_queue );
+}
+
+
+/**
+ * Prázdná fronta = drain je no-op (žádná změna paused).
+ */
+void test_drain_empty_queue_is_noop ( void ) {
+    dbgapi_init ( &g_dbgapi_cmdrq_queue );
+
+    g_emulator.paused = false;
+    TEST_ASSERT_FALSE ( dbgapi_emu_has_pending ( &g_dbgapi_cmdrq_queue ) );
+
+    breakpoints_drain_control_plane_at_bp_boundary ( );
+
+    TEST_ASSERT_FALSE ( g_emulator.paused );
+
+    dbgapi_destroy ( &g_dbgapi_cmdrq_queue );
+}
+
+
+/* ========================================================================= */
 /*  MAIN                                                                     */
 /* ========================================================================= */
 
@@ -1298,6 +1398,11 @@ int main ( int argc, char *argv[] ) {
     /* MEM_W value filter */
     RUN_TEST ( test_mem_w_value_condition_match );
     RUN_TEST ( test_mem_w_range_with_value_filter );
+
+    /* 0019 KUS 1 - Vrstva 1: control-plane drain na hranici BP akce */
+    RUN_TEST ( test_drain_handles_pending_pause );
+    RUN_TEST ( test_pending_pause_handled_at_bp_action_boundary );
+    RUN_TEST ( test_drain_empty_queue_is_noop );
 
     int result = UNITY_END ( );
 

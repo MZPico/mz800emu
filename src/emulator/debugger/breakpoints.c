@@ -71,6 +71,15 @@ st_BREAKPOINTS g_breakpoints;
 /* ========================================================================= */
 
 
+/* 0019 vrstva 3 - cfg callbacky byte backstopu (definice u API dole). */
+static void breakpoints_propagatecfg_byte_limit ( void *e, void *data );
+static void breakpoints_savecfg_byte_limit ( void *e, void *data );
+
+/* 0019 vrstva 2 - cfg callbacky globálního default rate-limit intervalu. */
+static void breakpoints_propagatecfg_fwd_default_interval ( void *e, void *data );
+static void breakpoints_savecfg_fwd_default_interval ( void *e, void *data );
+
+
 /*
  * Přidělí nové unikátní ID (od 1 výše). Vrátí -1 při přetečení.
  */
@@ -302,8 +311,40 @@ void breakpoints_init ( void ) {
     elm = cfgmodule_register_new_element ( cmod, "groups_first", CFGENTYPE_BOOL, 1 );
     cfgelement_bind ( elm, (void*) &g_breakpoints.groups_first );
 
+    /* 0019 vrstva 3: práh kumulativního byte backstopu pro FWD akce v MB.
+     * Default 256 MB (= BP_ACTION_FWD_DEFAULT_BYTE_LIMIT). 0 = backstop vypnut.
+     * Hodnotu propaguje breakpoints_propagatecfg_byte_limit (MB -> bajty), zpět
+     * ji ukládá breakpoints_savecfg_byte_limit (bajty -> MB). */
+    elm = cfgmodule_register_new_element ( cmod, "fwd_byte_limit_mb",
+                                           CFGENTYPE_UNSIGNED,
+                                           (unsigned) ( BP_ACTION_FWD_DEFAULT_BYTE_LIMIT / ( 1024 * 1024 ) ),
+                                           0, 0xFFFFFFFFu );
+    cfgelement_set_propagate_cb ( elm, breakpoints_propagatecfg_byte_limit, NULL );
+    cfgelement_set_save_cb ( elm, breakpoints_savecfg_byte_limit, NULL );
+
+    /* 0019 vrstva 2: globální default min. odstup těžkých FWD akcí v ms pro
+     * BP bez vlastního per-BP override (fwd_min_interval_ms == 0). Default
+     * BP_ACTION_FWD_DEFAULT_MIN_INTERVAL_MS (= bezpečný default i bez
+     * konfigurace). Propaguje breakpoints_propagatecfg_fwd_default_interval,
+     * zpět ji ukládá breakpoints_savecfg_fwd_default_interval. */
+    elm = cfgmodule_register_new_element ( cmod, "fwd_default_min_interval_ms",
+                                           CFGENTYPE_UNSIGNED,
+                                           (unsigned) BP_ACTION_FWD_DEFAULT_MIN_INTERVAL_MS,
+                                           0, 0xFFFFFFFFu );
+    cfgelement_set_propagate_cb ( elm, breakpoints_propagatecfg_fwd_default_interval, NULL );
+    cfgelement_set_save_cb ( elm, breakpoints_savecfg_fwd_default_interval, NULL );
+
     cfgmodule_parse ( cmod );
     cfgmodule_propagate ( cmod );
+
+    /* 0019 vrstva 3: reset byte akumulátoru při (re-)init = reset emulátoru. */
+    breakpoints_fwd_reset_byte_accounting ( );
+
+    /* 0019 vrstva 3 (flush-side): zaregistruj guard do trace vrstvy, aby se byte
+     * backstop vyhodnotil i na flush cestě (inkrementální chunk swapy mezi dvěma
+     * trace_save fire), ne jen na hraně BP fire. Bez něj cputrack/trace flood bez
+     * periodické trace_save akce roste neohraničený (V19B disk-flood vektor). */
+    bp_action_install_disk_flush_guard ( );
 
     /* Automatické načtení breakpointů ze souboru */
     if ( g_breakpoints.auto_load ) {
@@ -532,7 +573,8 @@ static void breakpoints_json_emit_group ( JsonBuilder *b, const st_BPTGROUP *grp
  *   event_name, sp_threshold, sp_upper, sp_mode,
  *   im2_vector_enabled, im2_vector_addr, im2_isr_enabled, im2_isr_addr,
  *   expr, action, hit_count, skip_count,
- *   edge_triggered, auto_name, name, enabled, color_bg, color_fg, hits
+ *   edge_triggered, auto_name, name, enabled, color_bg, color_fg, hits,
+ *   fwd_min_interval_ms, fwd_max_fires
  *
  * Stringy expr/action/event_name s NULL hodnotou jsou serializovány
  * jako JSON null (= explicit absence).
@@ -777,6 +819,17 @@ static void breakpoints_json_emit_bpt ( JsonBuilder *b, const st_BPT *bpt ) {
      * (default USER) a unknown tokenům (= forward compat). */
     json_builder_set_member_name ( b, "origin" );
     json_builder_add_string_value ( b, _bp_origin_to_str ( bpt->cmd_origin ) );
+
+    /* 0019 vrstva 2 - per-BP rate-limit override (těžké FWD akce). Load
+     * tolerantní k missing klíči (default 0 = global/built-in default,
+     * resp. 0 = neomezeno) = BC se staršími .bpt soubory. Runtime stav
+     * (fwd_last_fire_us, fwd_fire_count) se NEpersistuje (resetuje se při
+     * enable / init). */
+    json_builder_set_member_name ( b, "fwd_min_interval_ms" );
+    json_builder_add_int_value ( b, (gint64) bpt->fwd_min_interval_ms );
+
+    json_builder_set_member_name ( b, "fwd_max_fires" );
+    json_builder_add_int_value ( b, (gint64) bpt->fwd_max_fires );
 
     json_builder_end_object ( b );
 }
@@ -1027,6 +1080,12 @@ static int breakpoints_json_load_bpt ( JsonObject *obj ) {
     bpt.hit_count = (uint32_t) breakpoints_json_get_int_or ( obj, "hit_count", 0 );
     bpt.skip_count = (uint32_t) breakpoints_json_get_int_or ( obj, "skip_count", 0 );
     bpt.edge_triggered = breakpoints_json_get_bool_or ( obj, "edge_triggered", FALSE ) ? true : false;
+
+    /* 0019 vrstva 2 - per-BP rate-limit override. Chybí-li klíč (starší .bpt),
+     * default 0 = global/built-in default (min_interval) resp. neomezeno
+     * (max_fires). */
+    bpt.fwd_min_interval_ms = (uint32_t) breakpoints_json_get_int_or ( obj, "fwd_min_interval_ms", 0 );
+    bpt.fwd_max_fires = (uint32_t) breakpoints_json_get_int_or ( obj, "fwd_max_fires", 0 );
 
     /* V1.5.E match mode fields - BC fallback pro V1 .bpt soubory.
      * Chybí-li klíč, použije se SINGLE + max-mask (= V1 sémantika). */
@@ -1855,6 +1914,15 @@ bool breakpoints_set_enabled ( int bpt_id, bool enabled ) {
     };
 
     bpt->enabled = enabled;
+
+    /* 0019 vrstva 2: při (re-)enable BP vynuluj runtime stav rate-limitu, aby
+     * max_fires nezůstal trvale "vyčerpaný" napříč session (= disable_self po
+     * dosažení stropu + pozdější ruční enable musí dát BP novou kvótu). */
+    if ( enabled ) {
+        bpt->fwd_last_fire_us = 0;
+        bpt->fwd_fire_count   = 0;
+    };
+
     /* D.3 - pokud je BP HW_EVENT, aktualizuj globální active bitmap. */
     if ( bpt->type == BPT_TYPE_HW_EVENT ) {
         breakpoints_recompute_event_active ( );
@@ -2191,6 +2259,24 @@ bool breakpoints_set_edge_triggered ( int bpt_id, bool edge_triggered ) {
     st_BPT *bpt = breakpoints_find_by_id ( bpt_id );
     if ( !bpt ) return false;
     bpt->edge_triggered = edge_triggered;
+    g_breakpoints.version++;
+    return true;
+}
+
+
+bool breakpoints_set_fwd_min_interval_ms ( int bpt_id, uint32_t interval_ms ) {
+    st_BPT *bpt = breakpoints_find_by_id ( bpt_id );
+    if ( !bpt ) return false;
+    bpt->fwd_min_interval_ms = interval_ms;
+    g_breakpoints.version++;
+    return true;
+}
+
+
+bool breakpoints_set_fwd_max_fires ( int bpt_id, uint32_t max_fires ) {
+    st_BPT *bpt = breakpoints_find_by_id ( bpt_id );
+    if ( !bpt ) return false;
+    bpt->fwd_max_fires = max_fires;
     g_breakpoints.version++;
     return true;
 }
@@ -2867,6 +2953,225 @@ bool breakpoints_run_action ( const st_BPT *bpt,
 #endif
 
 
+void breakpoints_drain_control_plane_at_bp_boundary ( void ) {
+    /* Fronta neinicializovaná (= dbgapi_init nebyl volán) - není co
+     * drainovat. V běžícím emulátoru je fronta inicializovaná při startu,
+     * tato větev tedy chrání jen brzkou fázi / testy bez fronty. Bez ní
+     * by dbgapi_emu_has_pending() dereferencoval NULL queue_mutex. */
+    if ( !g_dbgapi_cmdrq_queue.queue_mutex ) return;
+
+    /* HOT-PATH disciplína: tuto funkci voláme JEN když BP akce reálně
+     * proběhla a vrací continue (= off-hot-path událost, ne per-instrukce).
+     * Prázdná fronta = jeden atomic read + branch, pak okamžitý návrat. */
+    if ( !dbgapi_emu_has_pending ( &g_dbgapi_cmdrq_queue ) ) return;
+
+    /* Drain CELÉ fronty stejnými primitivy jako per-frame bod
+     * (mzarch.c screen-done). dequeue/dispatch/complete jsou thread-safe
+     * a určené pro emu vlákno, na kterém běžíme - re-použití je legální.
+     *
+     * Po drainu: pokud některý příkaz nastavil pauzu (PAUSE/STOP přes
+     * emulator_pause(true)), enforce po návratu narazí na EMULATOR_TEST_PAUSED
+     * v mzarch.c a vstoupí do paused-loop. Žádný další kód zde netřeba. */
+    st_DBGAPI_CMDRQ *rq;
+    while ( ( rq = dbgapi_emu_dequeue ( &g_dbgapi_cmdrq_queue ) ) != NULL ) {
+        dbgapi_emu_dispatch ( rq );
+        dbgapi_emu_complete ( rq );
+    };
+}
+
+
+/* ========================================================================= */
+/*  0019 vrstva 3 - kumulativní byte backstop pro forward akce               */
+/* ========================================================================= */
+
+/**
+ * @brief Práh byte backstopu v bajtech (0 = vypnuto).
+ *
+ * Měkký práh: měněn z UI/MCP vlákna, čten z emu vlákna při FWD akci.
+ * Bez locku - prostý uint64 read/write, race na čtení neohrozí korektnost
+ * (jen by o jeden snapshot posunul okamžik auto-pauzy). Inicializován na
+ * default v breakpoints_init.
+ */
+static uint64_t g_bp_action_byte_limit = BP_ACTION_FWD_DEFAULT_BYTE_LIMIT;
+
+/**
+ * @brief Akumulátor bajtů zapsaných těžkými FWD akcemi (snapshot/trace_save).
+ *
+ * Sčítá se přes všechny BP. Resetuje se v breakpoints_init (= reset
+ * emulátoru) nebo ručně přes breakpoints_fwd_reset_byte_accounting.
+ * Modifikován výhradně z emu vlákna v bp_action.c.
+ */
+static uint64_t g_bp_action_total_bytes = 0;
+
+/**
+ * @brief Globální default minimálního odstupu těžkých FWD akcí (0019 v2) v ms.
+ *
+ * Použije se jako fallback pro BP, který nemá vlastní per-BP override
+ * (fwd_min_interval_ms == 0). Inicializován z INI klíče
+ * [BREAKPOINTS] fwd_default_min_interval_ms (default
+ * BP_ACTION_FWD_DEFAULT_MIN_INTERVAL_MS). 0 = global default vypnut -> spadne
+ * se na vestavěnou konstantu BP_ACTION_FWD_DEFAULT_MIN_INTERVAL_MS (bezpečný
+ * default zůstává i kdyby uživatel nastavil 0). Měkká hodnota: měněna z
+ * UI/MCP vlákna, čtena z emu vlákna; bez locku (prostý uint32 read/write).
+ */
+static uint32_t g_bp_action_fwd_default_min_interval_ms =
+    BP_ACTION_FWD_DEFAULT_MIN_INTERVAL_MS;
+
+
+void breakpoints_fwd_set_byte_limit ( uint64_t limit_bytes ) {
+    g_bp_action_byte_limit = limit_bytes;
+}
+
+
+void breakpoints_fwd_set_default_min_interval_ms ( uint32_t interval_ms ) {
+    g_bp_action_fwd_default_min_interval_ms = interval_ms;
+}
+
+
+uint32_t breakpoints_fwd_get_default_min_interval_ms ( void ) {
+    return g_bp_action_fwd_default_min_interval_ms;
+}
+
+
+uint64_t breakpoints_fwd_get_byte_limit ( void ) {
+    return g_bp_action_byte_limit;
+}
+
+
+uint64_t breakpoints_fwd_get_total_bytes ( void ) {
+    return g_bp_action_total_bytes;
+}
+
+
+void breakpoints_fwd_reset_byte_accounting ( void ) {
+    g_bp_action_total_bytes = 0;
+    /* 0019 v3: srovnej i baseline trace_save disk accountingu, aby trace_save
+     * fire po resetu countoval deltu od TEĎ (ne historický footprint). */
+    bp_action_reset_trace_disk_baseline ( );
+}
+
+
+/**
+ * @brief cfg propagate callback: INI fwd_byte_limit_mb (MB) -> práh v bajtech.
+ *
+ * Volá cfg vrstva při načtení/změně konfigurace. Převede uloženou hodnotu
+ * v MB na bajty a nastaví backstop práh. 0 MB = backstop vypnut.
+ *
+ * @param e CFGELM element (typ unsigned).
+ * @param data Nepoužito (NULL).
+ */
+static void breakpoints_propagatecfg_byte_limit ( void *e, void *data ) {
+    (void) data;
+    unsigned mb = cfgelement_get_unsigned_value ( (CFGELM *) e );
+    breakpoints_fwd_set_byte_limit ( (uint64_t) mb * 1024u * 1024u );
+}
+
+
+/**
+ * @brief cfg save callback: práh v bajtech -> INI fwd_byte_limit_mb (MB).
+ *
+ * Volá cfg vrstva před uložením konfigurace. Převede aktuální práh z bajtů
+ * zpět na MB (zaokrouhleno dolů) a zapíše do elementu.
+ *
+ * @param e CFGELM element (typ unsigned).
+ * @param data Nepoužito (NULL).
+ */
+static void breakpoints_savecfg_byte_limit ( void *e, void *data ) {
+    (void) data;
+    unsigned mb = (unsigned) ( g_bp_action_byte_limit / ( 1024u * 1024u ) );
+    cfgelement_set_unsigned_value ( (CFGELM *) e, mb );
+}
+
+
+/**
+ * @brief cfg propagate callback: INI fwd_default_min_interval_ms -> global default.
+ *
+ * Volá cfg vrstva při načtení/změně konfigurace. Nastaví globální default
+ * rate-limit interval pro BP bez vlastního override (0019 v2).
+ *
+ * @param e CFGELM element (typ unsigned).
+ * @param data Nepoužito (NULL).
+ */
+static void breakpoints_propagatecfg_fwd_default_interval ( void *e, void *data ) {
+    (void) data;
+    unsigned ms = cfgelement_get_unsigned_value ( (CFGELM *) e );
+    breakpoints_fwd_set_default_min_interval_ms ( (uint32_t) ms );
+}
+
+
+/**
+ * @brief cfg save callback: global default -> INI fwd_default_min_interval_ms.
+ *
+ * @param e CFGELM element (typ unsigned).
+ * @param data Nepoužito (NULL).
+ */
+static void breakpoints_savecfg_fwd_default_interval ( void *e, void *data ) {
+    (void) data;
+    cfgelement_set_unsigned_value ( (CFGELM *) e,
+                                    g_bp_action_fwd_default_min_interval_ms );
+}
+
+
+/**
+ * @brief Přičte bajty FWD akce a vyhodnotí byte backstop (0019 v3).
+ *
+ * Interní helper volaný z bp_action.c po každém úspěšném zápisu těžké FWD
+ * akce. Akumuluje bajty a po překročení prahu emulátor sám zapauzuje +
+ * vyemituje warning a "paused" event s důvodem (BP id + N MB).
+ *
+ * @param bp_id ID breakpointu, jehož akce zápis provedla (= do detailu eventu).
+ * @param bytes Počet právě zapsaných bajtů.
+ *
+ * Side effects: inkrement g_bp_action_total_bytes; při překročení prahu
+ * emulator_pause(true) + stderr warning + (pod MCP) "paused" event. Auto-pauza
+ * proběhne jen jednou na hranici překročení (akumulátor dál roste, ale
+ * emulator_pause(true) je idempotentní).
+ * Threading: jen z emu vlákna (mezi instrukcemi, safe-point).
+ */
+void breakpoints_fwd_account_bytes ( int bp_id, uint64_t bytes ) {
+    if ( bytes == 0 ) return;
+
+    uint64_t before = g_bp_action_total_bytes;
+    g_bp_action_total_bytes += bytes;
+
+    uint64_t limit = g_bp_action_byte_limit;
+    if ( limit == 0 ) return;   /* backstop vypnut */
+
+    /* Auto-pauza jen na hraně překročení (before < limit <= after), aby se
+     * warning/event neopakoval s každým dalším snapshotem nad prahem. */
+    if ( before < limit && g_bp_action_total_bytes >= limit ) {
+        unsigned long long total_mb =
+            (unsigned long long) ( g_bp_action_total_bytes / ( 1024 * 1024 ) );
+        fprintf ( stderr,
+                  "[BP-ACTION] forward-action byte backstop tripped: BP #%d - "
+                  "auto-paused after %llu MB written\n",
+                  bp_id, total_mb );
+
+        /* Čistá auto-pauza přes stejný mechanismus jako DBGAPI PAUSE
+         * (= konzistentní side-efekty: audio pause, MZEVENT). Jsme na emu
+         * vlákně mezi instrukcemi (safe-point), takže je to bezpečné. */
+        emulator_pause ( true );
+
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+        /* Informuj MCP klienty: "paused" event s důvodem saturace, ať uživatel
+         * ví PROČ se emulátor zastavil (vč. BP id a objemu). */
+        JsonObject *p_payload = json_object_new ( );
+        json_object_set_string_member ( p_payload, "reason",
+                                         "bp_action_saturation" );
+        json_object_set_int_member ( p_payload, "bp_id", bp_id );
+        json_object_set_int_member ( p_payload, "bytes",
+                                     (gint64) g_bp_action_total_bytes );
+        char detail[128];
+        snprintf ( detail, sizeof ( detail ),
+                   "BP #%d forward-action saturation: auto-paused after %llu MB",
+                   bp_id, total_mb );
+        json_object_set_string_member ( p_payload, "detail", detail );
+        event_bus_emit ( "paused", p_payload );
+#endif /* MZ800EMU_CFG_MCP_SERVER_ENABLED */
+    };
+}
+
+
 /**
  * @brief Naplní bp_expr_ctx_t globálním emu state (Cycle/Frame/Scanline + cpu).
  *
@@ -3006,6 +3311,7 @@ void breakpoints_enforce ( st_BPT *bpt, struct bp_expr_ctx_s *ctx ) {
 
     /* 7) Stop nebo continue. */
     if ( !should_continue ) {
+        g_emulator.pause_reason = EMU_PAUSE_REASON_BREAKPOINT;
         emulator_pause ( true );
         debugger_show_main_window ( );
 
@@ -3041,6 +3347,14 @@ void breakpoints_enforce ( st_BPT *bpt, struct bp_expr_ctx_s *ctx ) {
         json_object_set_int_member ( p_payload, "pc", pc_now );
         event_bus_emit ( "paused", p_payload );
 #endif /* MZ800EMU_CFG_MCP_SERVER_ENABLED */
+    } else {
+        /* 8) Vrstva 1 (0019) control-plane garance: akce proběhla a vrací
+         * continue (= off-hot-path hranice). Obsloužíme pending řídicí
+         * příkazy (PAUSE/STOP/...), aby control-plane zůstal responzivní
+         * i na horké BP smyčce, kde se per-frame drain (mzarch.c) nemusí
+         * stihnout. Pokud příkaz nastaví pauzu, enforce po návratu narazí
+         * na EMULATOR_TEST_PAUSED v mzarch.c a zastaví. */
+        breakpoints_drain_control_plane_at_bp_boundary ( );
     };
 }
 

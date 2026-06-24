@@ -47,7 +47,11 @@ BP, or Stop mode without a Custom script.
 
 ## Commands
 
-The action mini-DSL provides 11 commands.
+The action mini-DSL provides 19 commands: 11 basic ones (log, continue,
+disable_self, enable, disable, poke, set, mark, `$name` assignment,
+clear_vars, if) and 8 forward commands for recording control (cdl_start,
+cdl_stop, cdl_reset, cdl_export, trace_start, trace_stop, trace_save,
+snapshot - see the "Forward commands" section below).
 
 ### `log "fmt"[, expr...]`
 
@@ -214,7 +218,7 @@ Default behavior without configuration = stdout only.
   marklog branch is a no-op for that BP action (stdout still works if
   cfg ON).
 
-**Format details:** `docs/cz/debugger/formats/MARK-log_format.md`
+**Format details:** `docs/en/debugger/formats/MARK-log_format.md`
 
 The marker ID is registered during BP parse. The hot-path fire then
 calls no string operations - it writes a 24 B record from the
@@ -305,6 +309,99 @@ if HL == 0 then mark "HL underflow"
 if A == 0 then log "zero" else log "nonzero=%X", A
 if $state == 1 then enable trace_bp else disable trace_bp
 ```
+
+## Forward commands (recording control from a BP)
+
+Forward commands let a breakpoint action run recording operations
+automatically when the BP fires - the same effect as the corresponding
+MCP / GUI call, but without manual intervention. The goal: a single
+well-placed breakpoint instead of dozens of manual commands. On a hit
+they run synchronously.
+
+### `cdl_start`, `cdl_stop`, `cdl_reset`
+
+Code/Data Logger (Memory Heatmap) lifecycle. No arguments. `cdl_start`
+turns recording on, `cdl_stop` turns it off, `cdl_reset` zeroes the
+counters.
+
+```
+cdl_start
+cdl_reset
+```
+
+### `cdl_export "fmt"[, args...]`
+
+Export the CDL data to a file. `fmt` is a file-name template with the
+same specifiers and arguments as `log` (= `%X`, `%d`, `$variables`,
+...).
+
+```
+cdl_export "cdl-dump.json"
+cdl_export "cdl-%d.json", $id
+```
+
+### `trace_start <channel>`, `trace_stop <channel>`
+
+Start / stop a binary trace-suite channel. `<channel>` is one of
+`cputrack` / `iorqlog` / `intlog` / `hwlog` (case-sensitive, no quotes).
+
+```
+trace_start cputrack
+trace_stop cputrack
+```
+
+### `trace_save <channel>, "fmt"[, args...]`
+
+Save / redirect a trace channel segment. The channel name is followed
+by a comma and a file-name template (same as the `log` fmt + args).
+
+```
+trace_save cputrack, "seg-%d.bin", $id
+```
+
+### `snapshot "fmt"[, args...]`
+
+Save a .mzs snapshot. `fmt` is a file-name template (like the `log` fmt
++ args). Works from a continuing BP too (non-empty action = continue): the
+action runs on the emulator thread between instructions (a safe-point), so
+the snapshot is saved without manually pausing the emulator. This lets a
+single continuing BP capture both a trace segment and a snapshot.
+
+```
+snapshot "snap.mzs"
+snapshot "snap-%d.mzs", $id
+```
+
+All file-name templates (`cdl_export` / `trace_save` / `snapshot`)
+share the same renderer as `log`, so you can generate numbered files
+with `$variables`, e.g.:
+
+```
+snapshot "snap-%d.mzs", $id
+$id += 1
+```
+
+For the MCP equivalents see the
+[MCP tools overview](../../mcp-server/tools-overview.md); for trace
+channel configuration see [Trace Suite](../Trace_Suite.md).
+
+### Flood protection (rate limit + saturation)
+
+Heavy forward actions (`snapshot`, `trace_save`) write to disk. To
+keep a breakpoint that fires very frequently from flooding the
+emulator or the disk, they have built-in protection:
+
+- **Rate limit.** A minimum delay applies between two heavy actions of
+  the same BP; firing faster is silently skipped. Optionally a hard
+  cap on the number of saves per session can be set - once reached the
+  BP disables itself. These limits are settable per BP (via MCP / GUI);
+  otherwise the global default from configuration applies.
+- **Byte saturation.** When the cumulative volume written by forward
+  actions exceeds the threshold the emulator auto-pauses and emits a
+  warning with a reason.
+- Even when a continuing BP triggers a heavy action, pause / stop /
+  clear-breakpoint commands always take effect - the emulator does not
+  get stuck.
 
 ## Full examples
 

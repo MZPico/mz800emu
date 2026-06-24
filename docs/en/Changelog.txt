@@ -1,4 +1,16 @@
 
+	- MCP server - events are now available over TCP as well (previously only over the pipe). Typed breakpoints (MEM_W, MEM_R, IORQ...) can be created. Instruction tracing can be fully controlled over MCP (start/stop/reset/save, with channel selection). MCP tools now always return an error message instead of an empty response on error.
+
+	- BUGFIX: MCP server - sending keys to the emulator now reports whether the keys actually landed. Previously the tool could report success even when the machine did not accept them.
+
+	- Tracing can now be limited to an address range (PC filter).
+
+	- A breakpoint action can run additional commands - control tracing and CDL recording (start/stop/reset/save) and save a snapshot or a memory segment right from the breakpoint (including a continuing one), with a file name template.
+
+	- BUGFIX: MCP server - emu_run now stops emulation deterministically (exactly at the requested frame count). Previously the asynchronous pause stopped it at a variable point, so tracing over MCP could nondeterministically affect timing-sensitive programs.
+
+	- MCP server - the emu_run response now includes a stopped_by field (why the emulation stopped: ran the full frame count, breakpoint, pause or timeout); the complete field is now true only when the full requested frame count was reached.
+
 	- SPEEDUP: The emulation is significantly faster in MAX SPEED mode. Thanks to Z80 core and memory access optimizations it now runs about 42 % faster (up to ~47 % on memory-heavy code). Specifically: a per-step Z80 core variant without the internal register cache (+27 %) and direct (inline) access to plain RAM instead of going through a function pointer (+11.6 % to +15.6 %).
 
 	- BUGFIX: Unicard - the short file name field (8.3 format) in the directory listing and file status contained only a truncated long name instead of a valid 8.3 name for long file names. The emulation now generates the same 8.3 name as a real card.

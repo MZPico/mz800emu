@@ -37,6 +37,11 @@
 
 #include "emulator/debugger/dbgapi_cmdrq.h"
 /* Pozn.: dbgapi_ui.h NEincludujeme - viz komentář ve stub headeru. */
+/* F015a - dispatch.c v _handle_bp_list volá bpt_type_to_string /
+ * bp_zone_to_string. V standalone testu se breakpoints.c nelinkuje,
+ * proto níže shim. Header poskytuje typy en_BPT_TYPE / en_BP_ZONE a
+ * je self-contained (jen stdint/stdbool/glib/dbgapi_cmdrq.h/bp_event.h). */
+#include "emulator/debugger/breakpoints.h"
 
 #include "test_dispatch_dbgapi_stub.h"
 
@@ -156,6 +161,10 @@ void dispatch_stub_reset(void) {
     if (g_stub_state.cdl_export_last_path) {
         g_free(g_stub_state.cdl_export_last_path);
     }
+    /* 0017 FÁZE 1 - uvolnit trace save path heap string. */
+    if (g_stub_state.trace_save_last_path) {
+        g_free(g_stub_state.trace_save_last_path);
+    }
     /* V1.A.7 - uvolnit profiler export heap string. */
     if (g_stub_state.profiler_export_last_path) {
         g_free(g_stub_state.profiler_export_last_path);
@@ -179,6 +188,10 @@ void dispatch_stub_reset(void) {
     }
     if (g_stub_state.periph_last_option_value) {
         g_free(g_stub_state.periph_last_option_value);
+    }
+    /* F015b - uvolnit zachycený expr z BP_CREATE_WITH_INIT. */
+    if (g_stub_state.bp_create_last_expr) {
+        g_free(g_stub_state.bp_create_last_expr);
     }
     memset(&g_stub_state, 0, sizeof(g_stub_state));
     memset(&g_dbgapi_cmdrq_queue, 0, sizeof(g_dbgapi_cmdrq_queue));
@@ -295,7 +308,13 @@ void dispatch_stub_reset(void) {
  *
  * Pro CMD_BP_LIST: pokud result_ptr (st_DBGAPI_BP_LIST_RESULT), stub
  * naplní `count = fill_bp_list_count` a `bp[i]` deterministicky
- * (i, addr=0x1000+i, enabled=true).
+ * (i, addr=0x1000+i, enabled=true). F015b: bp[0] navíc nese
+ * type/zone/bank_id/hits z bp_list_fake_* a condition g_strdup()
+ * z bp_list_fake_condition (caller je povinen uvolnit).
+ *
+ * Pro CMD_BP_CREATE_WITH_INIT (F015b): zachytí p->type / addr /
+ * update_mask / expr do bp_create_last_* a naplní p->id =
+ * bp_create_fake_id (= simulace typed create path).
  *
  * Pro CMD_IS_RUNNING: zapíše do *(bool *)result_ptr hodnotu `is_running`.
  */
@@ -376,7 +395,40 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                     r->bp[i].id      = 100 + i;
                     r->bp[i].addr    = (uint16_t)(0x1000 + i);
                     r->bp[i].enabled = true;
+                    /* F015b - bp[0] nese typed atributy + condition (heap
+                     * g_strdup = simulace dbgapi ownership; caller MUSÍ
+                     * uvolnit). bp[1..] zůstanou výchozí (NULL condition). */
+                    if (i == 0) {
+                        r->bp[i].type    = g_stub_state.bp_list_fake_type;
+                        r->bp[i].zone    = g_stub_state.bp_list_fake_zone;
+                        r->bp[i].bank_id = g_stub_state.bp_list_fake_bank_id;
+                        r->bp[i].hits    = g_stub_state.bp_list_fake_hits;
+                        r->bp[i].condition =
+                            g_stub_state.bp_list_fake_condition
+                            ? g_strdup(g_stub_state.bp_list_fake_condition)
+                            : NULL;
+                    }
                 }
+            }
+            break;
+
+        case DBGAPI_CMD_BP_CREATE_WITH_INIT:
+            /* F015b - zachytí typed create path. Dispatch handler předá
+             * st_DBGAPI_BP_UPDATE_PARAM* s type/addr/update_mask/expr a
+             * čeká, že handler naplní p->id přiděleným ID. */
+            if (data_ptr) {
+                st_DBGAPI_BP_UPDATE_PARAM *p =
+                    (st_DBGAPI_BP_UPDATE_PARAM *)data_ptr;
+                g_stub_state.bp_create_calls++;
+                g_stub_state.bp_create_last_type = p->type;
+                g_stub_state.bp_create_last_addr = p->addr;
+                g_stub_state.bp_create_last_mask = p->update_mask;
+                g_stub_state.bp_create_last_zone = p->zone;
+                g_stub_state.bp_create_last_event_trigger = p->event_trigger;
+                g_free(g_stub_state.bp_create_last_expr);
+                g_stub_state.bp_create_last_expr =
+                    p->expr ? g_strdup(p->expr) : NULL;
+                p->id = g_stub_state.bp_create_fake_id;
             }
             break;
 
@@ -818,6 +870,36 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                 p->out_result = g_stub_state.cdl_export_fake_result;
                 p->out_region_count =
                     g_stub_state.cdl_export_fake_region_count;
+                if (p->out_result != 0) {
+                    return false;
+                }
+            }
+            break;
+
+        /* 0017 FÁZE 1 - Tracking lifecycle (trace-suite) */
+        case DBGAPI_CMD_TRACE_START:
+        case DBGAPI_CMD_TRACE_STOP:
+        case DBGAPI_CMD_TRACE_RESET:
+        case DBGAPI_CMD_TRACE_SAVE:
+            if (data_ptr) {
+                st_DBGAPI_TRACE_PARAM *p =
+                    (st_DBGAPI_TRACE_PARAM *)data_ptr;
+                g_stub_state.trace_last_channel = (int)p->channel;
+                if (cmd == DBGAPI_CMD_TRACE_START) {
+                    g_stub_state.trace_start_calls++;
+                } else if (cmd == DBGAPI_CMD_TRACE_STOP) {
+                    g_stub_state.trace_stop_calls++;
+                } else if (cmd == DBGAPI_CMD_TRACE_RESET) {
+                    g_stub_state.trace_reset_calls++;
+                } else {
+                    g_stub_state.trace_save_calls++;
+                    if (g_stub_state.trace_save_last_path) {
+                        g_free(g_stub_state.trace_save_last_path);
+                    }
+                    g_stub_state.trace_save_last_path =
+                        p->path ? g_strdup(p->path) : NULL;
+                }
+                p->out_result = g_stub_state.trace_fake_result;
                 if (p->out_result != 0) {
                     return false;
                 }
@@ -2008,4 +2090,124 @@ const char *dbgapi_cmd_to_str ( en_DBGAPI_CMD cmd )
         case DBGAPI_CMD_BP_REMOVE:      return "bp_remove";
         default:                        return "unknown";
     };
+}
+
+
+/* F015a - bpt_type_to_string / bp_zone_to_string shim pro test build.
+ *
+ * Reálná implementace je v breakpoints.c (s_bpt_type_names /
+ * s_bp_zone_names, index = enum hodnota). Standalone mcp_dispatch test
+ * breakpoints.c nelinkuje, proto věrný shim s identickými UPPER_SNAKE
+ * řetězci (= jediná pravda pro názvy typu/zóny BP). Fallback pro
+ * out-of-range stejný jako reálná funkce.
+ */
+const char *bpt_type_to_string ( en_BPT_TYPE type )
+{
+    switch ( type )
+    {
+        case BPT_TYPE_PC_EXEC:      return "PC_EXEC";
+        case BPT_TYPE_MEM_R:        return "MEM_R";
+        case BPT_TYPE_MEM_W:        return "MEM_W";
+        case BPT_TYPE_IORQ_R:       return "IORQ_R";
+        case BPT_TYPE_IORQ_W:       return "IORQ_W";
+        case BPT_TYPE_IRQ:          return "IRQ";
+        case BPT_TYPE_HW_EVENT:     return "HW_EVENT";
+        case BPT_TYPE_SP_THRESHOLD: return "SP_THRESHOLD";
+        case BPT_TYPE_GLOBAL:       return "GLOBAL";
+        case BPT_TYPE_IRQ_SIG:      return "IRQ_SIG";
+        default:                    return "PC_EXEC";
+    };
+}
+
+const char *bp_zone_to_string ( en_BP_ZONE zone )
+{
+    switch ( zone )
+    {
+        case BP_ZONE_CPU_VIEW:   return "CPU_VIEW";
+        case BP_ZONE_ROM_LOWER:  return "ROM_LOWER";
+        case BP_ZONE_ROM_UPPER:  return "ROM_UPPER";
+        case BP_ZONE_RAM:        return "RAM";
+        case BP_ZONE_VRAM_FB:    return "VRAM_FB";
+        case BP_ZONE_PCG:        return "PCG";
+        case BP_ZONE_MMEXT_BANK: return "MMEXT_BANK";
+        default:                 return "CPU_VIEW";
+    };
+}
+
+
+/* H2 - *_from_string shimy pro test build.
+ *
+ * Standalone mcp_dispatch test nelinkuje breakpoints.c ani bp_event.c,
+ * přesto _bp_fill_param_from_json (dispatch.c) volá kanonické enum
+ * konvertory. Shim věrně replikuje UPPER_SNAKE slovník reálných funkcí
+ * (breakpoints.c s_bpt_type_names / s_bp_zone_names / s_bp_match_mode_names
+ * / s_bp_sp_mode_names / s_bp_port_mode_names + bp_event.c s_trigger_names),
+ * včetně legacy aliasů zóny (PEHU_BANK->MMEXT_BANK, VRAM_RF->VRAM_FB).
+ * Neznámý řetězec vrací false (= dispatch pak vrátí invalid_params). */
+
+bool bpt_type_from_string ( const char *s, en_BPT_TYPE *out )
+{
+    if ( !s || !out ) return false;
+    if ( strcmp ( s, "PC_EXEC" ) == 0 )      { *out = BPT_TYPE_PC_EXEC;      return true; }
+    if ( strcmp ( s, "MEM_R" ) == 0 )        { *out = BPT_TYPE_MEM_R;        return true; }
+    if ( strcmp ( s, "MEM_W" ) == 0 )        { *out = BPT_TYPE_MEM_W;        return true; }
+    if ( strcmp ( s, "IORQ_R" ) == 0 )       { *out = BPT_TYPE_IORQ_R;       return true; }
+    if ( strcmp ( s, "IORQ_W" ) == 0 )       { *out = BPT_TYPE_IORQ_W;       return true; }
+    if ( strcmp ( s, "IRQ" ) == 0 )          { *out = BPT_TYPE_IRQ;          return true; }
+    if ( strcmp ( s, "HW_EVENT" ) == 0 )     { *out = BPT_TYPE_HW_EVENT;     return true; }
+    if ( strcmp ( s, "SP_THRESHOLD" ) == 0 ) { *out = BPT_TYPE_SP_THRESHOLD; return true; }
+    if ( strcmp ( s, "GLOBAL" ) == 0 )       { *out = BPT_TYPE_GLOBAL;       return true; }
+    if ( strcmp ( s, "IRQ_SIG" ) == 0 )      { *out = BPT_TYPE_IRQ_SIG;      return true; }
+    return false;
+}
+
+bool bp_zone_from_string ( const char *s, en_BP_ZONE *out )
+{
+    if ( !s || !out ) return false;
+    if ( strcmp ( s, "PEHU_BANK" ) == 0 )  { *out = BP_ZONE_MMEXT_BANK; return true; }
+    if ( strcmp ( s, "VRAM_RF" ) == 0 )    { *out = BP_ZONE_VRAM_FB;    return true; }
+    if ( strcmp ( s, "CPU_VIEW" ) == 0 )   { *out = BP_ZONE_CPU_VIEW;   return true; }
+    if ( strcmp ( s, "ROM_LOWER" ) == 0 )  { *out = BP_ZONE_ROM_LOWER;  return true; }
+    if ( strcmp ( s, "ROM_UPPER" ) == 0 )  { *out = BP_ZONE_ROM_UPPER;  return true; }
+    if ( strcmp ( s, "RAM" ) == 0 )        { *out = BP_ZONE_RAM;        return true; }
+    if ( strcmp ( s, "VRAM_FB" ) == 0 )    { *out = BP_ZONE_VRAM_FB;    return true; }
+    if ( strcmp ( s, "PCG" ) == 0 )        { *out = BP_ZONE_PCG;        return true; }
+    if ( strcmp ( s, "MMEXT_BANK" ) == 0 ) { *out = BP_ZONE_MMEXT_BANK; return true; }
+    return false;
+}
+
+bool bp_match_mode_from_string ( const char *s, en_BP_MATCH_MODE *out )
+{
+    if ( !s || !out ) return false;
+    if ( strcmp ( s, "SINGLE" ) == 0 ) { *out = BP_MATCH_SINGLE; return true; }
+    if ( strcmp ( s, "RANGE" ) == 0 )  { *out = BP_MATCH_RANGE;  return true; }
+    if ( strcmp ( s, "MASK" ) == 0 )   { *out = BP_MATCH_MASK;   return true; }
+    return false;
+}
+
+bool bp_sp_mode_from_string ( const char *s, en_BP_SP_MODE *out )
+{
+    if ( !s || !out ) return false;
+    if ( strcmp ( s, "SINGLE" ) == 0 ) { *out = BP_SP_SINGLE; return true; }
+    if ( strcmp ( s, "WINDOW" ) == 0 ) { *out = BP_SP_WINDOW; return true; }
+    return false;
+}
+
+bool bp_port_mode_from_string ( const char *s, en_BP_PORT_MODE *out )
+{
+    if ( !s || !out ) return false;
+    if ( strcmp ( s, "8BIT" ) == 0 )  { *out = BP_PORT_8BIT;  return true; }
+    if ( strcmp ( s, "16BIT" ) == 0 ) { *out = BP_PORT_16BIT; return true; }
+    return false;
+}
+
+bool bp_event_trigger_from_string ( const char *s, en_BP_EVENT_TRIGGER *out )
+{
+    if ( !s || !out ) return false;
+    if ( strcmp ( s, "rising" ) == 0 )  { *out = BP_EVT_TRIG_RISING;  return true; }
+    if ( strcmp ( s, "falling" ) == 0 ) { *out = BP_EVT_TRIG_FALLING; return true; }
+    if ( strcmp ( s, "changed" ) == 0 ) { *out = BP_EVT_TRIG_CHANGED; return true; }
+    if ( strcmp ( s, "low" ) == 0 )     { *out = BP_EVT_TRIG_LOW;     return true; }
+    if ( strcmp ( s, "high" ) == 0 )    { *out = BP_EVT_TRIG_HIGH;    return true; }
+    return false;
 }

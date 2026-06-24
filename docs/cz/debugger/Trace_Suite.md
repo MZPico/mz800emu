@@ -48,6 +48,16 @@ Hwlog navíc:
   což zničí real-time perf - rozumné hodnoty `100`-`1000` pro
   troubleshooting nebo `1` pro plnou trasu krátkého úseku.)
 
+Cputrack navíc (range-scoped tracking):
+- `--cputrack-pc-lo=<addr>` a `--cputrack-pc-hi=<addr>` (default `0` a
+  `0xFFFF` = celý adresový prostor, tj. bez filtru). Omezí záznam jen
+  na instrukce, jejichž PC leží v rozsahu `[lo, hi]` včetně. Instrukce
+  mimo rozsah se nezaznamenají. Typické použití: sledovat jen TPA
+  (např. `--cputrack-pc-lo=0x100 --cputrack-pc-hi=0xBFFF`) a vynechat
+  ROM/OS rutiny. Hodnoty přijímají dec i hex (`0x` prefix), ořežou se
+  na 16 bitů. Filtr je jen pro cputrack - ostatní subsystémy logují vždy
+  vše.
+
 #### Shorthand `--all-traces-*`
 
 ```bash
@@ -65,6 +75,12 @@ vyplní pouze ty subsystémy, kde uživatel per-subsys option nepředal.
 Debugger Settings -> Trace Suite -> [CPU Track | IORQ Log | Interrupt Log | HW Log | Marker Log]
 
 Per-subsystém: radio (Off / Only With Debug Window / Always) + Save on Exit toggle.
+
+Submenu CPU Track má navíc pole "PC range filter [lo,hi]:" se dvěma hex
+vstupy (lo, hi) a položkou "Reset range (whole space)". Nastavuje stejný
+range-scope filtr jako CLI `--cputrack-pc-lo` / `--cputrack-pc-hi`
+(záznam jen pro PC v rozsahu). Reset vrátí rozsah na `0000`-`FFFF`
+(= celý adresový prostor, bez filtru).
 
 #### Status indikátor v titulku okna
 
@@ -108,6 +124,8 @@ name=cputrack
 chunk_mb=64
 max_total_mb=0
 save_on_exit=1
+pc_range_lo=0                    # range-scope filtr: dolní mez PC (default 0)
+pc_range_hi=65535               # horní mez PC (default 0xFFFF = bez filtru)
 
 [TRACE_IORQLOG]
 ... (stejná struktura)
@@ -127,6 +145,63 @@ max_total_mb=0
 save_on_exit=1
 stdout_enabled=1                # back-compat printout [BP-MARK] na stdout
 ```
+
+## Ovládání za běhu (MCP + Breakpoint Action)
+
+Kromě statického nastavení (CLI / GUI / INI) lze trace záznam ovládat
+i za běhu - buď z MCP klienta (AI agent), nebo automaticky z akce
+breakpointu. Tím lze záznam přesně ohraničit kolem zajímavého úseku
+bez nutnosti ukládat až při ukončení emulátoru.
+
+### Přes MCP
+
+MCP server vystavuje pro 4 binární kanály (`cputrack`, `iorqlog`,
+`intlog`, `hwlog`) plný lifecycle:
+
+| Tool | Co dělá |
+|------|---------|
+| `emu_trace_start` | Spustí záznam zvoleného kanálu (= režim ALWAYS) |
+| `emu_trace_stop`  | Zastaví záznam kanálu (segment se uzavře a uloží) |
+| `emu_trace_reset` | Vynuluje aktuální segment kanálu (= čistý baseline) |
+| `emu_trace_save`  | Uloží/přesměruje segment kanálu na novou cestu |
+
+Každý tool má povinný argument `channel` (jeden z
+`cputrack`/`iorqlog`/`intlog`/`hwlog`). `emu_trace_save` má navíc
+volitelný `path` (cílová cesta následujícího segmentu; bez něj se jen
+uzavře a znovuotevře aktuální segment = "ulož teď"). Rozhraní zrcadlí
+CDL lifecycle tooly (`emu_cdl_start` / `_stop` / `_reset` / `_export`).
+Detaily a návratové hodnoty viz [Přehled MCP tools](../mcp-server/tools-overview.md).
+
+Typický postup: warp přes nezajímavou část, `emu_trace_start` těsně
+před sledovaným úsekem, doběh, `emu_trace_stop` a `emu_trace_save`
+s názvem segmentu.
+
+### Z akce breakpointu
+
+Akce breakpointu (Custom mode) umí stejné záznamové operace spustit
+automaticky při hitu BP - takže místo desítek ručních MCP volání stačí
+jeden chytře umístěný breakpoint. Dostupné forward příkazy:
+
+- `cdl_start` / `cdl_stop` / `cdl_reset` - lifecycle CDL.
+- `cdl_export "soubor"` - export CDL do souboru.
+- `trace_start <kanál>` / `trace_stop <kanál>` - start/stop trace kanálu
+  (kanál = `cputrack`/`iorqlog`/`intlog`/`hwlog`, case-sensitive).
+- `trace_save <kanál>, "soubor"` - uložení/přesměrování segmentu kanálu.
+- `snapshot "soubor"` - uložení .mzs snapshotu (funguje i z pokračujícího
+  breakpointu, který emulátor nezastavuje).
+
+Název souboru u `cdl_export`, `trace_save` a `snapshot` je šablona se
+stejnými specifikátory a `$proměnnými` jako příkaz `log` - takže lze
+generovat číslované soubory, např.:
+
+```
+snapshot "snap-%d.mzs", $id
+trace_save cputrack, "seg-%d.bin", $id
+$id += 1
+```
+
+Kompletní popis akce breakpointu viz
+[Breakpoint - akce při triggeru](breakpoints/action-dsl.md).
 
 ## Mode semantika
 

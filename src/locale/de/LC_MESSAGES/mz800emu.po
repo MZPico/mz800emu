@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-14 11:19+0200\n"
+"POT-Creation-Date: 2026-06-23 00:00+0200\n"
 "PO-Revision-Date: 2026-03-11 22:00+0100\n"
 "Last-Translator: Claude Code\n"
 "Language-Team: Deutsch\n"
@@ -116,7 +116,7 @@ msgstr "Existierende .MZQ-Datei auswählen oder neues QD-Image erstellen"
 msgid "Select directory to mount as virtual Quick Disk"
 msgstr "Verzeichnis als virtuelles Quick Disk einbinden"
 
-#: src/emulator/hw-generic/unicard/unicard.c:2175
+#: src/emulator/hw-generic/unicard/unicard.c:2299
 msgid "Select SD root directory for Unicard"
 msgstr "SD-Stammverzeichnis für Unicard auswählen"
 
@@ -5086,7 +5086,7 @@ msgid "Snapshot Δ"
 msgstr "Schnappschuss Δ"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_layers.cpp:497
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:135
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:137
 #: src/ui-imgui/maxspeed_bench_window.cpp:156
 #: src/ui-imgui/plotter/plotter_window.cpp:414
 #: src/ui-imgui/topmenu/topmenu.cpp:41
@@ -5922,109 +5922,133 @@ msgstr "Klick: in Normalmodus erweitern"
 msgid "Click: collapse to compact mode"
 msgstr "Klick: in Kompaktmodus reduzieren"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:98
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:100
 #: src/ui-imgui/memext/memext_load_dialog.cpp:106
 #: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:99
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:259
 msgid "File"
 msgstr "Datei"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:101
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:103
 msgid "Load MZF into RAM..."
 msgstr "MZF in RAM laden..."
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:112
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:114
 msgid "Hide"
 msgstr "Ausblenden"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:133
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:135
 msgid "Emulation"
 msgstr "Emulation"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:142
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:144
 msgid "Max Speed"
 msgstr "Maximale Geschwindigkeit"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:147
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:149
 #: src/ui-imgui/topmenu/topmenu.cpp:36
 msgid "Pause Emulation"
 msgstr "Emulation pausieren"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:158
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:160
 msgid "Forced Full Screen Refresh"
 msgstr "Erzwungener Vollbild-Refresh"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:191
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:193
 msgid "Settings"
 msgstr "Einstellungen"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:203
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:205
 msgid "CPU Instruction History"
 msgstr "CPU-Befehlsverlauf"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:209
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:246
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:319
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:211
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:248
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:321
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:341
 msgid "Off"
 msgstr "Aus"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:215
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:251
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:321
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:217
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:253
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:323
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:344
 msgid "Only With Debug Window"
 msgstr "Nur mit Debug-Fenster"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:221
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:256
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:323
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:223
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:258
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:325
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:347
 msgid "Always"
 msgstr "Immer"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:240
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:242
 msgid "CDL"
 msgstr "CDL"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:264
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:266
 msgid "Export on Exit"
 msgstr "Beim Beenden exportieren"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:274
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:276
 msgid "Show heatmap window"
 msgstr "Heatmap-Fenster anzeigen"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:282
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:284
 msgid "Set directory..."
 msgstr "Verzeichnis setzen..."
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:293
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:295
 msgid "Select CDL export directory"
 msgstr "CDL-Export-Verzeichnis wählen"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:311
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:313
 msgid "Trace Suite"
 msgstr "Trace Suite"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:327
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:329
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:352
 msgid "Save on Exit"
 msgstr "Beim Beenden speichern"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:356
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:336
+msgid "CPU Track"
+msgstr "CPU Track"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:360
+msgid "PC range filter [lo,hi]:"
+msgstr "PC-Bereichsfilter [lo,hi]:"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:366
+msgid "lo (hex)"
+msgstr "lo (hex)"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:373
+msgid "hi (hex)"
+msgstr "hi (hex)"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:379
+msgid "Reset range (whole space)"
+msgstr "Bereich zurücksetzen (gesamter Raum)"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:407
 msgid "Disassembled"
 msgstr "Disassembliert"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:367
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:418
 msgid "Show branch arrows"
 msgstr "Branch-Pfeile anzeigen"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:376
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:427
 msgid "Screen"
 msgstr "Bildschirm"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:384
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:435
 msgid "Auto refresh on edit"
 msgstr "Auto-Aktualisierung bei Bearbeitung"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:395
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:446
 msgid "Auto refresh at every CPU step"
 msgstr "Auto-Aktualisierung bei jedem CPU-Schritt"
 
@@ -9966,7 +9990,9 @@ msgstr "Papier löschen"
 
 #: src/ui-imgui/plotter/plotter_window.cpp:407
 msgid "Clear the drawing and reset the plotter (plain RESET keeps the paper)"
-msgstr "Löscht die Zeichnung und setzt den Plotter zurück (ein reines RESET behält das Papier)"
+msgstr ""
+"Löscht die Zeichnung und setzt den Plotter zurück (ein reines RESET behält "
+"das Papier)"
 
 #: src/ui-imgui/plotter/plotter_window.cpp:410
 msgid "Plotter buttons:"
@@ -9986,7 +10012,8 @@ msgstr "Zeichen-Selbsttest starten"
 
 #: src/ui-imgui/plotter/plotter_window.cpp:442
 msgid "Reset with PAPER FEED held -> writes the character set in 4 colors"
-msgstr "Reset bei gehaltener PAPER FEED -> schreibt den Zeichensatz in 4 Farben"
+msgstr ""
+"Reset bei gehaltener PAPER FEED -> schreibt den Zeichensatz in 4 Farben"
 
 #: src/ui-imgui/plotter/plotter_window.cpp:447
 msgid "Zoom"

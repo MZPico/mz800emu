@@ -165,9 +165,12 @@ void hid_keymap_release(int col, int bit, bool also_shift);
 /**
  * @brief Release VŠECH kláves ve vkbd matrix.
  *
- * Vyplní `g_pio8255.vkbd_matrix` hodnotami 0xff (= vše uvolněné).
- * Použití: cleanup po test scenariu, nebo když AI klient žádá
- * `input_release_key` bez specifikace klávesy.
+ * Vyplní `g_pio8255.vkbd_matrix` hodnotami 0xff (= vše uvolněné) přes
+ * kanonické makro `PIO8255_VKBD_MATRIX_RESET()` (pio8255.c). Použití:
+ * cleanup po test scenariu, nebo když AI klient žádá `input_release_key`
+ * bez specifikace klávesy. Slouží též jako light input-reset pro
+ * vyčištění případně přiklepeného vkbd bitu (= press bez paroveho
+ * release, fix 0016).
  */
 void hid_keymap_release_all(void);
 

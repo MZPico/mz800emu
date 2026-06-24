@@ -36,6 +36,59 @@
 
 
 /* ===========================================================================
+ *  Kumulativní čítač disk-bajtů trace-suite (0019 v3 - byte backstop)
+ * =========================================================================== */
+
+/**
+ * @brief Process-globální kumulativní součet disk-bajtů zapsaných trace-suite.
+ *
+ * Inkrementuje se při každém reálném zápisu na disk (chunk soubor, meta.json,
+ * per-subsystém initial-state dumpy). Konzument (0019 byte backstop) accountuje
+ * deltu. Modifikován z emu vlákna; prostý uint64 bez locku (viz Doxygen API).
+ */
+static uint64_t g_tlog_disk_bytes_written = 0;
+
+/**
+ * @brief Process-globální hook volaný po každém inkrementu disk-byte čítače.
+ *
+ * NULL = žádný hook (default, chování trace-suite beze změny). Nenulový =
+ * flush-side byte backstop guard registrovaný bp_action vrstvou (0019 v3).
+ * Viz @ref tlog_common_set_disk_flush_hook.
+ */
+static tlog_disk_flush_hook_fn g_tlog_disk_flush_hook = NULL;
+
+
+void tlog_common_disk_bytes_add ( uint64_t n )
+{
+    if ( n == 0 ) return;
+    g_tlog_disk_bytes_written += n;
+    /* 0019 v3 flush-side: notifikuj registrovaný guard, ať může vyhodnotit
+     * byte backstop i mezi dvěma trace_save BP fire (trace flooduje disk
+     * inkrementálně po chunkách). tlog_common sám prah NEvyhodnocuje (layering:
+     * nezná breakpoints/emulator), jen předá právě přičtené bajty. */
+    if ( g_tlog_disk_flush_hook ) g_tlog_disk_flush_hook ( n );
+}
+
+
+uint64_t tlog_common_disk_bytes_total ( void )
+{
+    return g_tlog_disk_bytes_written;
+}
+
+
+void tlog_common_disk_bytes_reset ( void )
+{
+    g_tlog_disk_bytes_written = 0;
+}
+
+
+void tlog_common_set_disk_flush_hook ( tlog_disk_flush_hook_fn fn )
+{
+    g_tlog_disk_flush_hook = fn;
+}
+
+
+/* ===========================================================================
  *  Pomocné: cesty, mkdir
  * =========================================================================== */
 
@@ -167,6 +220,10 @@ static int do_flush_chunk ( st_TLOG_WRITER *w,
     /* Konzolová notifikace - chunk swap je významná událost (zakuckává emu) */
     fprintf ( stderr, "[trace-suite] %s: chunk %u swap to disk (%zu B)\n",
               w->subsys_name, w->chunk_index, w->buffer_used );
+
+    /* 0019 v3: chunk soubor reálně zapsán -> do kumulativního disk čítače
+     * (byte backstop). Toto je dominantní objem disk footprintu (64 MB/chunk). */
+    tlog_common_disk_bytes_add ( (uint64_t) w->buffer_used );
 
     /* Záznam do chunks_meta */
     st_TLOG_CHUNK_META meta;
@@ -344,6 +401,8 @@ int tlog_writer_update_meta ( st_TLOG_WRITER *w, const char *header_extra )
         if ( wrote != len ) rc = -1;
         if ( ferror ( fp ) ) rc = -1;
         fclose ( fp );
+        /* 0019 v3: meta.json reálně zapsán -> kumulativní disk čítač. */
+        if ( rc == 0 ) tlog_common_disk_bytes_add ( (uint64_t) wrote );
     }
     g_free ( out );
     g_free ( path );

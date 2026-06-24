@@ -124,6 +124,18 @@ void iorqlog_stop ( void );
 void iorqlog_finalize ( void );
 
 /**
+ * @brief Uzavřít (uložit) aktuální segment, volitelně přesměrovat na @p path.
+ *
+ * Runtime finalizace streamovaného iorqlog segmentu (analogie
+ * @ref cputrack_save_segment). Při zadaném @p path přesměruje @c dir/name na
+ * cestu pro NÁSLEDNÝ segment; již zapsané chunk soubory nepřejmenovává.
+ *
+ * @param path  Cílová cesta dalšího segmentu, nebo NULL (jen flush+restart).
+ * @return 0 OK, -1 chyba.
+ */
+int iorqlog_save_segment ( const char *path );
+
+/**
  * @brief Test, zda byl recording zastaven kvůli max_total_mb limitu.
  *
  * Public wrapper nad @ref tlog_writer_is_truncated() pro interní

@@ -70,6 +70,30 @@ void pio8255_vkbd_matrix_reset(void)
     memset(&g_pio8255.vkbd_matrix, 0xff, sizeof(g_pio8255.vkbd_matrix));
 }
 
+void pio8255_vkbd_probe_arm(int col, int bit)
+{
+    if (col < 0 || col > 9 || bit < 0 || bit > 7)
+    {
+        /* mimo rozsah - probe necháme neaktivní */
+        g_pio8255.vkbd_probe.active = false;
+        return;
+    }
+    g_pio8255.vkbd_probe.col = (uint8_t)col;
+    g_pio8255.vkbd_probe.bit = (uint8_t)bit;
+    g_pio8255.vkbd_probe.seen = false;
+    g_pio8255.vkbd_probe.active = true;
+}
+
+bool pio8255_vkbd_probe_check(void)
+{
+    return g_pio8255.vkbd_probe.seen;
+}
+
+void pio8255_vkbd_probe_disarm(void)
+{
+    g_pio8255.vkbd_probe.active = false;
+}
+
 void pio8255_autotype_set_key_down_ms(double ms)
 {
     g_pio8255.vkbd_autotype_kd_ms = ms;
@@ -92,6 +116,7 @@ void pio8255_init(void)
 {
     PIO8255_KEYBOARD_MATRIX_RESET();
     memset(&g_pio8255.vkbd_matrix, 0xff, sizeof(g_pio8255.vkbd_matrix));
+    memset(&g_pio8255.vkbd_probe, 0x00, sizeof(g_pio8255.vkbd_probe)); /* probe neaktivní */
     g_pio8255.signal_PA = 0x00;
     g_pio8255.signal_PA_keybord_column = 0x00;
     g_pio8255.signal_PC = 0x00;
@@ -637,6 +662,20 @@ uint8_t pio8255_read(int addr)
         iface_keyboard_pool_keyboard_events();
         // g_pio8255.keyboard_matrix [ 2 ] &= 0xdf;
         uint8_t retval = g_pio8255.keyboard_matrix[g_pio8255.signal_PA_keybord_column] & g_pio8255.vkbd_matrix[g_pio8255.signal_PA_keybord_column];
+
+        /* Probe hook (fix 0016): pokud MCP/HID vrstva čeká na ověření
+         * dosednutí vstříknuté klávesy a guest právě skenuje cílový
+         * sloupec, zaznamenej to. Celý hook je za jediným testem na
+         * vkbd_probe.active, takže když probe není ozbrojen (= běžný
+         * provoz), hot path se nemění (drží feedback_emu_perf_dispatch). */
+        if (g_pio8255.vkbd_probe.active)
+        {
+            if (g_pio8255.signal_PA_keybord_column == (unsigned)g_pio8255.vkbd_probe.col)
+            {
+                g_pio8255.vkbd_probe.seen = true;
+            }
+        }
+
         DBGPRINTF(DBGINF, "addr = 0x%02x, keyboard_matrix[%d] = 0x%02x, PC = 0x%04x\n", addr, g_pio8255.signal_PA_keybord_column, retval, g_mzarch_main.instruction_addr);
         //printf("%s():%d - addr: %d, keyboard_matrix[%d] = 0x%02x, PC = 0x%04x\n", __FUNCTION__, __LINE__, addr, g_pio8255.signal_PA_keybord_column, retval, g_mzarch_main.instruction_addr);
 

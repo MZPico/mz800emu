@@ -44,7 +44,11 @@ skriptu.
 
 ## Příkazy
 
-Action mini-DSL poskytuje 11 příkazů.
+Action mini-DSL poskytuje 19 příkazů: 11 základních (log, continue,
+disable_self, enable, disable, poke, set, mark, přiřazení `$name`,
+clear_vars, if) a 8 forward příkazů pro řízení záznamu (cdl_start, cdl_stop,
+cdl_reset, cdl_export, trace_start, trace_stop, trace_save, snapshot - viz
+sekce "Forward příkazy" níže).
 
 ### `log "fmt"[, expr...]`
 
@@ -293,6 +297,94 @@ if HL == 0 then mark "HL underflow"
 if A == 0 then log "zero" else log "nonzero=%X", A
 if $state == 1 then enable trace_bp else disable trace_bp
 ```
+
+## Forward příkazy (řízení záznamu z BP)
+
+Forward příkazy umožní akci breakpointu spustit záznamové operace
+automaticky při hitu BP - stejný efekt jako odpovídající MCP / GUI
+volání, ale bez ručního zásahu. Cíl: jeden chytře umístěný breakpoint
+místo desítek ručních příkazů. Při hitu se provedou synchronně.
+
+### `cdl_start`, `cdl_stop`, `cdl_reset`
+
+Lifecycle Code/Data Loggeru (Memory Heatmap). Bez argumentů. `cdl_start`
+zapne recording, `cdl_stop` vypne, `cdl_reset` vynuluje countery.
+
+```
+cdl_start
+cdl_reset
+```
+
+### `cdl_export "fmt"[, args...]`
+
+Export CDL dat do souboru. `fmt` je šablona názvu souboru se stejnými
+specifikátory a argumenty jako `log` (= `%X`, `%d`, `$proměnné`, ...).
+
+```
+cdl_export "cdl-dump.json"
+cdl_export "cdl-%d.json", $id
+```
+
+### `trace_start <kanál>`, `trace_stop <kanál>`
+
+Start / stop binárního trace kanálu trace-suite. `<kanál>` je jeden z
+`cputrack` / `iorqlog` / `intlog` / `hwlog` (case-sensitive, bez
+uvozovek).
+
+```
+trace_start cputrack
+trace_stop cputrack
+```
+
+### `trace_save <kanál>, "fmt"[, args...]`
+
+Uloží / přesměruje segment trace kanálu. Za názvem kanálu následuje
+čárka a šablona názvu souboru (stejná jako `log` fmt + args).
+
+```
+trace_save cputrack, "seg-%d.bin", $id
+```
+
+### `snapshot "fmt"[, args...]`
+
+Uloží .mzs snapshot. `fmt` je šablona názvu souboru (jako `log` fmt +
+args). Funguje i z pokračujícího BP (neprázdná akce = continue): akce běží
+na emu vlákně mezi instrukcemi (safe-point), takže snapshot se uloží i bez
+ručního zastavení emulátoru. Díky tomu jde trace segment i snapshot vzít
+z jednoho pokračujícího BP.
+
+```
+snapshot "snap.mzs"
+snapshot "snap-%d.mzs", $id
+```
+
+Všechny šablony názvu (`cdl_export` / `trace_save` / `snapshot`) sdílejí
+stejný renderer jako `log`, takže lze generovat číslované soubory pomocí
+`$proměnné`, např.:
+
+```
+snapshot "snap-%d.mzs", $id
+$id += 1
+```
+
+Detaily MCP ekvivalentů viz [Přehled MCP tools](../../mcp-server/tools-overview.md),
+konfigurace trace kanálů viz [Trace Suite](../Trace_Suite.md).
+
+### Ochrana před zahlcením (rate-limit + saturace)
+
+Těžké forward akce (`snapshot`, `trace_save`) zapisují na disk. Aby
+breakpoint, který fajruje velmi často, nezahltil emulátor ani disk,
+mají implicitní ochranu:
+
+- **Rate-limit.** Mezi dvěma těžkými akcemi téhož BP platí minimální
+  prodleva; rychlejší opakování se tiše přeskočí. Volitelně lze také
+  nastavit tvrdý strop počtu uložení za session - po jeho dosažení se
+  BP sám zakáže. Tyto limity jdou nastavit per-BP (přes MCP / GUI),
+  jinak platí globální default z konfigurace.
+- **Byte saturace.** Při překročení kumulativního objemu zapsaných dat
+  z forward akcí emulátor sám zapauzuje a vydá varování s důvodem.
+- I když pokračující BP spustí těžkou akci, příkazy pauza / stop /
+  vyčištění breakpointů zaberou vždy - emulátor se nezasekne.
 
 ## Kompletní příklady
 

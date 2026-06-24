@@ -92,8 +92,45 @@ void test_mgr_save_requires_pause(void)
     MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
 
     g_emulator.paused = false;
+    g_emulator.snapshot_safepoint = false;
     en_SNAPSHOT_RESULT res = snapshot_save(TMP_FILE, "should fail");
     TEST_ASSERT_EQUAL_INT(SNAPSHOT_ERR_NOT_PAUSED, res);
+}
+
+/* 0019 KUS 2 - test (c): snapshot z pokračujícího BP přes dedikovaný
+ * safe-point flag funguje i bez paused (= guard akceptuje snapshot_safepoint).
+ * Toto je 0018 regrese-check: BP-action snapshot z continuing BP. */
+void test_mgr_save_via_snapshot_safepoint(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    /* Emulace běží (= paused false), ale BP-action otevřel safe-point. */
+    g_emulator.paused = false;
+    g_emulator.snapshot_safepoint = true;
+
+    en_SNAPSHOT_RESULT res = snapshot_save(TMP_FILE, "continuing BP snapshot");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(SNAPSHOT_OK, res,
+        snapshot_result_to_string(res));
+
+    g_emulator.snapshot_safepoint = false;
+}
+
+/* 0019 KUS 2 - test (b): snapshot_safepoint je samostatný kanál a NEsmí
+ * ovlivnit EMULATOR_TEST_PAUSED (= běhový wait-loop ho nevidí, actual_frames
+ * tak zůstane správný i během snapshot-BP). */
+void test_mgr_safepoint_does_not_set_paused(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    g_emulator.paused = false;
+    g_emulator.snapshot_safepoint = true;
+
+    /* Wait-loop v dispatch.c testuje EMULATOR_TEST_PAUSED (= g_emulator.paused),
+     * ne snapshot_safepoint. Safe-point tedy nesmí "prosáknout" do paused. */
+    TEST_ASSERT_FALSE(EMULATOR_TEST_PAUSED);
+    TEST_ASSERT_TRUE(EMULATOR_TEST_SNAPSHOT_SAFEPOINT);
+
+    g_emulator.snapshot_safepoint = false;
 }
 
 /* load bez pauzy → ERR_NOT_PAUSED */
@@ -203,6 +240,8 @@ int main(int argc, char *argv[])
     /* unit */
     RUN_TEST(test_mgr_save_load_roundtrip);
     RUN_TEST(test_mgr_save_requires_pause);
+    RUN_TEST(test_mgr_save_via_snapshot_safepoint);
+    RUN_TEST(test_mgr_safepoint_does_not_set_paused);
     RUN_TEST(test_mgr_load_requires_pause);
     RUN_TEST(test_mgr_load_nonexistent);
     RUN_TEST(test_mgr_read_metadata);

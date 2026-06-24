@@ -182,6 +182,68 @@ void test_pio_joystick_signals(void)
     TEST_ASSERT_TRUE(true);
 }
 
+/* PIO — vkbd probe: readback dosednutí klávesy (fix 0016 / cesta A)
+ *
+ * Ověřuje, že probe.seen reaguje POUZE na čtení Port B se selektovaným
+ * sloupcem == probe.col. Čtení jiného sloupce probe nesmí odpálit. */
+void test_pio_vkbd_probe_landing(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    pio8255_keyboard_matrix_reset();
+    memset(g_pio8255.vkbd_matrix, 0xFF, 10);
+
+    /* Ozbroj probe na sloupec 3, bit 5 (vstříknutá klávesa). */
+    pio8255_vkbd_probe_arm(3, 5);
+    TEST_ASSERT_FALSE(pio8255_vkbd_probe_check());
+
+    /* Guest skenuje JINÝ sloupec (0) a čte Port B -> probe NESMÍ vidět. */
+    pio8255_write(0, 0x00);   /* PA dolní 4 bity = sloupec 0 */
+    (void)pio8255_read(1);    /* Port B read */
+    TEST_ASSERT_FALSE(pio8255_vkbd_probe_check());
+
+    /* Guest skenuje CÍLOVÝ sloupec (3) a čte Port B -> probe vidí. */
+    pio8255_write(0, 0x03);   /* PA dolní 4 bity = sloupec 3 */
+    (void)pio8255_read(1);    /* Port B read */
+    TEST_ASSERT_TRUE(pio8255_vkbd_probe_check());
+
+    /* Disarm: probe je neaktivní; čtení cílového sloupce už seen nemění
+     * (seen zůstává sticky, ale active je false -> hook se nevyhodnocuje). */
+    pio8255_vkbd_probe_disarm();
+
+    /* Nový arm vynuluje seen. */
+    pio8255_vkbd_probe_arm(3, 5);
+    TEST_ASSERT_FALSE(pio8255_vkbd_probe_check());
+
+    /* Po disarm čtení cílového sloupce NESMÍ seen nastavit. */
+    pio8255_vkbd_probe_disarm();
+    pio8255_write(0, 0x03);
+    (void)pio8255_read(1);
+    TEST_ASSERT_FALSE(pio8255_vkbd_probe_check());
+
+    pio8255_keyboard_matrix_reset();
+}
+
+/* PIO — vkbd probe: arm s neplatným sloupcem nechá probe neaktivní */
+void test_pio_vkbd_probe_invalid_arm(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    pio8255_keyboard_matrix_reset();
+    memset(g_pio8255.vkbd_matrix, 0xFF, 10);
+
+    /* Neplatný sloupec (mimo 0..9) -> probe neaktivní. */
+    pio8255_vkbd_probe_arm(15, 0);
+    TEST_ASSERT_FALSE(g_pio8255.vkbd_probe.active);
+
+    /* Čtení libovolného sloupce nesmí seen nastavit. */
+    pio8255_write(0, 0x05);
+    (void)pio8255_read(1);
+    TEST_ASSERT_FALSE(pio8255_vkbd_probe_check());
+
+    pio8255_keyboard_matrix_reset();
+}
+
 /* PIO — autotype matrix mapping */
 void test_pio_autotype_matrix(void)
 {
@@ -223,6 +285,8 @@ int main(int argc, char *argv[])
     RUN_TEST(test_pio_port_c_signals);
     RUN_TEST(test_pio_port_b_keyboard_read);
     RUN_TEST(test_pio_joystick_signals);
+    RUN_TEST(test_pio_vkbd_probe_landing);
+    RUN_TEST(test_pio_vkbd_probe_invalid_arm);
     RUN_TEST(test_pio_autotype_matrix);
 
     int result = UNITY_END();

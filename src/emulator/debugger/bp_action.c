@@ -36,6 +36,7 @@
 #include <stdarg.h>
 #include <strings.h>
 #include <glib.h>
+#include <glib/gstdio.h>           /* 0019 v3: g_stat - velikost zapsaného souboru */
 
 #include "bp_action.h"
 #include "bp_expr.h"
@@ -45,6 +46,11 @@
 #include "libs/cpu-z80/z80.h"
 #include "hw-generic/memory/memory.h"
 #include "trace/marklog.h"
+#include "trace/tlog_common.h"     /* 0019 v3: tlog disk-byte čítač (trace_save footprint) */
+#include "mhmap.h"                 /* CDL: mhmap_set_mode/reset/export */
+#include "snapshot/snapshot.h"     /* snapshot: snapshot_save */
+#include "emulator.h"              /* snapshot gating: g_emulator.paused (safe-point) */
+#include "dbgapi_cmdrq.h"          /* trace: dbgapi_trace_lifecycle + en_DBGAPI_TRACE_* */
 
 
 /* ========================================================================= */
@@ -65,8 +71,30 @@ typedef enum {
     STMT_MARK,           /**< mark "name" */
     STMT_VAR_ASSIGN,     /**< $name op= expr (op je kód níže) */
     STMT_CLEAR_VARS,     /**< clear_vars */
-    STMT_IF              /**< if expr then <stmt> */
+    STMT_IF,             /**< if expr then <stmt> */
+    STMT_FWD             /**< forward na dbgapi: cdl_/trace_/snapshot (0017 FÁZE 3b) */
 } stmt_kind_t;
+
+
+/**
+ * @brief Druhy forward příkazů (STMT_FWD) - zrcadlí dbgapi lifecycle příkazy.
+ *
+ * Tyto příkazy zautomatizují metodiku "jeden chytrý BP místo desítek ručních
+ * MCP volání" (vize 0017): při hitu BP se synchronně provede tentýž efekt jako
+ * příslušné MCP / dbgapi volání. CDL příkazy volají mhmap_* přímo, trace
+ * příkazy jdou přes @ref dbgapi_trace_lifecycle (sdílené jádro s dbgapi
+ * dispatchem), snapshot volá @c snapshot_save.
+ */
+typedef enum {
+    FWD_CDL_START,    /**< cdl_start - mhmap_set_mode(ALWAYS) */
+    FWD_CDL_STOP,     /**< cdl_stop - mhmap_set_mode(OFF) */
+    FWD_CDL_RESET,    /**< cdl_reset - mhmap_reset() */
+    FWD_CDL_EXPORT,   /**< cdl_export "<file>"[, args] - mhmap_export(rendered) */
+    FWD_TRACE_START,  /**< trace_start <chan> - dbgapi_trace_lifecycle(START) */
+    FWD_TRACE_STOP,   /**< trace_stop <chan> - dbgapi_trace_lifecycle(STOP) */
+    FWD_TRACE_SAVE,   /**< trace_save <chan>, "<file>"[, args] - lifecycle(SAVE) */
+    FWD_SNAPSHOT      /**< snapshot "<file>"[, args] - snapshot_save(rendered) */
+} fwd_op_t;
 
 
 /**
@@ -145,6 +173,17 @@ struct bp_action_stmt_s {
             bp_action_stmt_t *child;       /**< then-branch (vždy non-NULL při validním parse) */
             bp_action_stmt_t *else_child;  /**< else-branch nebo NULL pokud žádný */
         } iff;
+        /* STMT_FWD: forward na dbgapi (cdl_ / trace_ / snapshot). */
+        struct {
+            fwd_op_t                op;     /**< která lifecycle operace */
+            en_DBGAPI_TRACE_CHANNEL channel; /**< jen pro FWD_TRACE_* */
+            /* Jméno souboru jako printf-style šablona (sdílí renderer s `log`):
+             * relevantní pro FWD_CDL_EXPORT / FWD_TRACE_SAVE / FWD_SNAPSHOT.
+             * NULL = příkaz bez cesty (cdl start/stop/reset, trace start/stop). */
+            char       *fmt;
+            bp_expr_t  *args[BP_ACTION_LOG_MAX_ARGS]; /**< $var / expr argumenty šablony */
+            int         n_args;
+        } fwd;
     };
 };
 
@@ -222,6 +261,12 @@ static void bp_action_stmt_free_inner ( bp_action_stmt_t *s ) {
             if ( s->iff.else_child ) {
                 bp_action_stmt_free_inner ( s->iff.else_child );
                 free ( s->iff.else_child );
+            };
+            break;
+        case STMT_FWD:
+            free ( s->fwd.fmt );
+            for ( int i = 0; i < s->fwd.n_args; i++ ) {
+                bp_expr_free ( s->fwd.args[i] );
             };
             break;
         case STMT_CONTINUE:
@@ -466,6 +511,84 @@ static bp_expr_t* parse_expr_str ( const char *src,
 
 
 /**
+ * @brief Parsuje nula nebo více čárkou-oddělených výrazových argumentů.
+ *
+ * Sdílená logika pro printf-style sinky (`log`, ale i forward příkazy
+ * cdl_export / trace_save / snapshot, které berou stejnou fmt+args šablonu
+ * jména souboru). Volá se s @p cur ukazujícím za úvodní fmt string literal.
+ * Po každém vyhodnoceném argumentu se očekává ',' jako oddělovač.
+ *
+ * @param[in,out] cur       Pozice ve zdroji za fmt stringem; po návratu na EOF
+ *                          nebo na první neočekávaný znak.
+ * @param[out]    args      Pole pro parsované expr argumenty (vlastněné callerem).
+ * @param[in,out] n_args    Vstup: 0; výstup: počet naplněných argumentů.
+ * @param         max_args  Kapacita @p args (= BP_ACTION_LOG_MAX_ARGS).
+ * @param         what      Jméno příkazu do chybové hlášky.
+ * @return true při úspěchu, false při chybě (errbuf naplněn; již alokované
+ *         args si uvolní caller přes free path).
+ */
+static bool parse_comma_args ( const char **cur,
+                                bp_expr_t **args, int *n_args, int max_args,
+                                const char *what,
+                                char *errbuf, size_t errbuf_size ) {
+    const char *c = skip_ws ( *cur );
+    while ( *c ) {
+        if ( *c != ',' ) {
+            *cur = c;
+            return ac_err ( errbuf, errbuf_size,
+                            "%s: expected ',' between arguments", what );
+        };
+        c++;
+        /* Najdeme následující top-level čárku nebo konec - pro bp_expr_parse. */
+        const char *arg_start = skip_ws ( c );
+        const char *p = arg_start;
+        int depth_paren = 0;
+        int depth_brack = 0;
+        int depth_brace = 0;
+        bool in_str = false;
+        char sq = 0;
+        while ( *p ) {
+            char ch = *p;
+            if ( in_str ) {
+                if ( ch == '\\' && p[1] ) { p += 2; continue; };
+                if ( ch == sq ) { in_str = false; p++; continue; };
+                p++; continue;
+            };
+            if ( ch == '"' || ch == '\'' ) { in_str = true; sq = ch; p++; continue; };
+            if ( ch == '(' ) depth_paren++;
+            else if ( ch == ')' ) depth_paren--;
+            else if ( ch == '[' ) depth_brack++;
+            else if ( ch == ']' ) depth_brack--;
+            else if ( ch == '{' ) depth_brace++;
+            else if ( ch == '}' ) depth_brace--;
+            else if ( ch == ',' && depth_paren == 0 && depth_brack == 0 && depth_brace == 0 ) break;
+            p++;
+        };
+        size_t n = (size_t) ( p - arg_start );
+        char *expr_buf = (char *) malloc ( n + 1 );
+        if ( !expr_buf ) { *cur = p; return ac_err ( errbuf, errbuf_size, "out of memory" ); };
+        memcpy ( expr_buf, arg_start, n );
+        expr_buf[n] = '\0';
+        rtrim ( expr_buf );
+
+        if ( *n_args >= max_args ) {
+            free ( expr_buf );
+            *cur = p;
+            return ac_err ( errbuf, errbuf_size, "%s: too many arguments (max %d)",
+                            what, max_args );
+        };
+        bp_expr_t *e = parse_expr_str ( expr_buf, errbuf, errbuf_size );
+        free ( expr_buf );
+        if ( !e ) { *cur = p; return false; };
+        args[ (*n_args)++ ] = e;
+        c = skip_ws ( p );
+    };
+    *cur = c;
+    return true;
+}
+
+
+/**
  * @brief Parsuje LOG statement: log "fmt" [, expr]*.
  *
  * Po keyword "log" očekává string literal, pak nula nebo více
@@ -482,58 +605,9 @@ static bool parse_log_stmt ( const char *args_str,
     out->log.fmt = fmt;
     out->log.n_args = 0;
 
-    cur = skip_ws ( cur );
-    while ( *cur ) {
-        if ( *cur != ',' ) {
-            ac_err ( errbuf, errbuf_size, "expected ',' between log arguments" );
-            return false;
-        };
-        cur++;
-        /* Najdeme následující čárku nebo konec - pro bp_expr_parse. */
-        const char *arg_start = skip_ws ( cur );
-        const char *p = arg_start;
-        int depth_paren = 0;
-        int depth_brack = 0;
-        int depth_brace = 0;
-        bool in_str = false;
-        char sq = 0;
-        while ( *p ) {
-            char c = *p;
-            if ( in_str ) {
-                if ( c == '\\' && p[1] ) { p += 2; continue; };
-                if ( c == sq ) { in_str = false; p++; continue; };
-                p++; continue;
-            };
-            if ( c == '"' || c == '\'' ) { in_str = true; sq = c; p++; continue; };
-            if ( c == '(' ) depth_paren++;
-            else if ( c == ')' ) depth_paren--;
-            else if ( c == '[' ) depth_brack++;
-            else if ( c == ']' ) depth_brack--;
-            else if ( c == '{' ) depth_brace++;
-            else if ( c == '}' ) depth_brace--;
-            else if ( c == ',' && depth_paren == 0 && depth_brack == 0 && depth_brace == 0 ) break;
-            p++;
-        };
-        size_t n = (size_t) ( p - arg_start );
-        char *expr_buf = (char *) malloc ( n + 1 );
-        if ( !expr_buf ) return ac_err ( errbuf, errbuf_size, "out of memory" );
-        memcpy ( expr_buf, arg_start, n );
-        expr_buf[n] = '\0';
-        rtrim ( expr_buf );
-
-        if ( out->log.n_args >= BP_ACTION_LOG_MAX_ARGS ) {
-            free ( expr_buf );
-            return ac_err ( errbuf, errbuf_size, "too many log arguments (max %d)",
-                            BP_ACTION_LOG_MAX_ARGS );
-        };
-        bp_expr_t *e = parse_expr_str ( expr_buf, errbuf, errbuf_size );
-        free ( expr_buf );
-        if ( !e ) return false;
-        out->log.args[ out->log.n_args++ ] = e;
-        cur = p;
-        cur = skip_ws ( cur );
-    };
-    return true;
+    return parse_comma_args ( &cur, out->log.args, &out->log.n_args,
+                               BP_ACTION_LOG_MAX_ARGS, "log",
+                               errbuf, errbuf_size );
 }
 
 
@@ -704,6 +778,99 @@ static bool parse_set_reg_stmt ( const char *args_str,
     out->kind = STMT_SET_REG;
     strncpy ( out->setreg.reg, reg, BP_ACTION_VAR_NAME_MAX );
     out->setreg.value = e;
+    return true;
+}
+
+
+/* ========================================================================= */
+/*  Parser - forward příkazy (cdl_* / trace_* / snapshot)                    */
+/* ========================================================================= */
+
+/**
+ * @brief Přeloží jméno trace kanálu na en_DBGAPI_TRACE_CHANNEL.
+ *
+ * Akceptuje stejné kanonické názvy jako MCP dispatch (cputrack/iorqlog/
+ * intlog/hwlog), case-sensitive.
+ *
+ * @return true při platném názvu, false jinak.
+ */
+static bool parse_trace_channel ( const char *name, en_DBGAPI_TRACE_CHANNEL *out ) {
+    if ( !name || !out ) return false;
+    if ( strcmp ( name, "cputrack" ) == 0 ) { *out = DBGAPI_TRACE_CHANNEL_CPUTRACK; return true; };
+    if ( strcmp ( name, "iorqlog" )  == 0 ) { *out = DBGAPI_TRACE_CHANNEL_IORQLOG;  return true; };
+    if ( strcmp ( name, "intlog" )   == 0 ) { *out = DBGAPI_TRACE_CHANNEL_INTLOG;   return true; };
+    if ( strcmp ( name, "hwlog" )    == 0 ) { *out = DBGAPI_TRACE_CHANNEL_HWLOG;    return true; };
+    return false;
+}
+
+
+/**
+ * @brief Parsuje string-šablonu jména souboru + volitelné expr argumenty.
+ *
+ * Sdíleno pro cdl_export / trace_save / snapshot. Po skip_ws očekává string
+ * literal (= fmt šablona se stejnými specifikátory jako `log`), pak nula nebo
+ * více čárkou-oddělených výrazů ($var / expr) renderovaných do jména souboru.
+ *
+ * @return true při úspěchu (out->fwd.fmt/args/n_args naplněny), false při chybě.
+ */
+static bool parse_fwd_path ( const char *args_str,
+                              bp_action_stmt_t *out,
+                              const char *what,
+                              char *errbuf, size_t errbuf_size ) {
+    const char *cur = args_str;
+    char *fmt = read_string_literal ( &cur, errbuf, errbuf_size );
+    if ( !fmt ) return false;
+    out->fwd.fmt    = fmt;
+    out->fwd.n_args = 0;
+    return parse_comma_args ( &cur, out->fwd.args, &out->fwd.n_args,
+                               BP_ACTION_LOG_MAX_ARGS, what,
+                               errbuf, errbuf_size );
+}
+
+
+/**
+ * @brief Parsuje trace_* forward příkaz: trace_<op> <channel>[, "<file>"[, args]].
+ *
+ * Pro start/stop bere jen jméno kanálu. Pro save bere kanál, pak povinný
+ * string-literál cesty (+ volitelné expr argumenty šablony jako u `log`).
+ */
+static bool parse_fwd_trace ( const char *args_str, fwd_op_t op,
+                               bp_action_stmt_t *out,
+                               const char *what,
+                               char *errbuf, size_t errbuf_size ) {
+    const char *p = skip_ws ( args_str );
+    char chan[BP_ACTION_VAR_NAME_MAX + 1] = {0};
+    if ( read_ident ( &p, chan, sizeof ( chan ) ) == 0 ) {
+        return ac_err ( errbuf, errbuf_size, "%s: expected channel name "
+                        "(cputrack/iorqlog/intlog/hwlog)", what );
+    };
+    en_DBGAPI_TRACE_CHANNEL channel;
+    if ( !parse_trace_channel ( chan, &channel ) ) {
+        return ac_err ( errbuf, errbuf_size, "%s: unknown trace channel '%s' "
+                        "(expected cputrack/iorqlog/intlog/hwlog)", what, chan );
+    };
+
+    out->kind        = STMT_FWD;
+    out->fwd.op      = op;
+    out->fwd.channel = channel;
+    out->fwd.fmt     = NULL;
+    out->fwd.n_args  = 0;
+
+    if ( op == FWD_TRACE_SAVE ) {
+        p = skip_ws ( p );
+        if ( *p != ',' ) {
+            return ac_err ( errbuf, errbuf_size,
+                            "%s: expected ',' then filename string after channel", what );
+        };
+        p++;
+        if ( !parse_fwd_path ( p, out, what, errbuf, errbuf_size ) ) return false;
+    } else {
+        p = skip_ws ( p );
+        if ( *p ) {
+            return ac_err ( errbuf, errbuf_size, "%s: unexpected trailing text '%s'",
+                            what, p );
+        };
+    };
     return true;
 }
 
@@ -948,6 +1115,49 @@ static bool parse_stmt ( const char *src,
         out->target.marker_id = marklog_register ( name );
         return true;
     };
+
+    /* --- Forward příkazy na dbgapi (0017 FÁZE 3b): CDL / trace / snapshot.
+     * Bezargumentové CDL lifecycle (start/stop/reset) + cdl_export se šablonou
+     * cesty + trace_start/stop/save + snapshot se šablonou cesty. Šablona jména
+     * souboru sdílí printf renderer s `log` (bp_action_render_fmt). */
+    if ( match_keyword ( p, "cdl_start" ) ) {
+        out->kind = STMT_FWD; out->fwd.op = FWD_CDL_START;
+        out->fwd.fmt = NULL;  out->fwd.n_args = 0;
+        return true;
+    };
+    if ( match_keyword ( p, "cdl_stop" ) ) {
+        out->kind = STMT_FWD; out->fwd.op = FWD_CDL_STOP;
+        out->fwd.fmt = NULL;  out->fwd.n_args = 0;
+        return true;
+    };
+    if ( match_keyword ( p, "cdl_reset" ) ) {
+        out->kind = STMT_FWD; out->fwd.op = FWD_CDL_RESET;
+        out->fwd.fmt = NULL;  out->fwd.n_args = 0;
+        return true;
+    };
+    if ( match_keyword ( p, "cdl_export" ) ) {
+        out->kind = STMT_FWD; out->fwd.op = FWD_CDL_EXPORT;
+        return parse_fwd_path ( skip_ws ( p + 10 ), out, "cdl_export",
+                                 errbuf, errbuf_size );
+    };
+    if ( match_keyword ( p, "trace_start" ) ) {
+        return parse_fwd_trace ( skip_ws ( p + 11 ), FWD_TRACE_START, out,
+                                  "trace_start", errbuf, errbuf_size );
+    };
+    if ( match_keyword ( p, "trace_stop" ) ) {
+        return parse_fwd_trace ( skip_ws ( p + 10 ), FWD_TRACE_STOP, out,
+                                  "trace_stop", errbuf, errbuf_size );
+    };
+    if ( match_keyword ( p, "trace_save" ) ) {
+        return parse_fwd_trace ( skip_ws ( p + 10 ), FWD_TRACE_SAVE, out,
+                                  "trace_save", errbuf, errbuf_size );
+    };
+    if ( match_keyword ( p, "snapshot" ) ) {
+        out->kind = STMT_FWD; out->fwd.op = FWD_SNAPSHOT;
+        return parse_fwd_path ( skip_ws ( p + 8 ), out, "snapshot",
+                                 errbuf, errbuf_size );
+    };
+
     if ( match_keyword ( p, "if" ) ) {
         return parse_if_stmt ( skip_ws ( p + 2 ), out, errbuf, errbuf_size );
     };
@@ -1107,6 +1317,7 @@ static en_BP_ACTION_SUB classify_stmt ( const bp_action_stmt_t *s ) {
         case STMT_SET_REG:
         case STMT_VAR_ASSIGN:
         case STMT_CLEAR_VARS:
+        case STMT_FWD:
             return BP_ACTION_SUB_CONTINUE;
     };
     return BP_ACTION_SUB_CONTINUE;
@@ -1166,20 +1377,22 @@ static void append_binary ( GString *gs, uint32_t value ) {
 
 
 /**
- * @brief Provede log statement - format string + N expr args.
+ * @brief Vyrenderuje printf-style format string s vyhodnocenými argumenty.
  *
- * Specifikátory: %X %x %d %u %b %c %s %%. %s podporuje jen literál
- * (= žádný expr argument) a konzumuje arg jako int (= ukládáme jako
- * char[]?). V1 omezení: %s se chová jako %d (= varování, V1.5
- * doplníme). Pokud user dává %s, má rozšířit log fmt sám.
+ * Sdílený renderer (fmt + args -> char*). Viz Doxygen v bp_action.h pro
+ * úplný kontrakt a seznam specifikátorů. Logika je převzata 1:1 z
+ * původního in-place rendereru příkazu @c log, jen místo zápisu do
+ * stdout vrací vlastněný řetězec - aby ho mohly sdílet i další sinky
+ * (snapshot/trace_save $var šablona jména souboru).
  */
-static void execute_log ( const bp_action_stmt_t *s,
-                           const struct bp_expr_ctx_s *ctx ) {
+char* bp_action_render_fmt ( const char *fmt,
+                              bp_expr_t *const *args, int n_args,
+                              const struct bp_expr_ctx_s *ctx ) {
     GString *out = g_string_new ( NULL );
     int next_arg = 0;
-    const char *p = s->log.fmt;
+    const char *p = fmt;
 
-    while ( *p ) {
+    while ( p && *p ) {
         if ( *p == '%' && p[1] ) {
             char spec = p[1];
             if ( spec == '%' ) {
@@ -1188,8 +1401,8 @@ static void execute_log ( const bp_action_stmt_t *s,
                 continue;
             };
             int32_t v = 0;
-            if ( next_arg < s->log.n_args ) {
-                v = eval_arg ( s->log.args[next_arg++], ctx );
+            if ( args && next_arg < n_args ) {
+                v = eval_arg ( args[next_arg++], ctx );
             };
             switch ( spec ) {
                 case 'X':
@@ -1242,10 +1455,30 @@ static void execute_log ( const bp_action_stmt_t *s,
         p++;
     };
 
+    /* Odevzdáme interní buffer GString jako vlastněný char* (FALSE =
+     * neuvolnit segment, jen obal). Caller uvolní přes g_free(). */
+    return g_string_free ( out, FALSE );
+}
+
+
+/**
+ * @brief Provede log statement - format string + N expr args.
+ *
+ * Renderuje přes sdílený bp_action_render_fmt() a výsledek vypíše do
+ * stdout (V1.5+: trace-suite + UI debug konzole).
+ *
+ * Specifikátory: %X %x %d %u %b %c %s %%. Detail viz Doxygen u
+ * bp_action_render_fmt() v bp_action.h.
+ */
+static void execute_log ( const bp_action_stmt_t *s,
+                           const struct bp_expr_ctx_s *ctx ) {
+    char *rendered = bp_action_render_fmt ( s->log.fmt, s->log.args,
+                                            s->log.n_args, ctx );
+
     /* V1: log do stdout. V1.5+: trace-suite + UI debug konzole. */
-    fprintf ( stdout, "[BP-LOG] %s\n", out->str );
+    fprintf ( stdout, "[BP-LOG] %s\n", rendered );
     fflush ( stdout );
-    g_string_free ( out, TRUE );
+    g_free ( rendered );
 }
 
 
@@ -1347,6 +1580,372 @@ static bool write_cpu_reg ( const char *name_raw, z80_t *cpu, int32_t value ) {
 
 
 /**
+ * @brief Aktuální injektovaný časový zdroj rate-limit gate (0019 v2).
+ *
+ * NULL = použij reálný monotónní čas (g_get_monotonic_time). Nenulová
+ * hodnota = test mock clock. Produkce hook nikdy nenastavuje, takže zde
+ * trvale zůstává NULL a chování rate-limitu je beze změny.
+ */
+static bp_action_clock_fn g_bp_action_clock_hook = NULL;
+
+
+/**
+ * @brief Vrátí monotónní čas v us přes injektovatelný hook (0019 v2).
+ *
+ * Default (hook == NULL) deleguje na g_get_monotonic_time, takže produkce
+ * běží na reálném čase. V testech lze hook přebít deterministickým mock
+ * clockem přes bp_action_set_clock_hook, čímž rate-limit gate přestane
+ * záviset na reálném uplynulém čase (odstranění timing-flakiness).
+ *
+ * @return Monotónní čas v mikrosekundách.
+ * Side effects: žádné (kromě případného volání hooku).
+ * Threading: čte globální ukazatel bez zámku - viz bp_action_set_clock_hook.
+ */
+static int64_t bp_action_now_us ( void ) {
+    if ( g_bp_action_clock_hook ) return g_bp_action_clock_hook ( );
+    return g_get_monotonic_time ( );
+}
+
+
+void bp_action_set_clock_hook ( bp_action_clock_fn fn ) {
+    g_bp_action_clock_hook = fn;
+}
+
+
+/**
+ * @brief Vrstva 2 (0019): rate-limit gate pro těžké FWD akce.
+ *
+ * Před vykonáním těžké forward akce (snapshot / trace_save) ověří, zda smí
+ * dle per-BP rate-limitu fire. Dva mechanismy (oba per-BP, stav v st_BPT):
+ *   - min_interval: minimální odstup od posledního firu. Pri porušení =
+ *     TICHÝ skip (vrací false, akce se neprovede). Default
+ *     BP_ACTION_FWD_DEFAULT_MIN_INTERVAL_MS, pokud BP nemá vlastní override.
+ *   - max_fires: tvrdý strop počtu firů. Při dosažení = BP se sám vypne
+ *     (breakpoints_set_enabled(self_id, false)) + warning, a fire se NEprovede.
+ *
+ * @param ctx Eval kontext (ctx->self_id identifikuje firující BP; -1 = mimo
+ *        enforcement, např. test/manual eval -> gate se neaplikuje, fire OK).
+ * @return true = akce smí proběhnout; false = skip (rate-limit / strop).
+ *
+ * Side effects: při dosažení max_fires vypne vlastní BP. NEinkrementuje
+ * fire_count ani last_fire (to dělá až fwd_record_fire po úspěšném zápisu).
+ * Threading: jen z emu vlákna.
+ */
+static bool fwd_ratelimit_allow ( const struct bp_expr_ctx_s *ctx ) {
+    /* Mimo enforcement kontext (test / manual eval) rate-limit neaplikujeme -
+     * tam jde o cílené jednorázové volání, ne o saturaci horké smyčky. */
+    if ( !ctx || ctx->self_id < 0 ) return true;
+
+    st_BPT *bpt = breakpoints_find_by_id ( ctx->self_id );
+    if ( !bpt ) return true;   /* BP zmizel mezi tím = nech projít */
+
+    /* max_fires (0 = neomezeno): tvrdý strop. Při dosažení vypni vlastní BP. */
+    if ( bpt->fwd_max_fires != 0 && bpt->fwd_fire_count >= bpt->fwd_max_fires ) {
+        fprintf ( stderr,
+                  "[BP-ACTION] BP #%d forward-action fire cap reached (%u) - "
+                  "disabling self\n",
+                  bpt->id, bpt->fwd_max_fires );
+        breakpoints_set_enabled ( bpt->id, false );
+        return false;
+    };
+
+    /* min_interval: 0 = použij globální default (INI fwd_default_min_interval_ms),
+     * který sám padá na vestavěnou konstantu, pokud je rovněž 0. Tím zůstává
+     * bezpečný default i bez jakékoliv konfigurace (NE nula). */
+    uint32_t interval_ms = bpt->fwd_min_interval_ms;
+    if ( interval_ms == 0 ) {
+        interval_ms = breakpoints_fwd_get_default_min_interval_ms ( );
+        if ( interval_ms == 0 ) interval_ms = BP_ACTION_FWD_DEFAULT_MIN_INTERVAL_MS;
+    };
+
+    int64_t now_us = bp_action_now_us ( );
+    if ( bpt->fwd_last_fire_us != 0 ) {
+        int64_t elapsed_us = now_us - bpt->fwd_last_fire_us;
+        if ( elapsed_us < (int64_t) interval_ms * 1000 ) {
+            /* Příliš brzy od posledního firu - tiše skip (měkká ochrana). */
+            return false;
+        };
+    };
+    return true;
+}
+
+
+/**
+ * @brief Vrstva 2/3 (0019): zaznamená úspěšný fire těžké FWD akce.
+ *
+ * Volá se PO úspěšném zápisu těžké forward akce (snapshot / trace_save).
+ * Aktualizuje per-BP runtime stav rate-limitu (last_fire, fire_count) a
+ * předá velikost zapsaného souboru do globálního byte backstopu
+ * (breakpoints_fwd_account_bytes), který případně spustí auto-pauzu.
+ *
+ * @param ctx Eval kontext (self_id = firující BP, -1 = mimo enforcement).
+ * @param path Cesta právě zapsaného souboru (NULL = bajty se nepřičtou).
+ *
+ * Side effects: mutace st_BPT runtime polí; akumulace globálního byte
+ * counteru; možná auto-pauza emulátoru přes backstop. g_stat na @p path.
+ * Threading: jen z emu vlákna (safe-point).
+ */
+static void fwd_record_fire ( const struct bp_expr_ctx_s *ctx,
+                              const char *path ) {
+    int self_id = ( ctx ) ? ctx->self_id : -1;
+
+    /* Per-BP runtime stav rate-limitu (jen pokud máme enforcement kontext). */
+    if ( self_id >= 0 ) {
+        st_BPT *bpt = breakpoints_find_by_id ( self_id );
+        if ( bpt ) {
+            bpt->fwd_last_fire_us = bp_action_now_us ( );
+            bpt->fwd_fire_count++;
+        };
+    };
+
+    /* Vrstva 3: velikost zapsaného souboru -> globální byte backstop.
+     * snapshot_save nevrací počet bajtů, proto měříme finální soubor přes
+     * g_stat (po úspěšném zápisu / rename). Při chybě statu (např. soubor
+     * ještě neexistuje) se bajty nepřičtou - korektní (nezapsáno).
+     *
+     * POZN.: pro trace_save NEpoužívat tuto cestu - g_stat na hlavní index
+     * soubor masivně PODPOČÍTÁVÁ skutečný disk footprint (chunk segmenty +
+     * initial-state dumpy se nepočítají, viz V19). Trace_save accountuje přes
+     * fwd_record_fire_trace (delta tlog disk čítače). */
+    if ( path ) {
+        GStatBuf st;
+        if ( g_stat ( path, &st ) == 0 && st.st_size > 0 ) {
+            breakpoints_fwd_account_bytes ( self_id, (uint64_t) st.st_size );
+        };
+    };
+}
+
+
+/**
+ * @brief Poslední odečtená hodnota kumulativního tlog disk čítače (0019 v3).
+ *
+ * Baseline pro výpočet delty v fwd_record_fire_trace. Trace-suite počítá disk
+ * footprint kumulativně (chunk segmenty se flushují průběžně i mezi dvěma
+ * trace_save fire), proto se na každý trace_save fire accountuje DELTA tohoto
+ * čítače od minulého fire (= vše, co trace-suite zapsala na disk od posledního
+ * accountingu, ne jen velikost právě uzavřeného segmentu).
+ *
+ * Inicializace / reset na aktuální total přes bp_action_reset_trace_disk_baseline
+ * (volá se z breakpoints_init a breakpoints_fwd_reset_byte_accounting), aby se
+ * historický footprint zapsaný před resetem accountingu nezapočítal.
+ *
+ * Threading: čteno/zapisováno jen z emu vlákna (trace_save fire běží na něm).
+ */
+static uint64_t g_fwd_trace_disk_seen = 0;
+
+
+void bp_action_reset_trace_disk_baseline ( void ) {
+    g_fwd_trace_disk_seen = tlog_common_disk_bytes_total ( );
+}
+
+
+/**
+ * @brief Flush-side byte backstop guard (0019 v3): hook z tlog_common.
+ *
+ * Registruje se přes @ref bp_action_install_disk_flush_guard do
+ * @ref tlog_common_set_disk_flush_hook a tlog_common ho volá po KAŽDÉM
+ * inkrementu kumulativního disk-byte čítače (chunk swap, meta.json,
+ * initial-state dump). Tím se byte backstop vyhodnotí PRŮBĚŽNĚ na flush cestě,
+ * ne jen na hraně trace_save BP fire - trace flooduje disk inkrementálně po
+ * chunkách (64 MB) i mezi dvěma fire, a per-fire accounting by tu rostoucí
+ * stopu chytil pozdě (až při dalším fire). Bez tohoto guardu disk v režimu
+ * cputrack/trace bez periodické trace_save akce roste neohraničený (V19B: 1032
+ * MB), protože backstop se vyhodnocoval výhradně v breakpoints_fwd_account_bytes
+ * volaném z trace_save fire.
+ *
+ * ŽÁDNÉ DOUBLE-ACCOUNT: guard sdílí baseline @c g_fwd_trace_disk_seen s
+ * @ref fwd_record_fire_trace. Accountuje DELTU disk čítače od baseline a baseline
+ * posune na aktuální total. Tím je flush-side cesta JEDINÝM průběžným konzumentem
+ * delty - když pak firne trace_save, fwd_record_fire_trace uvidí už jen zbytek
+ * delty (typicky 0). Backstop akumulátor (g_bp_action_total_bytes) tak narůstá
+ * o každý disk-bajt právě jednou.
+ *
+ * bp_id = -1: flush-side zápis není svázán s konkrétním firujícím BP (běží mimo
+ * enforce kontext, jen jako vedlejší efekt trace zápisu). breakpoints_fwd_account_bytes
+ * bp_id jen reportuje do warning/eventu - hodnota -1 značí "flush-side guard".
+ *
+ * @param added  Počet bajtů, o který právě narostl disk čítač (předává tlog_common).
+ *
+ * Side effects: accountuje deltu do globálního byte backstopu (možná auto-pauza
+ * emulátoru); posune g_fwd_trace_disk_seen na aktuální total.
+ * Threading: volán z emu vlákna synchronně z tlog_common_disk_bytes_add
+ * (safe-point mezi instrukcemi). NEsmí re-entrantně zapisovat trace.
+ */
+static void bp_action_disk_flush_guard ( uint64_t added ) {
+    (void) added; /* delta počítáme z čítače proti baseline (robustnější) */
+
+    uint64_t total = tlog_common_disk_bytes_total ( );
+    uint64_t delta = ( total >= g_fwd_trace_disk_seen )
+                     ? ( total - g_fwd_trace_disk_seen ) : 0;
+    if ( delta == 0 ) return;
+    g_fwd_trace_disk_seen = total;
+    breakpoints_fwd_account_bytes ( -1, delta );
+}
+
+
+void bp_action_install_disk_flush_guard ( void ) {
+    tlog_common_set_disk_flush_hook ( bp_action_disk_flush_guard );
+}
+
+
+/**
+ * @brief Vrstva 2/3 (0019): zaznamená úspěšný fire trace_save akce.
+ *
+ * Varianta @ref fwd_record_fire pro trace_save: místo g_stat na jeden soubor
+ * (který podpočítává - viz V19) accountuje DELTU kumulativního tlog disk čítače
+ * (@ref tlog_common_disk_bytes_total) od minulého fire. Tím se do byte backstopu
+ * dostane CELÝ disk footprint trace-suite - chunk segmenty (64 MB/chunk),
+ * initial-state dumpy i meta.json - a auto-pauza chrání disk i proti
+ * trace_save floodu, ne jen proti snapshot floodu.
+ *
+ * Per-BP runtime stav rate-limitu (last_fire, fire_count) se aktualizuje
+ * shodně s @ref fwd_record_fire.
+ *
+ * @param ctx Eval kontext (self_id = firující BP, -1 = mimo enforcement).
+ *
+ * Side effects: mutace st_BPT runtime polí; akumulace globálního byte counteru
+ * o deltu disk čítače; možná auto-pauza emulátoru přes backstop; posun
+ * g_fwd_trace_disk_seen na aktuální total.
+ * Threading: jen z emu vlákna (safe-point).
+ */
+static void fwd_record_fire_trace ( const struct bp_expr_ctx_s *ctx ) {
+    int self_id = ( ctx ) ? ctx->self_id : -1;
+
+    /* Per-BP runtime stav rate-limitu (jen pokud máme enforcement kontext). */
+    if ( self_id >= 0 ) {
+        st_BPT *bpt = breakpoints_find_by_id ( self_id );
+        if ( bpt ) {
+            bpt->fwd_last_fire_us = bp_action_now_us ( );
+            bpt->fwd_fire_count++;
+        };
+    };
+
+    /* Delta kumulativního tlog disk čítače od minulého fire = celý objem, který
+     * trace-suite zapsala na disk (vč. chunk segmentů a initial-state dumpů). */
+    uint64_t total = tlog_common_disk_bytes_total ( );
+    uint64_t delta = ( total >= g_fwd_trace_disk_seen )
+                     ? ( total - g_fwd_trace_disk_seen ) : 0;
+    g_fwd_trace_disk_seen = total;
+    if ( delta > 0 ) {
+        breakpoints_fwd_account_bytes ( self_id, delta );
+    };
+}
+
+
+/**
+ * @brief Provede forward příkaz (cdl_* / trace_* / snapshot).
+ *
+ * Renderuje case-by-case šablonu jména souboru přes sdílený
+ * bp_action_render_fmt() (= tentýž $var/printf engine jako `log`, Z17c) a
+ * forwarduje na tutéž jádrovou logiku, kterou volá MCP přes dbgapi:
+ *   - CDL: mhmap_set_mode / mhmap_reset / mhmap_export (= dbgapi CDL handlery).
+ *   - trace: dbgapi_trace_lifecycle (= sdílené jádro dbgapi TRACE handlerů).
+ *   - snapshot: snapshot_save.
+ *
+ * Chyby (I/O selhání, neznámý kanál) jsou tolerantní: stderr warning + no-op,
+ * emulátor pokračuje. Pozn.: snapshot_save vyžaduje safe-point (guard v
+ * snapshot_mgr.c). Action callback ovšem běží na emu vlákně mezi instrukcemi
+ * (safe-point, zastavený CPU, žádný držený lock), takže i z pokračujícího
+ * (continuing) BP je snapshot bezpečný. Guard je proto pro dobu volání
+ * snapshot_save() splněn dedikovaným flagem g_emulator.snapshot_safepoint
+ * (0019, viz case FWD_SNAPSHOT) - NE přes paused, abychom nerozbili
+ * actual_frames v běhovém wait-loopu (0018).
+ *
+ * 0019 vrstva 2+3: těžké akce (FWD_SNAPSHOT / FWD_TRACE_SAVE) procházejí
+ * per-BP rate-limit gate (fwd_ratelimit_allow) PŘED zápisem a po úspěšném
+ * zápisu zaznamenají fire + objem dat (fwd_record_fire) pro byte backstop.
+ */
+static void execute_fwd ( const bp_action_stmt_t *s,
+                           const struct bp_expr_ctx_s *ctx ) {
+    switch ( s->fwd.op ) {
+        case FWD_CDL_START:
+            mhmap_set_mode ( DEBUGGER_MHMAP_MODE_ALWAYS );
+            break;
+        case FWD_CDL_STOP:
+            mhmap_set_mode ( DEBUGGER_MHMAP_MODE_OFF );
+            break;
+        case FWD_CDL_RESET:
+            mhmap_reset ( );
+            break;
+        case FWD_CDL_EXPORT: {
+            char *path = bp_action_render_fmt ( s->fwd.fmt, s->fwd.args,
+                                                s->fwd.n_args, ctx );
+            int rc = mhmap_export ( path );
+            if ( rc != 0 ) {
+                fprintf ( stderr, "[BP-ACTION] cdl_export '%s' failed (rc=%d)\n",
+                          path ? path : "(null)", rc );
+            };
+            g_free ( path );
+            break;
+        };
+        case FWD_TRACE_START:
+            dbgapi_trace_lifecycle ( s->fwd.channel, DBGAPI_TRACE_OP_START, NULL );
+            break;
+        case FWD_TRACE_STOP:
+            dbgapi_trace_lifecycle ( s->fwd.channel, DBGAPI_TRACE_OP_STOP, NULL );
+            break;
+        case FWD_TRACE_SAVE: {
+            /* 0019 vrstva 2: rate-limit gate (těžká I/O akce). Skip = tiše
+             * neprovést, žádný render ani zápis (šetří i CPU na render). */
+            if ( !fwd_ratelimit_allow ( ctx ) ) break;
+            char *path = bp_action_render_fmt ( s->fwd.fmt, s->fwd.args,
+                                                s->fwd.n_args, ctx );
+            int rc = dbgapi_trace_lifecycle ( s->fwd.channel,
+                                              DBGAPI_TRACE_OP_SAVE, path );
+            if ( rc != 0 ) {
+                fprintf ( stderr, "[BP-ACTION] trace_save '%s' failed (rc=%d)\n",
+                          path ? path : "(null)", rc );
+            } else {
+                /* 0019 vrstva 2/3: úspěšný fire -> runtime stav + byte backstop.
+                 * Trace_save: accountuj CELÝ disk footprint (chunk segmenty +
+                 * initial-state dumpy) přes deltu tlog disk čítače, NE g_stat na
+                 * index soubor (ten masivně podpočítává - viz V19). */
+                fwd_record_fire_trace ( ctx );
+            };
+            g_free ( path );
+            break;
+        };
+        case FWD_SNAPSHOT: {
+            /* 0019 vrstva 2: rate-limit gate (těžká I/O akce - .mzs zápis).
+             * Skip = tiše neprovést, žádný render ani snapshot. */
+            if ( !fwd_ratelimit_allow ( ctx ) ) break;
+            char *path = bp_action_render_fmt ( s->fwd.fmt, s->fwd.args,
+                                                s->fwd.n_args, ctx );
+            /* Tato akce běží na emu vlákně mezi instrukcemi (safe-point se
+             * zastaveným CPU) - viz mzarch.c enforce_pc_exec PŘED instrukcí.
+             * snapshot_save() ale vyžaduje safe-point guard (snapshot_mgr.c),
+             * který je u pokračujícího BP přes EMULATOR_TEST_PAUSED false.
+             * Guard proto na dobu volání splníme přes dedikovaný flag
+             * snapshot_safepoint (0019) - NE přes g_emulator.paused.
+             *
+             * Důvod použití samostatného kanálu: transientní set paused byl
+             * viditelný v běhovém wait-loopu (dispatch.c EMULATOR_TEST_PAUSED),
+             * který tím předčasně ukončoval čekání a rozbíjel actual_frames
+             * (0018). snapshot_safepoint ten wait-loop NEvidí, takže
+             * actual_frames zůstane správný i během snapshot-BP.
+             *
+             * Save/restore pattern (ne natvrdo false) umožňuje bezpečné vnoření
+             * a vždy obnoví předchozí stav, i při chybě snapshotu - z pohledu
+             * emulátoru nedojde k žádné trvalé změně. */
+            bool save_sp = g_emulator.snapshot_safepoint;
+            g_emulator.snapshot_safepoint = true;
+            en_SNAPSHOT_RESULT r = snapshot_save ( path, "BP-action snapshot" );
+            g_emulator.snapshot_safepoint = save_sp;
+            if ( r != SNAPSHOT_OK ) {
+                fprintf ( stderr, "[BP-ACTION] snapshot '%s' failed (result=%d)\n",
+                          path ? path : "(null)", (int) r );
+            } else {
+                /* 0019 vrstva 2/3: úspěšný fire -> runtime stav + byte backstop. */
+                fwd_record_fire ( ctx, path );
+            };
+            g_free ( path );
+            break;
+        };
+    };
+}
+
+
+/**
  * @brief Forward decl pro rekurzivní eval (= IF body).
  */
 static void execute_stmt ( const bp_action_stmt_t *s,
@@ -1444,6 +2043,9 @@ static void execute_stmt ( const bp_action_stmt_t *s,
             };
             break;
         };
+        case STMT_FWD:
+            execute_fwd ( s, ctx );
+            break;
     };
 }
 

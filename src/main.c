@@ -94,6 +94,12 @@ static const st_SDLAPP_OPTION_DEF g_known_options[] = {
       "Hard limit on total recording size in MB (0 = unlimited, default 0)." },
     { "--cputrack-save-on-exit", SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_BOOL_ON_OFF, NULL,        "<on|off>",
       "Flush cputrack buffer when the emulator exits (default on)." },
+    { "--cputrack-pc-lo",        SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<addr>",
+      "Lower PC bound (inclusive) for range-scoped tracking. Dec or 0x hex. "
+      "Default 0. Use with --cputrack-pc-hi to record only PC in [lo,hi]." },
+    { "--cputrack-pc-hi",        SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<addr>",
+      "Upper PC bound (inclusive) for range-scoped tracking. Dec or 0x hex. "
+      "Default 0xFFFF (= whole address space, no filter)." },
     /* trace-suite iorqlog options. */
     { "--iorqlog-mode",         SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_ENUM,        MODE_VALUES, "<off|window|always>",
       "Set the IORQ log recording mode (trace-suite iorqlog)." },
@@ -136,6 +142,23 @@ static const st_SDLAPP_OPTION_DEF g_known_options[] = {
     { "--hwlog-hs-decimation", SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_UINT,        NULL,        "<N>",
       "Decimate hwlog GDG_VIDEO HS/HBLN edges: emit every N-th edge "
       "(0 = OFF, default; ~31000 events/sec at full rate)." },
+    /* trace-suite marklog options. Bez těchto definic by sdlapp_options_validate
+     * odmítl jakýkoliv --marklog-* (marklog_apply_cli_options je četl, ale validace
+     * je zhodila ještě před aplikací -> EXIT_FAILURE). */
+    { "--marklog-mode",         SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_ENUM,        MODE_VALUES, "<off|window|always>",
+      "Set the marker log recording mode (trace-suite marklog)." },
+    { "--marklog-dir",          SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<dirpath>",
+      "Set the target directory for marklog recording." },
+    { "--marklog-name",         SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<basename>",
+      "Set the marklog basename." },
+    { "--marklog-chunk-mb",     SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_UINT,        NULL,        "<N>",
+      "RAM buffer size in MB before a marklog chunk is flushed (0 = default)." },
+    { "--marklog-max-total-mb", SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_UINT,        NULL,        "<N>",
+      "Hard limit on total marklog size in MB (0 = unlimited)." },
+    { "--marklog-save-on-exit", SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_BOOL_ON_OFF, NULL,        "<on|off>",
+      "Flush marklog buffer at exit (default on)." },
+    { "--marklog-stdout",       SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_BOOL_ON_OFF, NULL,        "<on|off>",
+      "Echo each emitted marker to stdout (default off)." },
     /* trace-suite shorthand options - apply to all 4 subsystems (cputrack,
      * iorqlog, intlog, hwlog). Per-subsystem options take precedence; these
      * shorthand values fill in only where no per-subsystem option was given. */

@@ -471,6 +471,34 @@ typedef enum en_DBGAPI_CMD
     DBGAPI_CMD_CMT_TAPE_BLOCK_SPEED,           /* Per-blok cmt speed - data_ptr: st_DBGAPI_CMT_TAPE_BLOCK_SPEED_PARAM* */
     DBGAPI_CMD_CMT_TAPE_LIST,                  /* Výpis bloků pásky (read) - data_ptr: st_DBGAPI_CMT_TAPE_LIST_PARAM* */
 
+    /* === mutant mcp-debug-control 0017 FÁZE 1: Tracking lifecycle ======
+     *
+     * Zrcadlí DBGAPI_CMD_CDL_* pro trace-suite subsystémy (cputrack/iorqlog/
+     * intlog/hwlog). Volba kanálu je v st_DBGAPI_TRACE_PARAM.channel. START
+     * nastaví mode kanálu na ALWAYS a triggerne callback recompute (analogie
+     * mhmap_set_mode), STOP nastaví OFF, RESET uzavře+znovuotevře segment
+     * (+ collapse reset u cputrack), SAVE uzavře/přesměruje segment na path.
+     * Přidáno na KONEC enumu kvůli stabilitě číselných hodnot existujících
+     * příkazů. */
+    DBGAPI_CMD_TRACE_START,                    /* Spustit trace recording kanálu - data_ptr: st_DBGAPI_TRACE_PARAM* */
+    DBGAPI_CMD_TRACE_STOP,                     /* Zastavit trace recording kanálu - data_ptr: st_DBGAPI_TRACE_PARAM* */
+    DBGAPI_CMD_TRACE_RESET,                    /* Vynulovat trace segment kanálu - data_ptr: st_DBGAPI_TRACE_PARAM* */
+    DBGAPI_CMD_TRACE_SAVE,                     /* Uložit/přesměrovat trace segment - data_ptr: st_DBGAPI_TRACE_PARAM* */
+
+    /* === mutant mcp-debug-control request 0021: deterministický frame-bounded run ===
+     *
+     * Spustí emulaci s cílem zastavit ji DETERMINISTICKY přesně na N-té frame
+     * hranici. Na rozdíl od dvojice RUN + async PAUSE z dispatch vlákna (= emu
+     * mezi "counter dosáhl N" a zpracováním PAUSE běžel dál o wall-clock-závislý
+     * počet instrukcí -> nedeterministický cycle bod) se emu pausne sám v hot
+     * loopu, jakmile g_gdg.total_elapsed.screens dosáhne cíle. Vzor je
+     * g_debugger.step_call (deterministický stop po N instrukcích).
+     *
+     * Handler nastaví g_debugger.run_frames_target = screens + N a
+     * run_frames_active = 1, pak unpausne emulaci. Přidáno na KONEC enumu kvůli
+     * stabilitě číselných hodnot existujících příkazů. */
+    DBGAPI_CMD_RUN_FRAMES,                     /* Frame-bounded run (deterministický stop po N framech) - data_ptr: int* (N >= 1) */
+
 } en_DBGAPI_CMD;
 
 /* ============================================================================
@@ -1352,6 +1380,13 @@ typedef struct st_DBGAPI_BP_UPDATE_PARAM
 
     /* === IRQ_SIG (1 bit) === */
     uint8_t irq_sig_source_mask; /**< UM_IRQ_SIG_SOURCE_MASK */
+
+    /* === 0019 vrstva 2 - per-BP rate-limit override (2 bity) ===
+     * Override implicitní ochrany proti saturaci diskem těžkými forward
+     * akcemi (snapshot / trace_save). Aplikuje se jen na FWD_SNAPSHOT a
+     * FWD_TRACE_SAVE; ostatní pole BP se nedotýkají. */
+    uint32_t fwd_min_interval_ms; /**< UM_FWD_MIN_INTERVAL_MS (0 = global/built-in default) */
+    uint32_t fwd_max_fires;       /**< UM_FWD_MAX_FIRES (0 = neomezeno) */
 } st_DBGAPI_BP_UPDATE_PARAM;
 
 /* ============================================================================
@@ -1420,6 +1455,10 @@ typedef struct st_DBGAPI_BP_UPDATE_PARAM
 
 /* IRQ_SIG */
 #define DBGAPI_BP_UM_IRQ_SIG_SOURCE_MASK (UINT64_C(1) << 42)
+
+/* 0019 vrstva 2 - per-BP rate-limit override těžkých FWD akcí (snapshot/trace) */
+#define DBGAPI_BP_UM_FWD_MIN_INTERVAL_MS (UINT64_C(1) << 43)  /**< fwd_min_interval_ms (0 = global/built-in default) */
+#define DBGAPI_BP_UM_FWD_MAX_FIRES       (UINT64_C(1) << 44)  /**< fwd_max_fires (0 = neomezeno) */
 
 /**
  * @brief Parametr pro CMD_BP_SET_ENABLED - quick toggle enabled flag.
@@ -2103,6 +2142,85 @@ typedef struct st_DBGAPI_CDL_EXPORT_PARAM
 
 
 /**
+ * @brief Výběr trace-suite kanálu pro DBGAPI_CMD_TRACE_*.
+ *
+ * Identifikuje, na který trace subsystém se lifecycle příkaz aplikuje.
+ * Mapování string -> enum dělá dispatch vrstva (mcp/dispatch.c).
+ */
+typedef enum en_DBGAPI_TRACE_CHANNEL
+{
+    DBGAPI_TRACE_CHANNEL_CPUTRACK = 0,  /**< CPU instrukční tracking (cputrack). */
+    DBGAPI_TRACE_CHANNEL_IORQLOG,       /**< I/O port log (iorqlog). */
+    DBGAPI_TRACE_CHANNEL_INTLOG,        /**< Interrupt/PIO log (intlog). */
+    DBGAPI_TRACE_CHANNEL_HWLOG,         /**< HW signál log (hwlog). */
+} en_DBGAPI_TRACE_CHANNEL;
+
+
+/**
+ * @brief Parametr pro DBGAPI_CMD_TRACE_{START,STOP,RESET,SAVE}.
+ *
+ * @field channel  Cílový trace kanál (cputrack/iorqlog/intlog/hwlog).
+ * @field path     Cílová cesta segmentu pro TRACE_SAVE (NULL = jen flush+
+ *                 restart na stávající dir/name). Ignorováno u START/STOP/RESET.
+ * @field out_result  Výstup: 0 = OK, -1 = chyba (např. restart writeru selhal).
+ *
+ * @invariant @c channel musí být platná en_DBGAPI_TRACE_CHANNEL hodnota;
+ *            dispatch vrstva odmítne neznámý channel string jako INVALID_PARAMS.
+ */
+typedef struct st_DBGAPI_TRACE_PARAM
+{
+    en_DBGAPI_TRACE_CHANNEL channel;
+    const char             *path;
+    int                     out_result;
+} st_DBGAPI_TRACE_PARAM;
+
+
+/**
+ * @brief Lifecycle operace nad trace kanálem.
+ *
+ * Sdílené jádro pro DBGAPI_CMD_TRACE_* handlery i pro forwarding z BP-action
+ * DSL (trace_start/stop/save). Hodnoty 1:1 odpovídají příslušným
+ * DBGAPI_CMD_TRACE_* příkazům - viz @ref dbgapi_trace_lifecycle.
+ */
+typedef enum en_DBGAPI_TRACE_OP
+{
+    DBGAPI_TRACE_OP_START = 0,  /**< Mode kanálu na ALWAYS + recompute (analogie cdl_start). */
+    DBGAPI_TRACE_OP_STOP,       /**< Mode kanálu na OFF + recompute. */
+    DBGAPI_TRACE_OP_RESET,      /**< fn_reset + flush/restart segmentu na stávající dir/name. */
+    DBGAPI_TRACE_OP_SAVE,       /**< Uložit/přesměrovat segment na @p path (NULL = jen flush+restart). */
+} en_DBGAPI_TRACE_OP;
+
+
+/**
+ * @brief Provede lifecycle operaci nad jedním trace-suite kanálem.
+ *
+ * Sdílené jádro extrahované z DBGAPI_CMD_TRACE_* handlerů (0017 FÁZE 1),
+ * aby tutéž logiku mohl beze změny chování volat i BP-action DSL forwarding
+ * (trace_start/stop/save). Mapuje kanál na deskriptor (mode pole + reset/save
+ * funkce) a podle @p op:
+ *   - START/STOP: nastaví mode kanálu (ALWAYS/OFF) a triggerne
+ *     @c mzarch_platform_fn_debugger_state_changed (recompute všech kanálů +
+ *     swap CPU callbacků), analogicky @c mhmap_set_mode.
+ *   - RESET: zavolá fn_reset (pokud existuje) + fn_save(NULL) (flush+restart).
+ *   - SAVE: zavolá fn_save(@p path).
+ *
+ * @param channel  Cílový trace kanál (musí být platná en_DBGAPI_TRACE_CHANNEL).
+ * @param op       Lifecycle operace.
+ * @param path     Cesta pro SAVE (NULL = jen flush+restart); ignorováno
+ *                 u START/STOP/RESET.
+ * @return 0 při úspěchu; -1 při neznámém kanálu nebo selhání save/restart
+ *         writeru.
+ *
+ * Side effects: mění mode kanálu, swapuje CPU debug callbacky, zapisuje
+ * trace segment soubory na disk. Threading: musí běžet na EMU vlákně
+ * (mutuje emu stav). Volá se z dbgapi dispatch i z bp_action_execute.
+ */
+extern int dbgapi_trace_lifecycle ( en_DBGAPI_TRACE_CHANNEL channel,
+                                    en_DBGAPI_TRACE_OP op,
+                                    const char *path );
+
+
+/**
  * @brief Identifikátor slotu pro Media Tools (mutant mcp-server V1.B.1).
  *
  * Whitelistované hodnoty - dispatch v dbgapi.c mapuje na konkrétní hw API.
@@ -2321,17 +2439,35 @@ typedef struct st_DBGAPI_PERIPH_PARAM
 } st_DBGAPI_PERIPH_PARAM;
 
 
-/* Výsledek CMD_BP_LIST */
+/**
+ * @brief Výsledek CMD_BP_LIST - seznam breakpointů s plnými atributy.
+ *
+ * Caller alokuje strukturu s flexibilním polem bp[max_count] a nastaví
+ * max_count. Handler v dbgapi.c naplní count a bp[] až do max_count
+ * (= overflow ořízne, ale úspěch).
+ *
+ * Vlastnictví: handler g_strdup() naplní bp[i].condition (heap, smí být
+ * NULL pokud BP nemá condition expr). Caller je POVINEN po použití
+ * každý bp[i].condition uvolnit g_free() (i < count). V dispatch.c k
+ * tomu slouží sdílený helper _free_bp_list_result(), který uvolní celé
+ * pole condition + samotnou strukturu - každý nový caller jej musí
+ * použít místo holého g_free(result). Ostatní pole jsou by-value.
+ */
 typedef struct st_DBGAPI_BP_LIST_RESULT
 {
     int count;     /* Počet breakpointů */
     int max_count; /* Velikost pole bp[] (musí nastavit klient) */
     struct
     {
-        uint16_t addr; /* Adresa */
-        int id;        /* ID */
-        bool enabled;  /* Aktivní? */
-    } bp[];            /* Flexibilní pole */
+        uint16_t addr;      /* Primární adresa (PC / MEM / IRQ vector) */
+        int id;             /* ID */
+        bool enabled;       /* Aktivní? */
+        uint8_t type;       /* en_BPT_TYPE jako int (PC_EXEC/MEM_R/...) */
+        uint8_t zone;       /* en_BP_ZONE jako int (CPU_VIEW/RAM/...) */
+        uint8_t bank_id;    /* Bank index pro BP_ZONE_MMEXT_BANK */
+        uint64_t hits;      /* Počítadlo aktivací (display only) */
+        char *condition;    /* Heap g_strdup() expr (NULL = unconditional) */
+    } bp[];                 /* Flexibilní pole */
 } st_DBGAPI_BP_LIST_RESULT;
 
 

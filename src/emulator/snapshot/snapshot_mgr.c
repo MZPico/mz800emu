@@ -385,8 +385,11 @@ static en_SNAPSHOT_RESULT snapshot_save_through_io(snapshot_io_t *io,
 
 en_SNAPSHOT_RESULT snapshot_save(const char *filepath, const char *description)
 {
-    /* 1. Ověřit, že je emulátor v pauze */
-    if (!EMULATOR_TEST_PAUSED) return SNAPSHOT_ERR_NOT_PAUSED;
+    /* 1. Ověřit safe-point: emulátor v pauze NEBO dedikovaný snapshot
+     * safe-point (0019). Druhý kanál umožňuje BP-action FWD_SNAPSHOT
+     * z pokračujícího BP, aniž by sahal na paused (= actual_frames fix). */
+    if (!EMULATOR_TEST_PAUSED && !EMULATOR_TEST_SNAPSHOT_SAFEPOINT)
+        return SNAPSHOT_ERR_NOT_PAUSED;
 
     /* 2. Otevřít ZIP archiv pro zápis do TEMP souboru (atomicita) */
     char tmp_path[1024];
