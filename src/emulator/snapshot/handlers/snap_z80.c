@@ -130,8 +130,14 @@ static en_SNAPSHOT_RESULT snap_z80_load(st_SNAPSHOT_CONTEXT *ctx)
         if (snapshot_xml_read_int(r, "interrupt_mode", &im)) cpu->im = (uint8_t)im;
         if (snapshot_xml_read_bool(r, "IFF1", &bval)) cpu->iff1 = bval ? 1 : 0;
         if (snapshot_xml_read_bool(r, "IFF2", &bval)) cpu->iff2 = bval ? 1 : 0;
-        /* halted — stav HALT se nastaví přímo přes cpu->halted,
-         * ale po loadu se CPU rozběhne od adresy PC, což je korektní chování */
+        /* HALT stav. Během HALT drží z80 jádro PC = X = adresa instrukce
+         * HALT (op_76 v z80_execute.inc dělá rPC-- zpět na X), takže obnova
+         * halted=1 spolu s načteným PC=X reprodukuje přesně stav, který CPU
+         * drží za běhu během HALT (čeká na IRQ na adrese HALT). Dříve se
+         * halted vůbec nečetl - CPU sice HALT re-fetchnul z PC a vrátil se
+         * do něj (funkčně skoro stejné), ale obnova je HW-věrná a bez extra
+         * instrukčního cyklu. */
+        if (snapshot_xml_read_bool(r, "halted", &bval)) cpu->halted = bval ? 1 : 0;
     }
 
     snapshot_xml_leave_element(r); /* z80_state */

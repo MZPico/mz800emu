@@ -173,6 +173,20 @@ void mzarch_ei_cb(z80_t *cpu, void *user_data)
 void mzarch_di_cb ( z80_t *cpu, void *user_data ) {
     (void) cpu;
     (void) user_data;
+
+    /* trace-suite intlog: DI vykonáno (CPU právě zakázalo přerušení).
+     * Symetrie s mzarch_ei_cb - bez tohoto fan-outu by DI v okně Events
+     * (eventlog kategorie CPU_INT) chybělo, zatímco EI by se logovalo.
+     * IFF1/IFF2 jsou v tomto okamžiku už 0 (DI je provedeno). */
+    if ( TEST_TRACE_INTLOG_DISPATCH ) {
+        uint32_t bits = INTLOG_STATE_BIT_DI
+            | ( cpu->iff1 ? INTLOG_STATE_BIT_IFF1 : 0 )
+            | ( cpu->iff2 ? INTLOG_STATE_BIT_IFF2 : 0 )
+            | ( cpu->im == 0 ? INTLOG_STATE_BIT_IM0 :
+                cpu->im == 1 ? INTLOG_STATE_BIT_IM1 : INTLOG_STATE_BIT_IM2 );
+        intlog_record_cpu_int_state ( bits );
+    }
+
     if ( g_bp_event_active[ BP_EVENT_CPU_DI ] ) {
         bp_event_fire ( BP_EVENT_CPU_DI, 0 );
     }

@@ -1,4 +1,6 @@
 
+	- BUGFIX: In IM 2 mode, when an interrupt that did not originate from the PIO-Z80 arrived, we previously returned the vector 0x00 incorrectly. Now the "bus ghost" value is returned. A minor fix was also added in the I/O Ports window and the Events window. Snapshot: loading a snapshot corrupted the Unicard SD root dir configuration.
+
 	- MCP server - events are now available over TCP as well (previously only over the pipe). Typed breakpoints (MEM_W, MEM_R, IORQ...) can be created. Instruction tracing can be fully controlled over MCP (start/stop/reset/save, with channel selection). MCP tools now always return an error message instead of an empty response on error.
 
 	- BUGFIX: MCP server - sending keys to the emulator now reports whether the keys actually landed. Previously the tool could report success even when the machine did not accept them.

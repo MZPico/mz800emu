@@ -671,7 +671,9 @@ static inline void mzarch_main_process_interrupt(void)
              *
              * vector_table_addr = (I << 8) | (vector & 0xFE), kde vector je hodnota
              * kterou CPU přečetl z datové sběrnice (cpu->int_vector). Pro PIOZ80
-             * IRQ je to port->interrupt_vector, pro non-PIOZ80 je to 0 (= bus latch).
+             * IRQ je to port->interrupt_vector, pro non-PIOZ80 je to "duch
+             * sběrnice" (g_mzarch_main.regDBUS_latch = poslední byte na DBUS),
+             * protože MZ-800 nemá zařízení dodávající vektor.
              *
              * isr_addr = cpu->pc - PC je v tomto okamžiku už nastavený na ISR
              * adresu (= hodnota přečtená z (I:vector & 0xFE)).
@@ -908,8 +910,39 @@ static inline void mzzarch_main_do_emulator_paused(void)
         };
 
         mzarch_main_queue_next_event();
+
+        /* Spánek v paused smyčce - bez něj by EMU vlákno v pauze busy-spinilo
+         * na 100 % jádra. Parita s debugger větví (g_usleep výše). UI běží na
+         * vlastním vlákně, takže pauza zůstává okamžitě zrušitelná (Alt+P). */
+        g_usleep(20 * 1000);
     };
 #endif
+}
+
+
+void mzarch_forced_full_screen_refresh(void)
+{
+    iface_video_create_redraw_full_screen_request();
+
+    if (GDG_MZ800_DMD_TEST_MZ700)
+    {
+        framebuffer_update_MZ700_all_rows();
+    }
+    else
+    {
+        framebuffer_MZ800_all_screen_rows_fill();
+    };
+    framebuffer_border_all_rows_fill();
+
+    /* Vynucený plný refresh - SDL consumer (video_sdl3_update_surface_from_framebuffer)
+     * gateuje memcpy snapshot -> surface na "framebuffer_state != FB_STATE_NOT_CHANGED".
+     * Pokud je emulátor pauznutý, state je obvykle NOT_CHANGED (poslední screen_done
+     * ho resetoval), takže by bez tohoto force nastavení consumer memcpy přeskočil
+     * a obraz na ploše by zůstal starý i přes redraw_full_screen_request flag.
+     * Označíme state jako SCREEN+BORDER changed - reálně jsme obě části vyplnili. */
+    g_framebuffer.framebuffer_state |= FB_STATE_SCREEN_CHANGED | FB_STATE_BORDER_CHANGED;
+
+    framebuffer_screen_done();
 }
 
 /*******************************************************************************

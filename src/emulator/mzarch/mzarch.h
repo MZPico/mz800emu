@@ -108,6 +108,21 @@ extern "C"
     extern void mzarch_main_insideop_iorq_psg_write(void);
     extern void mzarch_rear_dip_switch_mz700_compat(unsigned value);
 
+    /**
+     * @brief Vynutí kompletní překreslení obrazovky emulátoru z aktuálního
+     *        stavu VRAM/GDG (border i screen), nezávisle na debuggeru.
+     *
+     * Přegeneruje celý framebuffer (MZ-700 i MZ-800 cesta dle aktuálního
+     * DMD režimu), označí framebuffer state jako změněný a dokončí snímek,
+     * takže SDL consumer obraz skutečně překreslí i v pauze. Core varianta
+     * původní debugger-only @c debugger_forced_screen_update() - dostupná i
+     * v buildu bez debuggeru (volá ji snapshot load po obnově stavu).
+     *
+     * @pre Volá se v safe-pointu (emulace v pauze nebo z emu vlákna mezi
+     *      instrukcemi) - stejný kontrakt jako debugger_forced_screen_update.
+     */
+    extern void mzarch_forced_full_screen_refresh(void);
+
 #define mz800_main_get_instruction_start_ticks() (g_gdg.total_elapsed.ticks - g_mzarch_main.instruction_insideop_sync_ticks) /* muze legalne vracet i zaporne cislo! */
 
 #define mz800_main_cursor_timer_reset() \

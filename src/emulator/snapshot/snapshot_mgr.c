@@ -35,8 +35,12 @@ st_SNAPSHOT_SETTINGS g_snapshot_settings = {
     .quicksave_filename = "quicksave",
     .quicksave_mode = 0,        /* Basic */
     .quicksave_max_slots = 5,
-    .load_resume_mode = SNAPSHOT_RESUME_PREVIOUS,
-    .quickload_resume_mode = SNAPSHOT_RESUME_PREVIOUS,
+    /* Default: po loadu/quickloadu nechat emulaci v pauze. Uživatel typicky
+     * chce načtený stav nejdřív vidět/prozkoumat, ne ho hned rozběhnout.
+     * Lze přepnout v Snapshot Setup dialogu (Always Run / Always Pause /
+     * Previous State). */
+    .load_resume_mode = SNAPSHOT_RESUME_ALWAYS_PAUSE,
+    .quickload_resume_mode = SNAPSHOT_RESUME_ALWAYS_PAUSE,
 };
 
 
@@ -525,6 +529,15 @@ static en_SNAPSHOT_RESULT snapshot_load_through_io(snapshot_io_t *io)
             return result;
         }
     }
+
+    /* Po obnově celého stavu vynutit kompletní překreslení obrazovky z nově
+     * načteného VRAM/GDG stavu. Snapshot se typicky načítá do pauzy, kdy se
+     * framebuffer neaktualizuje, takže bez tohoto refreshe by obraz na ploše
+     * zůstal starý. Core funkce mzarch_forced_full_screen_refresh() funguje
+     * i v buildu bez debuggeru (dřív byl ekvivalent jen v debuggeru přes
+     * debugger_forced_screen_update). Společná cesta pro file i buffer load
+     * (quickload) - pokrývá všechny varianty jedním voláním. */
+    mzarch_forced_full_screen_refresh();
 
     return SNAPSHOT_OK;
 }

@@ -1217,10 +1217,8 @@ uint8_t pioz80_interrupt_ack_im2_cb ( z80_t *cpu, void *user_data ) {
 #endif
     ( void ) user_data;
     if ( g_pioz80.interrupt != PIOZ80_INTERRUPT_PENDING ) {
-        // TODO: prozatim nemam uplne nejlepe prozkoumano -
-        // vraci to vetsinou pripad od pripadu stejne hodnoty, ale netusim cim jsou predurcene
-        //DBGPRINTF ( DBGINF, "PIOZ80 is not in INTERRUPT_PENDING state, pioz80_state = %s, return ivector = 0x%04x, PC = 0x%04x\n", pioz80_dbg_get_intstate_string ( g_pioz80.interrupt ), ( cpu->pc << 8 ), g_mzarch_main.instruction_addr );
-        return 0x00;
+        /* INT ACK, ale PIOZ80 NENI autorem interruptu, takže zůstane od datové sběrnice odpojen a načte se "duch sbernice" (g_mzarch_main.regDBUS_latch). */
+        return g_mzarch_main.regDBUS_latch;
     };
 
     st_PIOZ80_PORT *port;

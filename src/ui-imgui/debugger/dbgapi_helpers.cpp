@@ -257,12 +257,15 @@ bool dbg_ui_bpgrp_update(const st_DBGAPI_BPGRP_UPDATE_PARAM *p)
 #else /* !MZ800EMU_CFG_DEBUGGER_ENABLED */
 
 /* No-debugger build: pause/run helpery se volají z non-debug UI
- * (snapshot dialogy, topmenu Alt+P) - stubujeme jako no-op, ať build
- * prochází. Funkční pause/run by se měl provést přímo emulator_pause(),
- * to ladění až po stabilizaci feasibility. */
+ * (snapshot dialogy, topmenu Alt+P). CMDRQ fronta v tomto buildu
+ * neexistuje, takže jdeme přímo přes emulator_pause() z UI vlákna -
+ * stejný zavedený vzor jako emulator_max_speed() volaný z menu Speed /
+ * Alt+M. EMU vlákno respektuje g_emulator.paused i bez debuggeru
+ * (mzarch.c má pause wait-loop ve větvi #else). */
 #include "dbgapi_helpers.h"
-bool dbg_ui_pause(void)        { return false; }
-bool dbg_ui_run(void)          { return false; }
-bool dbg_ui_pause_toggle(void) { return false; }
+#include "emulator.h"
+bool dbg_ui_pause(void)        { emulator_pause(true);  return true; }
+bool dbg_ui_run(void)          { emulator_pause(false); return true; }
+bool dbg_ui_pause_toggle(void) { emulator_pause(!EMULATOR_TEST_PAUSED); return true; }
 
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */

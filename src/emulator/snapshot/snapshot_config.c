@@ -198,11 +198,11 @@ void snapshot_config_init(void)
     cfgelement_set_propagate_cb(elm, propagatecfg_quicksave_max_slots, NULL);
     cfgelement_set_save_cb(elm, savecfg_quicksave_max_slots, NULL);
 
-    elm = cfgmodule_register_new_element(cmod, "load_resume_mode", CFGENTYPE_UNSIGNED, SNAPSHOT_RESUME_PREVIOUS, 0, 2);
+    elm = cfgmodule_register_new_element(cmod, "load_resume_mode", CFGENTYPE_UNSIGNED, SNAPSHOT_RESUME_ALWAYS_PAUSE, 0, 2);
     cfgelement_set_propagate_cb(elm, propagatecfg_load_resume_mode, NULL);
     cfgelement_set_save_cb(elm, savecfg_load_resume_mode, NULL);
 
-    elm = cfgmodule_register_new_element(cmod, "quickload_resume_mode", CFGENTYPE_UNSIGNED, SNAPSHOT_RESUME_PREVIOUS, 0, 2);
+    elm = cfgmodule_register_new_element(cmod, "quickload_resume_mode", CFGENTYPE_UNSIGNED, SNAPSHOT_RESUME_ALWAYS_PAUSE, 0, 2);
     cfgelement_set_propagate_cb(elm, propagatecfg_quickload_resume_mode, NULL);
     cfgelement_set_save_cb(elm, savecfg_quickload_resume_mode, NULL);
 }

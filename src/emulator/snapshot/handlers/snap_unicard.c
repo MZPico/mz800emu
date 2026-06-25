@@ -90,12 +90,19 @@ static en_SNAPSHOT_RESULT snap_unicard_load(st_SNAPSHOT_CONTEXT *ctx)
         g_unicard.fw_emulated = fw;
     }
 
-    /* Pracovní adresář */
+    /* Pracovní adresář (CWD uvnitř SD karty - FatFS vlastnost, stav stroje).
+     * Obnovujeme přes unicard_chdir(), který nastaví g_unicard.work_dir
+     * s jail kontrolou a ověřením existence adresáře.
+     *
+     * POZOR: dříve se zde chybně volalo unicard_set_sd_root_dirpath(work_dir),
+     * což uloženou hodnotu CWD nacpalo do KONFIGURACE SD root. SD root je ale
+     * host konfigurace (CFGELM, INI) - kam uživatel namapoval SD kartu - NE
+     * stav stroje. Snapshot ji nesmí přepisovat (jinak se po loadu rozbije
+     * nastavení SD root a navíc se neobnoví CWD). */
     char *work_dir = NULL;
     if (snapshot_xml_read_string(r, "work_dir", &work_dir)) {
         if (work_dir && work_dir[0] != '\0') {
-            /* Nastavení pracovního adresáře přes existující API */
-            unicard_set_sd_root_dirpath(work_dir);
+            unicard_chdir(work_dir);
         }
         g_free(work_dir);
     }

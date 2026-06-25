@@ -91,6 +91,7 @@ typedef enum en_INTLOG_EDGE
 #define INTLOG_STATE_BIT_IFF2      (1u << 4)
 #define INTLOG_STATE_BIT_RETI      (1u << 5)  /**< Edge: RETI právě vykonán */
 #define INTLOG_STATE_BIT_EI        (1u << 6)  /**< Edge: EI právě vykonán */
+#define INTLOG_STATE_BIT_DI        (1u << 7)  /**< Edge: DI právě vykonán */
 /* Bity pro PIO_STATE event class */
 #define INTLOG_STATE_BIT_PIO_READY        (1u << 8)
 #define INTLOG_STATE_BIT_PIO_ARMED        (1u << 9)

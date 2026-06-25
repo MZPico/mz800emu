@@ -1345,19 +1345,16 @@ static const char* io_history_describe ( uint16_t port, uint8_t value,
                 if ( is_in ) {
                     return "MMIO GDG Status (HBLN/TEMPO/JOY)";
                 }
-                /* OUT 0xE008 = DMD write (mirror 0xCE OUT) */
-                {
-                    const char *mode;
-                    switch ( ( value >> 2 ) & 0x03 ) {
-                        case 0: mode = "320x200x16 (MZ-800)"; break;
-                        case 1: mode = "640x200x4 (MZ-800)"; break;
-                        case 2: mode = "MZ-700 mode"; break;
-                        default: mode = "illegal"; break;
-                    }
-                    snprintf ( buf, sizeof ( buf ),
-                               "MMIO GDG DMD: %s", mode );
-                    return buf;
-                }
+                /* OUT 0xE008 NENI DMD! Zapis na 0xE008 jde do gdg_write_byte
+                 * case 0x08 (mz800_gdg.c), kde se z hodnoty bere jen bit 0 a
+                 * ridi se jim CTC0 GATE0 (ctc8253_gate(0, value & 1)). DMD
+                 * registr je naopak IORQ port 0xCE. Drivejsi dekodovani jako
+                 * "GDG DMD: 320x200x16" bylo chybne (napr. XOR a; LD (0E008h),a
+                 * = GATE0 off, ne zadny videorezim). */
+                snprintf ( buf, sizeof ( buf ),
+                           "MMIO CTC0 GATE0 = %u (audio gate)",
+                           (unsigned)( value & 0x01 ) );
+                return buf;
             default:
                 return NULL;
         }

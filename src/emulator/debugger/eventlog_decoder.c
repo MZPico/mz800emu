@@ -80,7 +80,8 @@ static const char *decoder_lookup_port_name ( uint16_t port16 )
  * @brief Dekóduje CPU_INT state bitmask.
  *
  * Bitová pole odpovídají @c INTLOG_STATE_BIT_* v intlog.h. Výstup formy
- * @c "IM=2 IFF1=1 IFF2=1 RETI EI". Nepřítomné bity nepíšou nic.
+ * @c "IM=2 IFF1=1 IFF2=1 RETI EI" (DI analogicky s příznakem DI).
+ * Nepřítomné bity nepíšou nic.
  */
 static void decode_cpu_int_state ( uint32_t bits, char *buf, size_t buf_len )
 {
@@ -95,18 +96,21 @@ static void decode_cpu_int_state ( uint32_t bits, char *buf, size_t buf_len )
     const int iff2 = ( bits & INTLOG_STATE_BIT_IFF2 ) ? 1 : 0;
     const int reti = ( bits & INTLOG_STATE_BIT_RETI ) ? 1 : 0;
     const int ei   = ( bits & INTLOG_STATE_BIT_EI )   ? 1 : 0;
+    const int di   = ( bits & INTLOG_STATE_BIT_DI )   ? 1 : 0;
 
     /* Pokud žádný IMx bit, vypsat aspoň "?". */
     if ( im >= 0 ) {
-        snprintf ( buf, buf_len, "IM=%d IFF1=%d IFF2=%d%s%s",
+        snprintf ( buf, buf_len, "IM=%d IFF1=%d IFF2=%d%s%s%s",
                    im, iff1, iff2,
                    reti ? " RETI" : "",
-                   ei ? " EI" : "" );
+                   ei ? " EI" : "",
+                   di ? " DI" : "" );
     } else {
-        snprintf ( buf, buf_len, "IFF1=%d IFF2=%d%s%s",
+        snprintf ( buf, buf_len, "IFF1=%d IFF2=%d%s%s%s",
                    iff1, iff2,
                    reti ? " RETI" : "",
-                   ei ? " EI" : "" );
+                   ei ? " EI" : "",
+                   di ? " DI" : "" );
     }
 }
 

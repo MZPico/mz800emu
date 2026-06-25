@@ -71,6 +71,20 @@ void test_eventlog_detail_cpu_int_bitmask ( void )
     bits |= INTLOG_STATE_BIT_RETI;
     run_decode ( EVENTLOG_CAT_CPU_INT, 0, 0x4000, bits, buf, sizeof ( buf ) );
     TEST_ASSERT_NOT_NULL ( strstr ( buf, "RETI" ) );
+
+    /* EI bit -> " EI" (a NE "DI"). */
+    run_decode ( EVENTLOG_CAT_CPU_INT, 0, 0x4000,
+                 INTLOG_STATE_BIT_IM2 | INTLOG_STATE_BIT_EI,
+                 buf, sizeof ( buf ) );
+    TEST_ASSERT_NOT_NULL ( strstr ( buf, "EI" ) );
+    TEST_ASSERT_NULL ( strstr ( buf, "DI" ) );
+
+    /* DI bit -> " DI". Regrese: DI se dříve do Events vůbec nelogovalo
+     * (mzarch_di_cb nevolal intlog) a decoder neměl DI příznak. */
+    run_decode ( EVENTLOG_CAT_CPU_INT, 0, 0x4000,
+                 INTLOG_STATE_BIT_IM1 | INTLOG_STATE_BIT_DI,
+                 buf, sizeof ( buf ) );
+    TEST_ASSERT_NOT_NULL ( strstr ( buf, "DI" ) );
 }
 
 

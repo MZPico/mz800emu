@@ -1831,11 +1831,14 @@ const st_IO_PORT_DESC g_io_ports[] = {
         MZ_AVAIL_ALL
     },
     {
-        /* 0xE008 OUT = GDG DMD write (= mirror 0xCE OUT na MZ-800).
+        /* 0xE008 OUT = CTC0 GATE0 (bit 0) - NENI DMD! Zapis jde do
+         * gdg_write_byte case 0x08, kde se z hodnoty bere jen bit 0 a ridi
+         * se jim hradlovani CTC0 (ctc8253_gate(0, value & 1)) = audio gate
+         * (viz pozn. u bits_pio8255_portc bit 0). DMD registr je IORQ 0xCE.
          * 0xE008 IN  = GDG status mirror (HBLNK + TEMPO + na MZ-800
          * navic CKSW; na MZ-700/1500 bity 1-4 mohou byt JOY pres joymz).
-         * Sdili bits_gdg_status[] s 0xCE Status pro UI bit detail. */
-        0x00E008, "MMIO - GDG DMD/Status (R/W)", "Memory-mapped GDG DMD (W) / Status (R)",
+         * Sdili bits_gdg_status[] s 0xCE Status pro UI bit detail (IN). */
+        0x00E008, "MMIO - CTC0 GATE0 / GDG Status (R/W)", "Memory-mapped CTC0 GATE0 bit 0 (W) / GDG Status (R)",
         IO_PORT_DIR_RW,
         bits_gdg_status, sizeof(bits_gdg_status) / sizeof(bits_gdg_status[0]),
         read_mmio_e008_status, NULL,
