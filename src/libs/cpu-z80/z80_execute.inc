@@ -619,14 +619,37 @@ check_interrupts:
                 }
             }
         }
-        /* ei_delay se musi vycistit vzdy - i pri external_int_handling */
+#if !Z80_DIRECT_REGS
+        /* BATCH (Z80_DIRECT_REGS=0, verejne z80_execute): vstupni clear na
+         * zacatku z80_execute() bezi jen 1x na celou davku, proto ei_delay
+         * nastaveny instrukci EI uvnitr davky musi smazat tento epilog-clear,
+         * jinak by zustal viset pres dalsi instrukce v jednom z80_execute
+         * volani a maskovatelne preruseni by se po EI uvnitr davky neprijalo. */
         cpu->ei_delay = false;
+#else
+        /* PER-STEP (Z80_DIRECT_REGS=1, z80_step) - EI-delay fix (gun-runner):
+         * clear je ZAMERNE VYNECHAN. ei_delay nastaveny op_FB (EI) musi PREZIT
+         * navrat z z80_step(), aby ho mzarch interrupt poll (mzarch_main_process_
+         * interrupt: 'iff1 && !ei_delay') jeste videl nastaveny a preruseni po EI
+         * zablokoval. Vycisti ho az vstupni clear na zacatku PRISTIHO z80_step,
+         * PRED dispatchem instrukce nasledujici po EI -> EI-delay = presne jedna
+         * instrukce. Replikuje noint_once z80ex jadra (set v EI(), clear na
+         * zacatku pristiho stepu). Bez tohoto byl interrupt prijat hned po EI:
+         * u sekvence "EI; LD SP,nn" pak push sel na stary zasobnik a poskodil
+         * pamet (regrese v2.0.2 - hra Gun Runner se zasekla). */
+#endif
 
         /* HALT - cykly uz pricteny v NEXT_SLOW(4) */
         if (cpu->halted) goto done;
 
         if (cycles_executed >= target_cycles) goto done;
 
+        /* INVARIANT (EI-delay lifetime): v per-step variante (Z80_DIRECT_REGS=1,
+         * target_cycles=1) je tento DISPATCH() nedosazitelny - radek vyse vzdy
+         * skoci na 'done' (kazda instrukce spotrebuje >=4 T). Pouziva se jen v
+         * batch. POZOR: kdyby se v per-step na tento DISPATCH v budoucnu dalo
+         * dostat (napr. pre-empce / wait state), obesel by vstupni clear ei_delay
+         * a delay po EI by se protahl na 2 instrukce. */
         DISPATCH();
     }
 

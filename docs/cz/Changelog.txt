@@ -1,4 +1,6 @@
 
+	- BUGFIX: oprava timingu CPU jádra z80-mz800 - CPU vykonávalo interrupt ihned po EI a nikoliv až po další instrukci. Chyba vznikla ve verzi v2.0.2
+
 	- BUGFIX: Pokud v IM2 režimu přijde interrupt, který nepochází od PIO-Z80, tak jsme dříve chybně vraceli vektor 0x00. Nyní se vrací hodnotu "ducha sběrnice". Dále doplněna drobná oprava v I/O ports window a Events window. Snapshot: po načtení poškodil konfiguraci Unicard SD root dir.
 
 	- MCP server - události (events) jsou nyní dostupné i přes TCP (dříve jen přes pipe). Lze zakládat typované breakpointy (MEM_W, MEM_R, IORQ...). Instrukční trasování lze plně ovládat přes MCP (start/stop/reset/uložení, s volbou kanálu). MCP nástroje teď při chybě vždy vrací chybovou hlášku místo prázdné odpovědi.

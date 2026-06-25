@@ -29,3 +29,13 @@ mz_add_test(cpu_z80_call_ret_hooks
     LIBS     mzlib_cpu_z80
     LABELS   "standalone;libs"
 )
+
+# Pokriva EI-delay v per-step variante jadra (regrese v2.0.2 - hra Gun Runner).
+# INT po EI se smi prijmout az po nasledujici instrukci; jinak "EI; LD SP,nn"
+# pushne na stary zasobnik a poskodi pamet. Viz emu-experiments/gun-runner/.
+mz_add_test(cpu_z80_ei_delay
+    TYPE     STANDALONE
+    SOURCES  test_ei_delay.c
+    LIBS     mzlib_cpu_z80
+    LABELS   "standalone;libs"
+)
