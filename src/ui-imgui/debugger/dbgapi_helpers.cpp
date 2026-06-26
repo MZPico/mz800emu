@@ -80,6 +80,21 @@ bool dbg_ui_reset(void)
 }
 
 
+bool dbg_ui_debugger_state_recompute(void)
+{
+    /* Deleguje mzarch_platform_fn_debugger_state_changed na EMU vlákno
+     * (DBGAPI_CMD_DEBUGGER_STATE_RECOMPUTE) místo přímého volání z UI vlákna.
+     * Nutné pro trace-suite: stop kanálu uvolní writer buffer (tlog_writer_close)
+     * - kdyby to běželo na UI vlákně souběžně s emu-thread tlog_writer_append,
+     * vznikne use-after-free race. Volající si PŘEDEM nastaví mode/flag
+     * (cfg.mode = ... apod., atomický int zápis), pak zavolá tuto funkci. */
+    return dbgapi_ui_submit_cmd_sync(&g_dbgapi_cmdrq_queue,
+                                     DBGAPI_CMD_DEBUGGER_STATE_RECOMPUTE,
+                                     NULL, NULL,
+                                     DBG_UI_DEFAULT_TIMEOUT_MS);
+}
+
+
 bool dbg_ui_step_into(void)
 {
     return dbgapi_ui_submit_cmd_sync(&g_dbgapi_cmdrq_queue,

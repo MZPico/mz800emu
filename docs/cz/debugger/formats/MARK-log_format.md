@@ -24,9 +24,13 @@ Slouží pro:
 - označení uživatelské sekvence ("ISR_entry" → "ISR_exit") + spočítání
   T-states mezi nimi
 
-marklog se ovládá z `Debugger Settings -> Trace Suite -> Marker Log`
-(Off / Only With Debug Window / Always + Save on Exit + dir + chunk-mb
-+ max-total-mb + Stdout). Persistentní v ini sekci `[TRACE_MARKLOG]`.
+marklog se ovládá z menu `Debugger Settings -> Trace Suite -> Marker Log`
+(Off / Only With Debug Window / Always + Save on Exit + Max size [MB] +
+Chunk [MB] + Set directory... + přepínač "Print marks to stdout"). Dále přes
+CLI (`--marklog-mode`, `--marklog-save-on-exit`, `--marklog-max-total-mb`,
+`--marklog-stdout`, `--marklog-dir`, `--marklog-name`, `--marklog-chunk-mb`),
+INI sekci `[TRACE_MARKLOG]` nebo akci breakpointu (`mark "name"`). Basename
+(name) jen přes CLI / INI.
 
 `stdout_enabled` flag řídí back-compat zapsání `[BP-MARK] <name>` na
 stdout. **Nezávislý na marklog mode** - lze mít obě, jednu, ani jednu.

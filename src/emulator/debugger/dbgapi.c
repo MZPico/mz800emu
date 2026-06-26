@@ -788,6 +788,7 @@ const char *dbgapi_cmd_to_str(en_DBGAPI_CMD cmd)
         case DBGAPI_CMD_TRACE_STOP:                return "trace_stop";
         case DBGAPI_CMD_TRACE_RESET:               return "trace_reset";
         case DBGAPI_CMD_TRACE_SAVE:                return "trace_save";
+        case DBGAPI_CMD_DEBUGGER_STATE_RECOMPUTE:  return "debugger_state_recompute";
         /* V1.B.1 - Media Tools */
         case DBGAPI_CMD_MEDIA_LOAD_MZF:            return "media_load_mzf";
         case DBGAPI_CMD_MEDIA_LOAD_BINARY:         return "media_load_binary";
@@ -1114,6 +1115,19 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
              * Side effect: cpuhist a mhmap recording v WITH_WINDOW režimu
              * se vypne. */
             g_debugger.active = 0;
+            rq->success = true;
+            break;
+
+        case DBGAPI_CMD_DEBUGGER_STATE_RECOMPUTE:
+            /* Přepočet debugger callbacků + trace/CDL/cpuhist active flagů na
+             * EMU vlákně (per-frame safe-point v drain smyčce, mimo per-instrukční
+             * hot-path append). UI vlákno si předem nastavilo mode/flagy (atomický
+             * int zápis) a deleguje sem samotný recompute. Tím se trace start/stop
+             * (vč. alloc/free writer bufferu v tlog_writer_*) provede na emu vlákně
+             * a nevznikne use-after-free race s emu-thread tlog_writer_append.
+             * Volá tutéž funkci jako přímá UI cesta dříve - chování beze změny,
+             * jen jiné vlákno. */
+            mzarch_platform_fn_debugger_state_changed ( TEST_DEBUGGER_ACTIVE );
             rq->success = true;
             break;
 

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-23 00:00+0200\n"
+"POT-Creation-Date: 2026-06-26 16:53+0200\n"
 "PO-Revision-Date: 2026-03-11 21:00+0100\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -2555,7 +2555,7 @@ msgid "Hide noise"
 msgstr "Сховати шум"
 
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1369
-#: src/ui-imgui/debugger/ioview/io_window.cpp:973
+#: src/ui-imgui/debugger/ioview/io_window.cpp:972
 #: src/ui-imgui/debugger/symbols/sym_window.cpp:618
 msgid "Clear filter"
 msgstr "Очистити фільтр"
@@ -4040,11 +4040,11 @@ msgstr "Пристрій Master"
 msgid "Drive Slave"
 msgstr "Пристрій Slave"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:483
+#: src/ui-imgui/debugger/ioview/io_window.cpp:482
 msgid "(no bit-level decode available)"
 msgstr "(біт-level декодування не є k dispozici)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:638
+#: src/ui-imgui/debugger/ioview/io_window.cpp:637
 msgid ""
 "16-bit CRTC family port. Bus addr is 0x<RR>CF (Z80 OUT (C),A pattern with "
 "B=register index, C=0xCF). MZ notation 0xCF<RR> is human-readable display."
@@ -4052,52 +4052,52 @@ msgstr ""
 "16бітовий port rodiny CRTC. Шинна адреса je 0x<RR>CF (Z80 vzor OUT (C),A s "
 "B=index регістра, C=0xCF). MZ notace 0xCF<RR> je людині читабельне перегляд."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:656
+#: src/ui-imgui/debugger/ioview/io_window.cpp:655
 msgid "Add IORQ R BP##ioctx"
 msgstr "Додати IORQ R BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:659
+#: src/ui-imgui/debugger/ioview/io_window.cpp:658
 msgid "Add IORQ W BP##ioctx"
 msgstr "Додати IORQ W BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:663
+#: src/ui-imgui/debugger/ioview/io_window.cpp:662
 msgid "Add MEM R BP##ioctx"
 msgstr "Додати MEM R BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:666
+#: src/ui-imgui/debugger/ioview/io_window.cpp:665
 msgid "Add MEM W BP##ioctx"
 msgstr "Додати MEM W BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:671
+#: src/ui-imgui/debugger/ioview/io_window.cpp:670
 msgid "Reset activity counter##ioctx"
 msgstr "Reset лічильники aktivity##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:680
+#: src/ui-imgui/debugger/ioview/io_window.cpp:679
 msgid "Show in History tab##ioctx"
 msgstr "Показати у закладці Historie##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:717
+#: src/ui-imgui/debugger/ioview/io_window.cpp:716
 msgid "Show in Memory Map##ioctx"
 msgstr "Показати у Memory Map##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:812
+#: src/ui-imgui/debugger/ioview/io_window.cpp:811
 #, c-format
 msgid "Last cached value %u frames ago"
 msgstr "Останній кешована значення перед %u кадри"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:819
+#: src/ui-imgui/debugger/ioview/io_window.cpp:818
 msgid "No data captured (port has no mirror and no IORQ event yet)"
 msgstr "Жодна дані захоплено (port не має mirror a поки не має IORQ подія)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:848
+#: src/ui-imgui/debugger/ioview/io_window.cpp:847
 msgid "Hits per second over last 1s window (50 buckets)"
 msgstr "Звернень za sekundu у вікні останній 1 s (50 комірок)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:854
+#: src/ui-imgui/debugger/ioview/io_window.cpp:853
 msgid "Tracking disabled (panel closed or toggled off)"
 msgstr "Відстеження вимкнено (панель закритий або вимкнений)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:878
+#: src/ui-imgui/debugger/ioview/io_window.cpp:877
 msgid ""
 "MMIO events (0xE000-0xE008) are always recorded (per-port filter applies to "
 "8-bit IORQ space only)"
@@ -4105,7 +4105,7 @@ msgstr ""
 "MMIO події (0xE000-0xE008) jsou записуються завжди (фільтр per port себе "
 "vztahuje тільки на 8бітовий IORQ простір)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:892
+#: src/ui-imgui/debugger/ioview/io_window.cpp:891
 msgid ""
 "Record IORQ events for this port into History ring buffer. Uncheck to skip "
 "high-frequency ports and preserve ring capacity for events of interest."
@@ -4114,12 +4114,12 @@ msgstr ""
 "відмітку для пропуску високочастотних портів a збереження ємності bufferu "
 "для цікаві події."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:959
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1864
+#: src/ui-imgui/debugger/ioview/io_window.cpp:958
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1862
 msgid "Filter..."
 msgstr "Фільтр..."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:965
+#: src/ui-imgui/debugger/ioview/io_window.cpp:964
 msgid ""
 "Filter visible ports (case-insensitive substring match on name, address hex, "
 "or direction r/w/rw)."
@@ -4127,34 +4127,34 @@ msgstr ""
 "Фільтрovat видимі porty (збіг підрядки без врахування на розмір літер у "
 "назві, hex адресe або напрямку r/w/rw)."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:969
+#: src/ui-imgui/debugger/ioview/io_window.cpp:968
 msgid "Clear##io_clear_filter"
 msgstr "Очистити##io_clear_filter"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:979
+#: src/ui-imgui/debugger/ioview/io_window.cpp:978
 msgid "Reset Activity##io_reset_act"
 msgstr "Reset aktivity##io_reset_act"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:984
+#: src/ui-imgui/debugger/ioview/io_window.cpp:983
 msgid "Clear activity counters for all 256 ports"
 msgstr "Очистити лічильники aktivity для всеch 256 портів"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:990
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1974
+#: src/ui-imgui/debugger/ioview/io_window.cpp:989
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1972
 msgid "Capacity:"
 msgstr "Ємність:"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1023
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2004
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1022
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2002
 msgid "History buffer size. Resize discards existing events."
 msgstr "Розмір bufferu historie. Зміна розмірi відкине існуючий події."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1031
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1030
 msgid "Track##io_track"
 msgstr "Відстежувати##io_track"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1036
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2022
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1035
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2020
 msgid ""
 "Enable IORQ activity + history capture (gated). Default ON when panel is "
 "open. Toggle off to reduce overhead."
@@ -4162,76 +4162,76 @@ msgstr ""
 "Увімкнути захоплення IORQ aktivity + historie (керовані). За замовчуванням "
 "ON, коли je панель відкритий. Вимкніть для зменшення накладні витрати."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1051
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1050
 msgid "Heat...##io_heat_btn"
 msgstr "Heat...##io_heat_btn"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1056
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1055
 msgid "Configure activity heat coloring thresholds."
 msgstr "Встановити пороги heat забарвлення aktivity."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1059
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1058
 msgid "Heat coloring thresholds (hits/s):"
 msgstr "Пороги heat забарвлення (звернень/s):"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1062
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1061
 msgid "Text active (green)##io_heat_text"
 msgstr "Text активний (зелений)##io_heat_text"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1073
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1072
 msgid "Minimum hits/s to color row text green. Default 1."
 msgstr ""
 "Minimum звернень/s для забарвлення textu рядку зелено. За замовчуванням 1."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1076
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1075
 msgid "Bg hot tint (red)##io_heat_bg"
 msgstr "Фон гарячі (червоний)##io_heat_bg"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1087
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1086
 msgid ""
 "Minimum hits/s for red row background tint (bottleneck warn). Default 10000."
 msgstr ""
 "Minimum звернень/s для червоного тонування фон рядку (попередження вузького "
 "hrdla). За замовчуванням 10000."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1091
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1090
 msgid "Reset to defaults##io_heat_reset"
 msgstr "Скинути за замовчуванням##io_heat_reset"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1129
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1130
 msgid "No ports match filter"
 msgstr "Жодне porty не відповідають фільтра"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1623
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1621
 msgid "(no selection)"
 msgstr "(нічого не вибрано)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1624
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1622
 msgid "Click a row to see details"
 msgstr "Кліком на рядок покажете detaily"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1636
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1634
 msgid "Selected event:"
 msgstr "Вибрана подія:"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1670
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1668
 msgid "Focus to primary disassembly. Right-click for additional actions."
 msgstr "Сфокусувати на первинний Disasm. Правий клік для наступний дія."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1711
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1709
 msgid "Focus to..."
 msgstr "Сфокусувати на..."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1730
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1728
 #: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3328
 msgid "Add to bookmarks"
 msgstr "Додати до закладок"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1749
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1747
 msgid "Add breakpoint"
 msgstr "Додати breakpoint"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1870
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1868
 msgid ""
 "Filter syntax (boolean expression):\n"
 "Atoms (leaf tokens):\n"
@@ -4284,23 +4284,23 @@ msgstr ""
 "  (port:CE pc:42) | port:CF  група OR група\n"
 "  !(in | out)                ani IN ani OUT"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1896
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1894
 msgid "Clear##io_hist_clear"
 msgstr "Очистити##io_hist_clear"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1930
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1928
 msgid "Latest##io_hist_latest"
 msgstr "Найновіший##io_hist_latest"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1936
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1934
 msgid "Re-enable auto-follow and scroll to latest event"
 msgstr "Znovu увімкнути auto-follow a posunout на найновіший подія"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1940
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1938
 msgid "Auto-follow##io_hist_af"
 msgstr "Auto-follow##io_hist_af"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1952
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1950
 msgid ""
 "Auto-scroll History tab to latest event. User scroll up disables follow; "
 "click [Latest] re-enables."
@@ -4308,27 +4308,27 @@ msgstr ""
 "Автоматично posouvat закладку Historie на найновіший подія. Posun "
 "користувачем вгору vypne follow; клік на [Найновіший] jej znovu увімкне."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1958
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1956
 msgid "Clear history##io_hist_purge"
 msgstr "Очистити historii##io_hist_purge"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1965
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1963
 msgid "Discard all recorded IORQ events"
 msgstr "Відкинути всі записані IORQ події"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2010
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2008
 msgid "Track##io_hist_track"
 msgstr "Відстежувати##io_hist_track"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2029
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2027
 msgid "Filter error"
 msgstr "Помилка фільтра"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2168
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2166
 msgid "Filter actions for this event:"
 msgstr "Дія фільтра для tuto подія:"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2447
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2445
 msgid ""
 "Wraps the current filter in parentheses, then appends ' & token'. Use to AND-"
 "narrow an OR chain (parser precedence: & binds tighter than |)."
@@ -4336,7 +4336,7 @@ msgstr ""
 "Обгорне поточний фільтр дужками a додасть ' & token'. Використовуйте для "
 "звуження OR ланцюжка через AND (priorita parseru: & зв'язує сильніше ніж |)."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2451
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2449
 msgid ""
 "Wraps the current filter in parentheses, then appends ' | token'. Use when "
 "the current filter is itself an AND chain that should be OR-extended as a "
@@ -4346,15 +4346,15 @@ msgstr ""
 "je поточний фільтр сам AND ланцюжком, який має бути як celek розширено через "
 "OR."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2747
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2745
 msgid "I/O Ports###io_main"
 msgstr "I/O Porty###io_main"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2783
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2781
 msgid "Overview##io_tab_ov"
 msgstr "Огляд##io_tab_ov"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2797
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2795
 msgid "History##io_tab_hist"
 msgstr "Historie##io_tab_hist"
 
@@ -5071,7 +5071,7 @@ msgid "Snapshot Δ"
 msgstr "Δ знімка"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_layers.cpp:497
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:137
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:146
 #: src/ui-imgui/maxspeed_bench_window.cpp:156
 #: src/ui-imgui/plotter/plotter_window.cpp:414
 #: src/ui-imgui/topmenu/topmenu.cpp:41
@@ -5903,133 +5903,191 @@ msgstr "Клік: розгорнути до нормального режимu"
 msgid "Click: collapse to compact mode"
 msgstr "Клік: згорнути до компактного режимu"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:100
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:109
 #: src/ui-imgui/memext/memext_load_dialog.cpp:106
 #: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:99
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:259
 msgid "File"
 msgstr "Файл"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:103
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:112
 msgid "Load MZF into RAM..."
 msgstr "Завантажити MZF до RAM..."
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:114
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:123
 msgid "Hide"
 msgstr "Сховати"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:135
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:144
 msgid "Emulation"
 msgstr "Емуляція"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:144
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:153
 msgid "Max Speed"
 msgstr "Максимальна швидкість"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:149
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:158
 #: src/ui-imgui/topmenu/topmenu.cpp:36
 msgid "Pause Emulation"
 msgstr "Призупинити емуляцію"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:160
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:169
 msgid "Forced Full Screen Refresh"
 msgstr "Примусовий full screen refresh"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:193
-msgid "Settings"
-msgstr "Налаштування"
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:218
+msgid "Max size [MB]"
+msgstr "Макс. розмір [MB]"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:205
-msgid "CPU Instruction History"
-msgstr "Historie інструкцій CPU"
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:222
+msgid ""
+"Maximum recording size per channel in MB. 0 = unlimited. Takes effect when "
+"recording (re)starts."
+msgstr ""
+"Максимальний розмір запису на канал у MB. 0 = без обмежень. Набуває чинності "
+"під час (повторного) запуску запису."
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:211
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:248
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:321
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:341
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:246
+msgid "Chunk [MB]"
+msgstr "Chunk [MB]"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:250
+msgid ""
+"RAM buffer size per chunk in MB before it is flushed to disk. Takes effect "
+"when recording (re)starts."
+msgstr "Розмір RAM-буфера на фрагмент у MB перед скиданням на диск. Набуває чинності під час (повторного) запуску запису."
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:281
+msgid "Select trace output directory"
+msgstr "Виберіть вихідний каталог trace"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:301
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:342
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:379
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:475
 msgid "Off"
 msgstr "Vypnuto"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:217
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:253
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:323
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:344
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:303
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:348
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:384
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:479
 msgid "Only With Debug Window"
 msgstr "Тільки s вікном DBG"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:223
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:258
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:325
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:347
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:305
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:354
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:389
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:483
 msgid "Always"
 msgstr "Завжди"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:242
-msgid "CDL"
-msgstr "CDL"
-
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:266
-msgid "Export on Exit"
-msgstr "Export при завершення"
-
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:276
-msgid "Show heatmap window"
-msgstr "Показати вікно heatmap"
-
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:284
-msgid "Set directory..."
-msgstr "Встановити каталог..."
-
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:295
-msgid "Select CDL export directory"
-msgstr "Вибрати каталог для export CDL"
-
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:313
-msgid "Trace Suite"
-msgstr "Trace Suite"
-
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:329
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:352
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:311
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:492
 msgid "Save on Exit"
 msgstr "Зберегти при завершення"
 
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:315
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:415
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:507
+msgid "Set directory..."
+msgstr "Встановити каталог..."
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:324
+msgid "Settings"
+msgstr "Налаштування"
+
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:336
+msgid "CPU Instruction History"
+msgstr "Historie інструкцій CPU"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:373
+msgid "CDL"
+msgstr "CDL"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:397
+msgid "Export on Exit"
+msgstr "Export при завершення"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:407
+msgid "Show heatmap window"
+msgstr "Показати вікно heatmap"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:426
+msgid "Select CDL export directory"
+msgstr "Вибрати каталог для export CDL"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:446
+msgid "Trace Suite"
+msgstr "Trace Suite"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:453
+msgid "All channels"
+msgstr "Усі канали"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:520
 msgid "CPU Track"
 msgstr "Відстеження CPU"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:360
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:533
 msgid "PC range filter [lo,hi]:"
 msgstr "Фільтр діапазону PC [lo,hi]:"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:366
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:539
 msgid "lo (hex)"
 msgstr "lo (hex)"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:373
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:546
 msgid "hi (hex)"
 msgstr "hi (hex)"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:379
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:552
 msgid "Reset range (whole space)"
 msgstr "Скинути діапазон (весь простір)"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:407
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:558
+msgid "IORQ Log"
+msgstr "IORQ Log"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:567
+msgid "Interrupt Log"
+msgstr "Interrupt Log"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:576
+msgid "HW Log"
+msgstr "HW Log"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:588
+msgid "Marker Log"
+msgstr "Marker Log"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:597
+msgid "Print marks to stdout"
+msgstr "Виводити мітки в stdout"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:601
+msgid ""
+"Print [BP-MARK] <name> to stdout when a mark fires; independent of the "
+"binary log."
+msgstr "Виводить [BP-MARK] <name> в stdout під час спрацювання мітки; незалежно від двійкового журналу."
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:619
 msgid "Disassembled"
 msgstr "Дизасембльовано"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:418
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:630
 msgid "Show branch arrows"
 msgstr "Показати стрілки розгалуження"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:427
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:639
 msgid "Screen"
 msgstr "Obrazovka"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:435
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:647
 msgid "Auto refresh on edit"
 msgstr "Auto refresh при редагуванні"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:446
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:658
 msgid "Auto refresh at every CPU step"
 msgstr "Auto refresh при кожному кроку CPU"
 

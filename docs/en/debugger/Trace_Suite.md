@@ -31,7 +31,7 @@ Per-subsystem options (each subsystem has identical ones):
 - `--<sys>-dir=<path>` (default: `./trace-suite/`)
 - `--<sys>-name=<basename>` (default: same as sys, e.g. `cputrack`)
 - `--<sys>-chunk-mb=<N>` (default: 64)
-- `--<sys>-max-total-mb=<N>` (default: 0 = unlimited)
+- `--<sys>-max-total-mb=<N>` (default: 2048 = 2 GB; 0 = unlimited)
 - `--<sys>-save-on-exit=on|off` (default: on)
 
 `<sys>` = `cputrack` / `iorqlog` / `intlog` / `hwlog` / `marklog`.
@@ -75,9 +75,18 @@ user did not pass a per-subsys option.
 
 ### GUI menu
 
-Debugger Settings -> Trace Suite -> [CPU Track | IORQ Log | Interrupt Log | HW Log | Marker Log]
+Debugger Settings -> Trace Suite -> [All channels | CPU Track | IORQ Log | Interrupt Log | HW Log | Marker Log]
 
-Per-subsystem: radio (Off / Only With Debug Window / Always) + Save on Exit toggle.
+Per-subsystem: radio (Off / Only With Debug Window / Always), a Save on Exit
+toggle, a "Max size [MB]" field (max recording size per channel; 0 = unlimited),
+a "Chunk [MB]" field (RAM buffer size before a flush to disk) and "Set
+directory..." (choose the output directory). Size / directory changes take
+effect when the channel recording (re)starts. The basename (name) is set via
+CLI / INI only.
+
+The "All channels" item sets the mode / Save on Exit / Max size / Chunk /
+directory of all 5 channels (cputrack / iorqlog / intlog / hwlog / marklog) at
+once with a single click.
 
 The CPU Track submenu additionally has a "PC range filter [lo,hi]:"
 field with two hex inputs (lo, hi) and a "Reset range (whole space)"
@@ -85,6 +94,10 @@ item. It sets the same range-scope filter as the CLI
 `--cputrack-pc-lo` / `--cputrack-pc-hi` (record only for PC in range).
 Reset returns the range to `0000`-`FFFF` (= the whole address space, no
 filter).
+
+The Marker Log submenu additionally has a "Print marks to stdout" toggle
+(back-compat printout `[BP-MARK] <name>` to stdout, independent of the binary
+log).
 
 #### Status indicator in the window title
 
@@ -126,7 +139,7 @@ mode=OFF
 dir=trace-suite
 name=cputrack
 chunk_mb=64
-max_total_mb=0
+max_total_mb=2048
 save_on_exit=1
 pc_range_lo=0                    # range-scope filter: lower PC bound (default 0)
 pc_range_hi=65535               # upper PC bound (default 0xFFFF = no filter)
@@ -145,7 +158,7 @@ mode=OFF
 dir=trace-suite
 name=marklog
 chunk_mb=64
-max_total_mb=0
+max_total_mb=2048
 save_on_exit=1
 stdout_enabled=1                # back-compat printout [BP-MARK] to stdout
 ```
@@ -399,8 +412,10 @@ separate `stdout_enabled` flag.
 
 - chunk-mb (default 64 MB): RAM buffer per subsystem. Higher = less
   frequent flush, higher peak RAM
-- max-total-mb (default 0 = unlimited): hard limit on the total
-  recording size. When reached, the subsystem stops, meta.json gets
+- max-total-mb (default 2048 = 2 GB per channel; 0 = unlimited): hard
+  limit on the total recording size - a safeguard against filling the disk
+  (cputrack otherwise grows essentially without bound). When reached, the
+  subsystem stops, meta.json gets
   `"truncated": true, "truncated_reason": "max_total_mb"` and a console
   message `[trace-suite] <subsys>: max-total-mb=N reached, recording
   stopped`.

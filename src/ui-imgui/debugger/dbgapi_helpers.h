@@ -102,6 +102,20 @@ bool dbg_ui_pause_toggle(void);
  */
 bool dbg_ui_reset(void);
 
+/**
+ * @brief Přepočet debugger callbacků + active flagů na EMU vlákně.
+ *
+ * Deleguje mzarch_platform_fn_debugger_state_changed na emu vlákno přes
+ * DBGAPI_CMD_DEBUGGER_STATE_RECOMPUTE (per-frame safe-point), místo přímého
+ * volání z UI vlákna. POVINNÉ pro UI změny trace-suite mode (Off/Window/
+ * Always) i save flagů: stop kanálu uvolní writer buffer souběžně s
+ * emu-thread tlog_writer_append = use-after-free race. Volající si nejdřív
+ * nastaví příslušné g_*_config.mode / flag a teprve pak zavolá tuto funkci.
+ *
+ * @return true při úspěchu, false při chybě / timeoutu.
+ */
+bool dbg_ui_debugger_state_recompute(void);
+
 /* ============================================================================
  * Krokování
  * ============================================================================ */

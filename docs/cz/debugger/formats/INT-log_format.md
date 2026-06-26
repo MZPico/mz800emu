@@ -15,8 +15,9 @@ analýzu race conditions mezi banking switching a IRQ delivery, kontrolu
 správnosti EI/RETI sekvencí.
 
 intlog se ovládá z menu `Debugger Settings -> Trace Suite -> Interrupt Log`
-(Off / Only With Debug Window / Always + Save on Exit + dir + chunk-mb +
-max-total-mb). Persistentní v ini sekci `[TRACE_INTLOG]`.
+(Off / Only With Debug Window / Always + Save on Exit + Max size [MB] +
+Chunk [MB] + Set directory...). Basename (name) jen přes CLI / INI.
+Persistentní v ini sekci `[TRACE_INTLOG]`.
 
 ## Adresářová struktura exportu
 

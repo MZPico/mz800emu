@@ -1,4 +1,8 @@
 
+	- BUGFIX: Trace Suite - turning recording off (or changing a channel mode) from the menu while emulation was running could crash the emulator. Recording is now started and stopped safely on the emulation thread.
+
+	- CHANGE: Trace-suite recording now has a default size cap of 2 GB per channel (previously unlimited) so a long recording (mainly CPU Track) cannot fill the disk. When reached, the channel stops; the cap is configurable (max_total_mb, 0 = unlimited).
+
 	- BUGFIX: fixed timing in the z80-mz800 CPU core - the CPU executed an interrupt immediately after EI instead of after the following instruction. The bug was introduced in version v2.0.2
 
 	- BUGFIX: In IM 2 mode, when an interrupt that did not originate from the PIO-Z80 arrived, we previously returned the vector 0x00 incorrectly. Now the "bus ghost" value is returned. A minor fix was also added in the I/O Ports window and the Events window. Snapshot: loading a snapshot corrupted the Unicard SD root dir configuration.

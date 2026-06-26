@@ -72,25 +72,25 @@ jsou odmítnuty s chybou - pro vygenerovaný výpis použijte `--help`.
 | `--cputrack-dir` | `<dirpath>` | Cílový adresář pro cputrack export. |
 | `--cputrack-name` | `<basename>` | Basename pro cputrack export soubory. |
 | `--cputrack-chunk-mb` | `<N>` | Velikost RAM chunku před disk swap (default 64). |
-| `--cputrack-max-total-mb` | `<N>` | Max celková velikost recordingu, 0 = unlimited (default 0). |
+| `--cputrack-max-total-mb` | `<N>` | Max celková velikost recordingu v MB, 0 = unlimited (default 2048 = 2 GB). |
 | `--cputrack-save-on-exit` | `<on\|off>` | Auto-finalize cputrack exportu při ukončení emulátoru. |
 | `--iorqlog-mode` | `<off\|window\|always>` | Nastavit režim IORQ Log recordingu. |
 | `--iorqlog-dir` | `<dirpath>` | Cílový adresář pro iorqlog export. |
 | `--iorqlog-name` | `<basename>` | Basename pro iorqlog export soubory. |
 | `--iorqlog-chunk-mb` | `<N>` | Velikost RAM chunku před disk swap (default 64). |
-| `--iorqlog-max-total-mb` | `<N>` | Max celková velikost recordingu, 0 = unlimited (default 0). |
+| `--iorqlog-max-total-mb` | `<N>` | Max celková velikost recordingu v MB, 0 = unlimited (default 2048 = 2 GB). |
 | `--iorqlog-save-on-exit` | `<on\|off>` | Auto-finalize iorqlog exportu při ukončení emulátoru. |
 | `--intlog-mode` | `<off\|window\|always>` | Nastavit režim Interrupt Log recordingu. |
 | `--intlog-dir` | `<dirpath>` | Cílový adresář pro intlog export. |
 | `--intlog-name` | `<basename>` | Basename pro intlog export soubory. |
 | `--intlog-chunk-mb` | `<N>` | Velikost RAM chunku před disk swap (default 64). |
-| `--intlog-max-total-mb` | `<N>` | Max celková velikost recordingu, 0 = unlimited (default 0). |
+| `--intlog-max-total-mb` | `<N>` | Max celková velikost recordingu v MB, 0 = unlimited (default 2048 = 2 GB). |
 | `--intlog-save-on-exit` | `<on\|off>` | Auto-finalize intlog exportu při ukončení emulátoru. |
 | `--hwlog-mode` | `<off\|window\|always>` | Nastavit režim HW Log recordingu. |
 | `--hwlog-dir` | `<dirpath>` | Cílový adresář pro hwlog export. |
 | `--hwlog-name` | `<basename>` | Basename pro hwlog export soubory. |
 | `--hwlog-chunk-mb` | `<N>` | Velikost RAM chunku před disk swap (default 64). |
-| `--hwlog-max-total-mb` | `<N>` | Max celková velikost recordingu, 0 = unlimited (default 0). |
+| `--hwlog-max-total-mb` | `<N>` | Max celková velikost recordingu v MB, 0 = unlimited (default 2048 = 2 GB). |
 | `--hwlog-save-on-exit` | `<on\|off>` | Auto-finalize hwlog exportu při ukončení emulátoru. |
 | `--hwlog-hs-decimation` | `<N>` | Decimace hwlog `GDG_VIDEO` HS/HBLN edges: emit každý N-tý edge. `0` = OFF (default; full rate je ~31000 events/sec). |
 | `--all-traces-mode` | `<off\|window\|always>` | Shorthand: nastavit režim recordingu pro VŠECHNY čtyři trace-suite subsystémy (cputrack, iorqlog, intlog, hwlog) najednou. Per-subsystém `--<sys>-mode` má precedenci. |

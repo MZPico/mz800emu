@@ -12,8 +12,8 @@ debug of raster effects (mid-frame palette/border changes via port 0xF0
 
 iorqlog is controlled from the menu `Debugger Settings -> Trace Suite ->
 IORQ Log`, analogously to cputrack (Off / Only With Debug Window /
-Always + Save on Exit + dir + chunk-mb + max-total-mb). Persistent in
-INI section `[TRACE_IORQLOG]`.
+Always + Save on Exit + Max size [MB] + Chunk [MB] + Set directory...).
+Basename (name) only via CLI / INI. Persistent in INI section `[TRACE_IORQLOG]`.
 
 ## Export directory structure
 

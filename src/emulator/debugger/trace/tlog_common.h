@@ -56,13 +56,21 @@ typedef enum en_TLOG_MODE
 #define TLOG_DEFAULT_CHUNK_MB     64u
 
 /**
- * @brief Default max-total-mb (0 = unlimited).
+ * @brief Default max-total-mb (per kanál). 0 = unlimited.
  *
  * Hard limit na celkovou velikost recordingu (sum všech chunků). Po
  * dosažení se subsystém zastaví, do meta.json se zapíše
  * `"truncated": true, "reason": "max_total_mb"`.
+ *
+ * Default 2048 MB (2 GB) = pojistka proti zaplnění disku: cputrack chrlí
+ * ~40 MB/s a bez stropu (0) by dlouhý záznam zaplnil disk. 2 GB je pro
+ * reálné ladicí trasy dost a zároveň ohraničuje runaway. Per-kanál, takže
+ * limit prakticky dopadá jen na cputrack/iorqlog (intlog/hwlog/marklog jsou
+ * malé). Lze přenastavit přes INI (max_total_mb, 0 = bez omezení). Pozn.:
+ * default platí jen pro NOVÉ configy; existující .ini s explicitním klíčem
+ * (vč. max_total_mb=0) si drží svou hodnotu.
  */
-#define TLOG_DEFAULT_MAX_TOTAL_MB 0u
+#define TLOG_DEFAULT_MAX_TOTAL_MB 2048u
 
 /**
  * @brief Stav writeru jednoho trace-suite subsystému.

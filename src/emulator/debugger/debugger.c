@@ -337,8 +337,10 @@ void debugger_init ( void ) {
                                            -1 );
     cfgelement_set_handlers ( elm, (void*) &g_debugger.mhmap_mode, (void*) &g_debugger.mhmap_mode );
 
-    /* CDL export při ukončení emulátoru. */
-    elm = cfgmodule_register_new_element ( cmod, "cdl_export_on_exit", CFGENTYPE_BOOL, 0 );
+    /* CDL export při ukončení emulátoru. Default ON (= sjednoceno s trace-suite
+     * save_on_exit, viz cputrack/iorqlog/intlog/hwlog/marklog). Aplikuje se jen
+     * na nové configy; existující .ini s explicitním klíčem si drží svou hodnotu. */
+    elm = cfgmodule_register_new_element ( cmod, "cdl_export_on_exit", CFGENTYPE_BOOL, 1 );
     cfgelement_set_handlers ( elm, (void*) &g_debugger.cdl_export_on_exit, (void*) &g_debugger.cdl_export_on_exit );
 
     /* CDL exportní adresář. Pokud neexistuje, mhmap_export ho vytvoří

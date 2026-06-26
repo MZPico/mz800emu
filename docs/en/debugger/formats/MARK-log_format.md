@@ -24,9 +24,13 @@ Used for:
 - delimiting a user-defined sequence ("ISR_entry" -> "ISR_exit") and
   counting T-states between them
 
-marklog is controlled from `Debugger Settings -> Trace Suite -> Marker Log`
-(Off / Only With Debug Window / Always + Save on Exit + dir + chunk-mb
-+ max-total-mb + Stdout). Persistent in INI section `[TRACE_MARKLOG]`.
+marklog is controlled from the menu `Debugger Settings -> Trace Suite ->
+Marker Log` (Off / Only With Debug Window / Always + Save on Exit + Max size
+[MB] + Chunk [MB] + Set directory... + a "Print marks to stdout" toggle). Also
+via CLI (`--marklog-mode`, `--marklog-save-on-exit`, `--marklog-max-total-mb`,
+`--marklog-stdout`, `--marklog-dir`, `--marklog-name`, `--marklog-chunk-mb`),
+the INI section `[TRACE_MARKLOG]` or a breakpoint action (`mark "name"`). The
+basename (name) is set via CLI / INI only.
 
 The `stdout_enabled` flag controls the back-compat printing of
 `[BP-MARK] <name>` to stdout. **Independent of marklog mode** - you can

@@ -499,6 +499,14 @@ typedef enum en_DBGAPI_CMD
      * stabilitě číselných hodnot existujících příkazů. */
     DBGAPI_CMD_RUN_FRAMES,                     /* Frame-bounded run (deterministický stop po N framech) - data_ptr: int* (N >= 1) */
 
+    /* Přepočet debugger callbacků + active flagů (= mzarch_platform_fn_debugger_state_changed)
+     * na EMU vlákně (per-frame safe-point), aby ho UI vlákno nevolalo přímo.
+     * Nutné pro trace-suite: stop kanálu uvolní writer buffer (tlog_writer_close);
+     * pokud to běží na UI vlákně souběžně s emu-thread tlog_writer_append, vznikne
+     * use-after-free race (memcpy do uvolněné paměti). UI si předem nastaví
+     * mode/flagy (atomický int zápis) a pak submitne tento příkaz. Bez parametru. */
+    DBGAPI_CMD_DEBUGGER_STATE_RECOMPUTE,
+
 } en_DBGAPI_CMD;
 
 /* ============================================================================

@@ -16,7 +16,8 @@ and verify correctness of EI/RETI sequences.
 
 intlog is controlled from the menu `Debugger Settings -> Trace Suite ->
 Interrupt Log` (Off / Only With Debug Window / Always + Save on Exit +
-dir + chunk-mb + max-total-mb). Persistent in INI section `[TRACE_INTLOG]`.
+Max size [MB] + Chunk [MB] + Set directory...). Basename (name) only via
+CLI / INI. Persistent in INI section `[TRACE_INTLOG]`.
 
 ## Export directory structure
 

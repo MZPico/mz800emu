@@ -15,11 +15,13 @@ cputrack is controlled from the menu `Debugger Settings -> Trace Suite
 - `Only With Debug Window` - active only when the debug window is open.
 - `Always` - always active.
 
-The options `Save on Exit`, `Set directory...`, `Chunk MB` and `Max
-Total MB` in the same menu control finalization behavior, target
-directory and size limits. All options are persistent in the emulator
-INI configuration (section `[TRACE_CPUTRACK]`, keys `mode`, `dir`,
-`name`, `chunk_mb`, `max_total_mb`, `save_on_exit`).
+The same menu also has `Save on Exit` (finalize the recording when the
+emulator exits), `Max size [MB]` (max recording size per channel,
+0 = unlimited), `Chunk [MB]` (RAM buffer size), `Set directory...` (target
+directory) and a PC range filter (lo/hi). The basename (name) is set via
+CLI / INI only. All options are persistent in the INI section
+`[TRACE_CPUTRACK]` (keys `mode`, `dir`, `name`, `chunk_mb`, `max_total_mb`,
+`save_on_exit`, `pc_range_lo`, `pc_range_hi`).
 
 Recording runs in the shared slow path with CDL/cpuhist (callback
 swap); the emulator hot path without active diagnostics stays unchanged
@@ -277,8 +279,9 @@ embedded ROM image (= version in `meta.json` via `platform`).
 
 1. Select recording mode (Off / Only With Debug Window / Always).
 2. Optionally enable `Save on Exit` (default on).
-3. Set the target directory and basename, optionally `chunk_mb` /
-   `max_total_mb`.
+3. Optionally set `Max size [MB]` (size limit), `Chunk [MB]`, the target
+   directory (`Set directory...`) and the PC range filter; the basename
+   (name) is set via CLI / INI.
 4. Run the emulated program. Recording runs in the background.
 
 ### Loading data in Python (example)

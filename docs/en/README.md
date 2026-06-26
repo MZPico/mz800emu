@@ -72,25 +72,25 @@ are rejected with an error - use `--help` for a generated listing.
 | `--cputrack-dir` | `<dirpath>` | Target directory for cputrack export. |
 | `--cputrack-name` | `<basename>` | Basename for cputrack export files. |
 | `--cputrack-chunk-mb` | `<N>` | RAM chunk size before disk swap (default 64). |
-| `--cputrack-max-total-mb` | `<N>` | Max total recording size, 0 = unlimited (default 0). |
+| `--cputrack-max-total-mb` | `<N>` | Max total recording size in MB, 0 = unlimited (default 2048 = 2 GB). |
 | `--cputrack-save-on-exit` | `<on\|off>` | Auto-finalize cputrack export when the emulator exits. |
 | `--iorqlog-mode` | `<off\|window\|always>` | Set the IORQ Log recording mode. |
 | `--iorqlog-dir` | `<dirpath>` | Target directory for iorqlog export. |
 | `--iorqlog-name` | `<basename>` | Basename for iorqlog export files. |
 | `--iorqlog-chunk-mb` | `<N>` | RAM chunk size before disk swap (default 64). |
-| `--iorqlog-max-total-mb` | `<N>` | Max total recording size, 0 = unlimited (default 0). |
+| `--iorqlog-max-total-mb` | `<N>` | Max total recording size in MB, 0 = unlimited (default 2048 = 2 GB). |
 | `--iorqlog-save-on-exit` | `<on\|off>` | Auto-finalize iorqlog export when the emulator exits. |
 | `--intlog-mode` | `<off\|window\|always>` | Set the Interrupt Log recording mode. |
 | `--intlog-dir` | `<dirpath>` | Target directory for intlog export. |
 | `--intlog-name` | `<basename>` | Basename for intlog export files. |
 | `--intlog-chunk-mb` | `<N>` | RAM chunk size before disk swap (default 64). |
-| `--intlog-max-total-mb` | `<N>` | Max total recording size, 0 = unlimited (default 0). |
+| `--intlog-max-total-mb` | `<N>` | Max total recording size in MB, 0 = unlimited (default 2048 = 2 GB). |
 | `--intlog-save-on-exit` | `<on\|off>` | Auto-finalize intlog export when the emulator exits. |
 | `--hwlog-mode` | `<off\|window\|always>` | Set the HW Log recording mode. |
 | `--hwlog-dir` | `<dirpath>` | Target directory for hwlog export. |
 | `--hwlog-name` | `<basename>` | Basename for hwlog export files. |
 | `--hwlog-chunk-mb` | `<N>` | RAM chunk size before disk swap (default 64). |
-| `--hwlog-max-total-mb` | `<N>` | Max total recording size, 0 = unlimited (default 0). |
+| `--hwlog-max-total-mb` | `<N>` | Max total recording size in MB, 0 = unlimited (default 2048 = 2 GB). |
 | `--hwlog-save-on-exit` | `<on\|off>` | Auto-finalize hwlog export when the emulator exits. |
 | `--hwlog-hs-decimation` | `<N>` | Decimate hwlog `GDG_VIDEO` HS/HBLN edges: emit every N-th edge. `0` = OFF (default; full rate is ~31000 events/sec). |
 | `--all-traces-mode` | `<off\|window\|always>` | Shorthand: set the recording mode for ALL four trace-suite subsystems (cputrack, iorqlog, intlog, hwlog) at once. Per-subsystem `--<sys>-mode` takes precedence. |

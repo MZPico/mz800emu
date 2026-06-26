@@ -69,14 +69,15 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdint>
+#include <glib.h>                 /* g_strdup / g_free pro trace dir (g_-spravovaný) */
 #include "emulator/emulator.h"
-#include "mzarch/mzarch_platform_functions.h"
 #include "debugger/debugger.h"
 #include "debugger/mhmap.h"
 #include "debugger/trace/cputrack.h"
 #include "debugger/trace/iorqlog.h"
 #include "debugger/trace/intlog.h"
 #include "debugger/trace/hwlog.h"
+#include "debugger/trace/marklog.h"
 #include "iface/iface_video.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "ui-imgui/debugger/heatmap/mhmap_window.h"
@@ -88,6 +89,14 @@
 /* Stav otevření dialogu pro výběr CDL exportního adresáře.
  * Drží se mimo menu callback, aby se dialog mohl renderovat i po zavření menu. */
 static bool s_cdl_dir_dialog_open = false;
+
+/* Stav sdíleného dialogu "Set directory..." pro trace-suite kanály. Při kliknutí
+ * v menu se naplní seznam cílových `char**` (dir polí configu, která se mají
+ * přepsat) a otevře se IGFD; vlastní Display + zápis je v dbg_render_trace_dir_dialog
+ * (mimo menu, aby dialog přežil zavření menu). Pro "All channels" je targets více. */
+static bool   s_trace_dir_dialog_open = false;
+static char **s_trace_dir_targets[5];
+static int    s_trace_dir_target_count = 0;
 
 
 /*
@@ -188,6 +197,128 @@ static void dbg_menu_emulation(void)
  *     překreslit obrazovku. Užitečné při ladění grafického kódu,
  *     ale zpomaluje krokování.
  */
+
+/**
+ * @brief Sdílený InputText pro limit velikosti záznamu trace kanálu (max_total_mb).
+ *
+ * Vykreslí pole "Max size [MB]" s aktuální hodnotou + hint (tooltip). Hodnota
+ * je v MB (0 = bez omezení). Aplikuje se až při (znovu)spuštění záznamu kanálu
+ * - writer čte max_total_mb v okamžiku open. Změna je prostý zápis configu (int),
+ * nepotřebuje recompute ani thread marshalling.
+ *
+ * @param p_max_total_mb Ukazatel na pole max_total_mb v configu kanálu.
+ * @return true pokud uživatel hodnotu právě potvrdil (Enter) - caller ji už má
+ *         zapsanou v @p *p_max_total_mb (u "All channels" ji rozkopíruje do všech).
+ */
+static bool dbg_trace_max_size_input ( unsigned *p_max_total_mb )
+{
+    char buf[ 16 ];
+    snprintf ( buf, sizeof ( buf ), "%u", *p_max_total_mb );
+    ImGui::SetNextItemWidth ( 80.0f );
+    bool changed = ImGui::InputText ( _L ( "Max size [MB]" ), buf, sizeof ( buf ),
+                                      ImGuiInputTextFlags_CharsDecimal |
+                                      ImGuiInputTextFlags_EnterReturnsTrue );
+    if ( ImGui::IsItemHovered ( ) )
+        ImGui::SetTooltip ( "%s", _ ( "Maximum recording size per channel in MB. "
+                                      "0 = unlimited. Takes effect when recording "
+                                      "(re)starts." ) );
+    if ( changed )
+        *p_max_total_mb = (unsigned) strtoul ( buf, NULL, 10 );
+    return changed;
+}
+
+
+/**
+ * @brief Sdílený InputText pro velikost chunku trace kanálu (chunk_mb) + hint.
+ *
+ * Chunk = RAM buffer per kanál; po naplnění se flushne na disk jako další
+ * `<name>.NNN.bin`. Hodnota v MB, ořezaná do rozsahu 1..4096 (shodně s cfg).
+ * Aplikuje se až při (znovu)spuštění záznamu (writer čte při open).
+ *
+ * @param p_chunk_mb Ukazatel na pole chunk_mb v configu kanálu.
+ * @return true pokud uživatel hodnotu právě potvrdil (Enter).
+ */
+static bool dbg_trace_chunk_mb_input ( unsigned *p_chunk_mb )
+{
+    char buf[ 16 ];
+    snprintf ( buf, sizeof ( buf ), "%u", *p_chunk_mb );
+    ImGui::SetNextItemWidth ( 80.0f );
+    bool changed = ImGui::InputText ( _L ( "Chunk [MB]" ), buf, sizeof ( buf ),
+                                      ImGuiInputTextFlags_CharsDecimal |
+                                      ImGuiInputTextFlags_EnterReturnsTrue );
+    if ( ImGui::IsItemHovered ( ) )
+        ImGui::SetTooltip ( "%s", _ ( "RAM buffer size per chunk in MB before it is "
+                                      "flushed to disk. Takes effect when recording "
+                                      "(re)starts." ) );
+    if ( changed ) {
+        unsigned v = (unsigned) strtoul ( buf, NULL, 10 );
+        if ( v < 1u ) v = 1u;
+        if ( v > 4096u ) v = 4096u;
+        *p_chunk_mb = v;
+    }
+    return changed;
+}
+
+
+/**
+ * @brief Otevře sdílený IGFD dialog "Set directory..." pro trace kanály.
+ *
+ * Cílová `dir` pole se naplní volajícím do @ref s_trace_dir_targets před voláním.
+ * Display + zápis vybrané cesty řeší @ref dbg_render_trace_dir_dialog (mimo menu).
+ *
+ * @param current Aktuální cesta (výchozí pozice prohlížeče); NULL/prázdné -> ".".
+ */
+static void dbg_trace_open_dir_dialog ( const char *current )
+{
+    s_trace_dir_dialog_open = true;
+    IGFD::FileDialogConfig config;
+    config.path = ( current && current[ 0 ] ) ? current : ".";
+    config.countSelectionMax = 1;
+    config.flags = ImGuiFileDialogFlags_Modal |
+                   ImGuiFileDialogFlags_DontShowHiddenFiles |
+                   ImGuiFileDialogFlags_ShowDevicesButton;
+    ImGuiFileDialog::Instance ( )->OpenDialog ( "TraceSetDir",
+                                                _ ( "Select trace output directory" ),
+                                                nullptr, config );
+}
+
+
+/**
+ * @brief Vykreslí společné položky submenu jednoho trace kanálu.
+ *
+ * mode radio (Off / Only With Debug Window / Always) -> při změně recompute na
+ * emu vlákně (dbg_ui_debugger_state_recompute), Save on Exit, Max size [MB],
+ * Chunk [MB] a "Set directory...". Kanálově specifické položky (cputrack PC range,
+ * marklog Stdout) přidává volající kolem tohoto helperu.
+ */
+static void dbg_trace_channel_common_items ( en_TLOG_MODE *mode, char **dir,
+                                             unsigned *chunk_mb, unsigned *max_total_mb,
+                                             unsigned *save_on_exit )
+{
+    bool m_off = ( *mode == TLOG_MODE_OFF );
+    bool m_win = ( *mode == TLOG_MODE_WITH_WINDOW );
+    bool m_alw = ( *mode == TLOG_MODE_ALWAYS );
+    if ( ImGui::MenuItem ( _L ( "Off" ), NULL, m_off ) ) {
+        *mode = TLOG_MODE_OFF; dbg_ui_debugger_state_recompute ( ); }
+    if ( ImGui::MenuItem ( _L ( "Only With Debug Window" ), NULL, m_win ) ) {
+        *mode = TLOG_MODE_WITH_WINDOW; dbg_ui_debugger_state_recompute ( ); }
+    if ( ImGui::MenuItem ( _L ( "Always" ), NULL, m_alw ) ) {
+        *mode = TLOG_MODE_ALWAYS; dbg_ui_debugger_state_recompute ( ); }
+
+    ImGui::Separator ( );
+
+    bool save = ( *save_on_exit != 0 );
+    if ( ImGui::MenuItem ( _L ( "Save on Exit" ), NULL, save ) ) {
+        *save_on_exit = save ? 0u : 1u; }
+    dbg_trace_max_size_input ( max_total_mb );
+    dbg_trace_chunk_mb_input ( chunk_mb );
+    if ( ImGui::MenuItem ( _L ( "Set directory..." ) ) ) {
+        s_trace_dir_targets[ 0 ] = dir;
+        s_trace_dir_target_count = 1;
+        dbg_trace_open_dir_dialog ( *dir );
+    }
+}
+
 static void dbg_menu_settings(void)
 {
     if (ImGui::BeginMenu(_L("Settings")))
@@ -211,19 +342,19 @@ static void dbg_menu_settings(void)
             if (ImGui::MenuItem(_L("Off"), NULL, tl_off))
             {
                 g_debugger.cpuhist_mode = DEBUGGER_CPUHIST_MODE_OFF;
-                mzarch_platform_fn_debugger_state_changed(TEST_DEBUGGER_ACTIVE);
+                dbg_ui_debugger_state_recompute();
             };
 
             if (ImGui::MenuItem(_L("Only With Debug Window"), NULL, tl_with_window))
             {
                 g_debugger.cpuhist_mode = DEBUGGER_CPUHIST_MODE_WITH_WINDOW;
-                mzarch_platform_fn_debugger_state_changed(TEST_DEBUGGER_ACTIVE);
+                dbg_ui_debugger_state_recompute();
             };
 
             if (ImGui::MenuItem(_L("Always"), NULL, tl_always))
             {
                 g_debugger.cpuhist_mode = DEBUGGER_CPUHIST_MODE_ALWAYS;
-                mzarch_platform_fn_debugger_state_changed(TEST_DEBUGGER_ACTIVE);
+                dbg_ui_debugger_state_recompute();
             };
 
             ImGui::EndMenu();
@@ -299,8 +430,10 @@ static void dbg_menu_settings(void)
             ImGui::EndMenu();
         };
 
-        /* Podmenu: Trace Suite (cputrack/iorqlog/intlog/hwlog).
-         * V1: per-subsystém mode radio (Off/Window/Always).
+        /* Podmenu: Trace Suite (cputrack/iorqlog/intlog/hwlog/marklog).
+         * Per-subsystém: mode radio (Off/Window/Always) + Save on Exit +
+         * Max size [MB] + Chunk [MB] + Set directory; CPU Track navíc PC range,
+         * Marker Log navíc Stdout toggle. "All channels" ovládá všech 5 najednou.
          * Plné GUI viewer = V2.
          *
          * Recording start trigger viz mode:
@@ -312,45 +445,85 @@ static void dbg_menu_settings(void)
          * Detail v docs/cz/debugger/Trace_Suite.md. */
         if (ImGui::BeginMenu(_L("Trace Suite")))
         {
-            /* Helper macro pro per-subsystém menu. */
-#define TRACE_SUBMENU(label, cfg, set_call) \
-            if (ImGui::BeginMenu(_L(label))) { \
-                bool m_off  = (cfg.mode == TLOG_MODE_OFF); \
-                bool m_win  = (cfg.mode == TLOG_MODE_WITH_WINDOW); \
-                bool m_alw  = (cfg.mode == TLOG_MODE_ALWAYS); \
-                if (ImGui::MenuItem(_L("Off"), NULL, m_off)) { \
-                    cfg.mode = TLOG_MODE_OFF; set_call; } \
-                if (ImGui::MenuItem(_L("Only With Debug Window"), NULL, m_win)) { \
-                    cfg.mode = TLOG_MODE_WITH_WINDOW; set_call; } \
-                if (ImGui::MenuItem(_L("Always"), NULL, m_alw)) { \
-                    cfg.mode = TLOG_MODE_ALWAYS; set_call; } \
-                ImGui::Separator(); \
-                bool save = (cfg.save_on_exit != 0); \
-                if (ImGui::MenuItem(_L("Save on Exit"), NULL, save)) { \
-                    cfg.save_on_exit = save ? 0 : 1; } \
-                ImGui::EndMenu(); \
+            /* Globální ovládání všech 5 trace kanálů (cputrack/iorqlog/intlog/
+             * hwlog/marklog) najednou - mode / Save on Exit / Max size / Chunk /
+             * Set directory jedním kliknutím (změna mode přes jediný recompute
+             * na emu vlákně). Položky sdílí překlad s per-kanálovými menu (jiný
+             * BeginMenu scope = žádná kolize ImGui ID). */
+            if (ImGui::BeginMenu(_L("All channels")))
+            {
+                /* Lokální pole 5 kanálů - společná pole (mode/dir/chunk/max/save).
+                 * Smyčky drží All channels v synci s per-kanálovými submenu. */
+                struct { en_TLOG_MODE *mode; char **dir; unsigned *chunk_mb;
+                         unsigned *max_total_mb; unsigned *save_on_exit; } ch[5] = {
+                    { &g_cputrack_config.mode, &g_cputrack_config.dir, &g_cputrack_config.chunk_mb, &g_cputrack_config.max_total_mb, &g_cputrack_config.save_on_exit },
+                    { &g_iorqlog_config.mode,  &g_iorqlog_config.dir,  &g_iorqlog_config.chunk_mb,  &g_iorqlog_config.max_total_mb,  &g_iorqlog_config.save_on_exit },
+                    { &g_intlog_config.mode,   &g_intlog_config.dir,   &g_intlog_config.chunk_mb,   &g_intlog_config.max_total_mb,   &g_intlog_config.save_on_exit },
+                    { &g_hwlog_config.mode,    &g_hwlog_config.dir,    &g_hwlog_config.chunk_mb,    &g_hwlog_config.max_total_mb,    &g_hwlog_config.save_on_exit },
+                    { &g_marklog_config.mode,  &g_marklog_config.dir,  &g_marklog_config.chunk_mb,  &g_marklog_config.max_total_mb,  &g_marklog_config.save_on_exit },
+                };
+
+                /* Checkmark/agregace jen pokud VŠECH 5 kanálů sdílí daný stav. */
+                bool all_off = true, all_win = true, all_alw = true, all_save = true;
+                for (auto &c : ch) {
+                    all_off  &= (*c.mode == TLOG_MODE_OFF);
+                    all_win  &= (*c.mode == TLOG_MODE_WITH_WINDOW);
+                    all_alw  &= (*c.mode == TLOG_MODE_ALWAYS);
+                    all_save &= (*c.save_on_exit != 0);
+                }
+
+                if (ImGui::MenuItem(_L("Off"), NULL, all_off)) {
+                    for (auto &c : ch) *c.mode = TLOG_MODE_OFF;
+                    dbg_ui_debugger_state_recompute();
+                }
+                if (ImGui::MenuItem(_L("Only With Debug Window"), NULL, all_win)) {
+                    for (auto &c : ch) *c.mode = TLOG_MODE_WITH_WINDOW;
+                    dbg_ui_debugger_state_recompute();
+                }
+                if (ImGui::MenuItem(_L("Always"), NULL, all_alw)) {
+                    for (auto &c : ch) *c.mode = TLOG_MODE_ALWAYS;
+                    dbg_ui_debugger_state_recompute();
+                }
+
+                ImGui::Separator();
+
+                /* Save on Exit pro všech 5: checked jen když mají VŠECHNY zapnuto;
+                 * klik přepne všechny na opačný stav. */
+                if (ImGui::MenuItem(_L("Save on Exit"), NULL, all_save)) {
+                    unsigned v = all_save ? 0u : 1u;
+                    for (auto &c : ch) *c.save_on_exit = v;
+                }
+
+                /* Max size / Chunk: zobraz reprezentativně hodnotu prvního kanálu;
+                 * při potvrzení rozkopíruj do všech 5. */
+                unsigned all_mt = *ch[0].max_total_mb;
+                if (dbg_trace_max_size_input(&all_mt))
+                    for (auto &c : ch) *c.max_total_mb = all_mt;
+                unsigned all_chunk = *ch[0].chunk_mb;
+                if (dbg_trace_chunk_mb_input(&all_chunk))
+                    for (auto &c : ch) *c.chunk_mb = all_chunk;
+
+                /* Set directory pro všech 5 kanálů najednou. */
+                if (ImGui::MenuItem(_L("Set directory..."))) {
+                    for (int i = 0; i < 5; i++) s_trace_dir_targets[i] = ch[i].dir;
+                    s_trace_dir_target_count = 5;
+                    dbg_trace_open_dir_dialog(*ch[0].dir);
+                }
+
+                ImGui::EndMenu();
             }
 
-            /* CPU Track: stejné mode/save jako ostatní (přes macro) + navíc
-             * Z17b range-scope filtr (dvě hex pole pro PC lo/hi). */
+            ImGui::Separator();
+
+            /* CPU Track: společné položky (mode / Save on Exit / Max size /
+             * Chunk / Set directory) + navíc Z17b range-scope PC filtr. */
             if (ImGui::BeginMenu(_L("CPU Track")))
             {
-                bool m_off  = (g_cputrack_config.mode == TLOG_MODE_OFF);
-                bool m_win  = (g_cputrack_config.mode == TLOG_MODE_WITH_WINDOW);
-                bool m_alw  = (g_cputrack_config.mode == TLOG_MODE_ALWAYS);
-                if (ImGui::MenuItem(_L("Off"), NULL, m_off)) {
-                    g_cputrack_config.mode = TLOG_MODE_OFF;
-                    mzarch_platform_fn_debugger_state_changed(TEST_DEBUGGER_ACTIVE); }
-                if (ImGui::MenuItem(_L("Only With Debug Window"), NULL, m_win)) {
-                    g_cputrack_config.mode = TLOG_MODE_WITH_WINDOW;
-                    mzarch_platform_fn_debugger_state_changed(TEST_DEBUGGER_ACTIVE); }
-                if (ImGui::MenuItem(_L("Always"), NULL, m_alw)) {
-                    g_cputrack_config.mode = TLOG_MODE_ALWAYS;
-                    mzarch_platform_fn_debugger_state_changed(TEST_DEBUGGER_ACTIVE); }
-                ImGui::Separator();
-                bool save = (g_cputrack_config.save_on_exit != 0);
-                if (ImGui::MenuItem(_L("Save on Exit"), NULL, save)) {
-                    g_cputrack_config.save_on_exit = save ? 0 : 1; }
+                dbg_trace_channel_common_items(&g_cputrack_config.mode,
+                                               &g_cputrack_config.dir,
+                                               &g_cputrack_config.chunk_mb,
+                                               &g_cputrack_config.max_total_mb,
+                                               &g_cputrack_config.save_on_exit);
 
                 ImGui::Separator();
                 /* Range-scope PC filtr. Buffery se inicializují z config při
@@ -382,14 +555,53 @@ static void dbg_menu_settings(void)
                 }
                 ImGui::EndMenu();
             }
-            TRACE_SUBMENU("IORQ Log", g_iorqlog_config,
-                          mzarch_platform_fn_debugger_state_changed(TEST_DEBUGGER_ACTIVE));
-            TRACE_SUBMENU("Interrupt Log", g_intlog_config,
-                          mzarch_platform_fn_debugger_state_changed(TEST_DEBUGGER_ACTIVE));
-            TRACE_SUBMENU("HW Log", g_hwlog_config,
-                          mzarch_platform_fn_debugger_state_changed(TEST_DEBUGGER_ACTIVE));
-
-#undef TRACE_SUBMENU
+            if (ImGui::BeginMenu(_L("IORQ Log")))
+            {
+                dbg_trace_channel_common_items(&g_iorqlog_config.mode,
+                                               &g_iorqlog_config.dir,
+                                               &g_iorqlog_config.chunk_mb,
+                                               &g_iorqlog_config.max_total_mb,
+                                               &g_iorqlog_config.save_on_exit);
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu(_L("Interrupt Log")))
+            {
+                dbg_trace_channel_common_items(&g_intlog_config.mode,
+                                               &g_intlog_config.dir,
+                                               &g_intlog_config.chunk_mb,
+                                               &g_intlog_config.max_total_mb,
+                                               &g_intlog_config.save_on_exit);
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu(_L("HW Log")))
+            {
+                dbg_trace_channel_common_items(&g_hwlog_config.mode,
+                                               &g_hwlog_config.dir,
+                                               &g_hwlog_config.chunk_mb,
+                                               &g_hwlog_config.max_total_mb,
+                                               &g_hwlog_config.save_on_exit);
+                ImGui::EndMenu();
+            }
+            /* Marker Log (marklog) - 5. trace-suite kanál. Společné položky +
+             * navíc Stdout toggle (back-compat [BP-MARK] na stdout, nezávislý
+             * na binárním logu). */
+            if (ImGui::BeginMenu(_L("Marker Log")))
+            {
+                dbg_trace_channel_common_items(&g_marklog_config.mode,
+                                               &g_marklog_config.dir,
+                                               &g_marklog_config.chunk_mb,
+                                               &g_marklog_config.max_total_mb,
+                                               &g_marklog_config.save_on_exit);
+                ImGui::Separator();
+                bool md_stdout = (g_marklog_config.stdout_enabled != 0);
+                if (ImGui::MenuItem(_L("Print marks to stdout"), NULL, md_stdout)) {
+                    g_marklog_config.stdout_enabled = md_stdout ? 0u : 1u;
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s", _("Print [BP-MARK] <name> to stdout when a "
+                                              "mark fires; independent of the binary log."));
+                ImGui::EndMenu();
+            }
 
             ImGui::EndMenu();
         }
@@ -491,6 +703,42 @@ static void dbg_render_cdl_dir_dialog(void)
 }
 
 
+/*
+ * Render sdíleného dialogu "Set directory..." pro trace-suite kanály.
+ *
+ * Otevírá se z menu (Trace Suite > <kanál> nebo All channels > Set directory...),
+ * display musí být mimo menu (menu se po kliknutí zavře). Po výběru se cesta
+ * zapíše do všech cílových dir polí v s_trace_dir_targets - g_free starého +
+ * g_strdup nového, shodně s tím, jak trace cfg.dir spravuje
+ * cputrack_apply_cli_options / reclife_redirect_path.
+ */
+static void dbg_render_trace_dir_dialog(void)
+{
+    if (!s_trace_dir_dialog_open)
+        return;
+
+    ImGui::SetNextWindowSize(ImVec2(800, 500), ImGuiCond_FirstUseEver);
+    if (ImGuiFileDialog::Instance()->Display("TraceSetDir"))
+    {
+        if (ImGuiFileDialog::Instance()->IsOk())
+        {
+            std::string dir = ImGuiFileDialog::Instance()->GetCurrentPath();
+            for (int i = 0; i < s_trace_dir_target_count; i++)
+            {
+                if (!s_trace_dir_targets[i])
+                    continue;
+                char *new_dir = g_strdup(dir.c_str());
+                g_free(*s_trace_dir_targets[i]);
+                *s_trace_dir_targets[i] = new_dir;
+            };
+        };
+        ImGuiFileDialog::Instance()->Close();
+        s_trace_dir_dialog_open = false;
+        s_trace_dir_target_count = 0;
+    };
+}
+
+
 void dbg_topmenu_render(bool *p_open)
 {
     if (ImGui::BeginMenuBar())
@@ -510,6 +758,7 @@ void dbg_topmenu_render(bool *p_open)
 
     /* Dialogy mimo menu bar - musí se renderovat každý frame nezávisle. */
     dbg_render_cdl_dir_dialog();
+    dbg_render_trace_dir_dialog();
 }
 
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */

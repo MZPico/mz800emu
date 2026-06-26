@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-23 00:00+0200\n"
+"POT-Creation-Date: 2026-06-26 16:53+0200\n"
 "PO-Revision-Date: 2026-03-11 21:00+0100\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -2561,7 +2561,7 @@ msgid "Hide noise"
 msgstr "Ocultar ruido"
 
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1369
-#: src/ui-imgui/debugger/ioview/io_window.cpp:973
+#: src/ui-imgui/debugger/ioview/io_window.cpp:972
 #: src/ui-imgui/debugger/symbols/sym_window.cpp:618
 msgid "Clear filter"
 msgstr "Limpiar filtro"
@@ -4057,11 +4057,11 @@ msgstr "Unidad Master"
 msgid "Drive Slave"
 msgstr "Unidad Slave"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:483
+#: src/ui-imgui/debugger/ioview/io_window.cpp:482
 msgid "(no bit-level decode available)"
 msgstr "(decodificación a nivel de bit no disponible)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:638
+#: src/ui-imgui/debugger/ioview/io_window.cpp:637
 msgid ""
 "16-bit CRTC family port. Bus addr is 0x<RR>CF (Z80 OUT (C),A pattern with "
 "B=register index, C=0xCF). MZ notation 0xCF<RR> is human-readable display."
@@ -4070,52 +4070,52 @@ msgstr ""
 "(C),A con B=índice de registro, C=0xCF). La notación MZ 0xCF<RR> es la "
 "visualización legible para humanos."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:656
+#: src/ui-imgui/debugger/ioview/io_window.cpp:655
 msgid "Add IORQ R BP##ioctx"
 msgstr "Añadir IORQ R BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:659
+#: src/ui-imgui/debugger/ioview/io_window.cpp:658
 msgid "Add IORQ W BP##ioctx"
 msgstr "Añadir IORQ W BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:663
+#: src/ui-imgui/debugger/ioview/io_window.cpp:662
 msgid "Add MEM R BP##ioctx"
 msgstr "Añadir MEM R BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:666
+#: src/ui-imgui/debugger/ioview/io_window.cpp:665
 msgid "Add MEM W BP##ioctx"
 msgstr "Añadir MEM W BP##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:671
+#: src/ui-imgui/debugger/ioview/io_window.cpp:670
 msgid "Reset activity counter##ioctx"
 msgstr "Restablecer contador de actividad##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:680
+#: src/ui-imgui/debugger/ioview/io_window.cpp:679
 msgid "Show in History tab##ioctx"
 msgstr "Mostrar en pestaña Historial##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:717
+#: src/ui-imgui/debugger/ioview/io_window.cpp:716
 msgid "Show in Memory Map##ioctx"
 msgstr "Mostrar en Memory Map##ioctx"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:812
+#: src/ui-imgui/debugger/ioview/io_window.cpp:811
 #, c-format
 msgid "Last cached value %u frames ago"
 msgstr "Último valor cacheado hace %u frames"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:819
+#: src/ui-imgui/debugger/ioview/io_window.cpp:818
 msgid "No data captured (port has no mirror and no IORQ event yet)"
 msgstr "Sin datos capturados (el puerto no tiene mirror ni evento IORQ aún)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:848
+#: src/ui-imgui/debugger/ioview/io_window.cpp:847
 msgid "Hits per second over last 1s window (50 buckets)"
 msgstr "Aciertos por segundo en la última ventana de 1s (50 buckets)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:854
+#: src/ui-imgui/debugger/ioview/io_window.cpp:853
 msgid "Tracking disabled (panel closed or toggled off)"
 msgstr "Seguimiento deshabilitado (panel cerrado o desactivado)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:878
+#: src/ui-imgui/debugger/ioview/io_window.cpp:877
 msgid ""
 "MMIO events (0xE000-0xE008) are always recorded (per-port filter applies to "
 "8-bit IORQ space only)"
@@ -4123,7 +4123,7 @@ msgstr ""
 "Los eventos MMIO (0xE000-0xE008) siempre se registran (el filtro por puerto "
 "se aplica solo al espacio IORQ de 8 bits)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:892
+#: src/ui-imgui/debugger/ioview/io_window.cpp:891
 msgid ""
 "Record IORQ events for this port into History ring buffer. Uncheck to skip "
 "high-frequency ports and preserve ring capacity for events of interest."
@@ -4132,12 +4132,12 @@ msgstr ""
 "Desmarcar para omitir puertos de alta frecuencia y preservar capacidad del "
 "buffer para eventos de interés."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:959
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1864
+#: src/ui-imgui/debugger/ioview/io_window.cpp:958
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1862
 msgid "Filter..."
 msgstr "Filtro..."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:965
+#: src/ui-imgui/debugger/ioview/io_window.cpp:964
 msgid ""
 "Filter visible ports (case-insensitive substring match on name, address hex, "
 "or direction r/w/rw)."
@@ -4145,35 +4145,35 @@ msgstr ""
 "Filtrar puertos visibles (coincidencia de subcadena sin distinguir "
 "mayúsculas en nombre, dirección hex o dirección r/w/rw)."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:969
+#: src/ui-imgui/debugger/ioview/io_window.cpp:968
 msgid "Clear##io_clear_filter"
 msgstr "Limpiar##io_clear_filter"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:979
+#: src/ui-imgui/debugger/ioview/io_window.cpp:978
 msgid "Reset Activity##io_reset_act"
 msgstr "Restablecer actividad##io_reset_act"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:984
+#: src/ui-imgui/debugger/ioview/io_window.cpp:983
 msgid "Clear activity counters for all 256 ports"
 msgstr "Limpiar contadores de actividad para los 256 puertos"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:990
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1974
+#: src/ui-imgui/debugger/ioview/io_window.cpp:989
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1972
 msgid "Capacity:"
 msgstr "Capacidad:"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1023
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2004
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1022
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2002
 msgid "History buffer size. Resize discards existing events."
 msgstr ""
 "Tamaño del buffer de historial. Cambiar tamaño descarta eventos existentes."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1031
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1030
 msgid "Track##io_track"
 msgstr "Seguir##io_track"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1036
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2022
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1035
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2020
 msgid ""
 "Enable IORQ activity + history capture (gated). Default ON when panel is "
 "open. Toggle off to reduce overhead."
@@ -4181,77 +4181,77 @@ msgstr ""
 "Habilitar captura de actividad IORQ + historial (controlado). Predeterminado "
 "ON cuando el panel está abierto. Desactivar para reducir sobrecarga."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1051
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1050
 msgid "Heat...##io_heat_btn"
 msgstr "Heat...##io_heat_btn"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1056
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1055
 msgid "Configure activity heat coloring thresholds."
 msgstr "Configurar umbrales de coloreado heat de actividad."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1059
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1058
 msgid "Heat coloring thresholds (hits/s):"
 msgstr "Umbrales de coloreado heat (aciertos/s):"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1062
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1061
 msgid "Text active (green)##io_heat_text"
 msgstr "Texto activo (verde)##io_heat_text"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1073
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1072
 msgid "Minimum hits/s to color row text green. Default 1."
 msgstr ""
 "Mínimo de aciertos/s para colorear texto de fila en verde. Predeterminado 1."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1076
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1075
 msgid "Bg hot tint (red)##io_heat_bg"
 msgstr "Fondo caliente (rojo)##io_heat_bg"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1087
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1086
 msgid ""
 "Minimum hits/s for red row background tint (bottleneck warn). Default 10000."
 msgstr ""
 "Mínimo de aciertos/s para tinte rojo de fondo de fila (advertencia de cuello "
 "de botella). Predeterminado 10000."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1091
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1090
 msgid "Reset to defaults##io_heat_reset"
 msgstr "Restablecer a predeterminados##io_heat_reset"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1129
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1130
 msgid "No ports match filter"
 msgstr "Ningún puerto coincide con el filtro"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1623
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1621
 msgid "(no selection)"
 msgstr "(sin selección)"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1624
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1622
 msgid "Click a row to see details"
 msgstr "Haga clic en una fila para ver detalles"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1636
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1634
 msgid "Selected event:"
 msgstr "Evento seleccionado:"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1670
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1668
 msgid "Focus to primary disassembly. Right-click for additional actions."
 msgstr ""
 "Enfocar en disassembly principal. Clic derecho para acciones adicionales."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1711
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1709
 msgid "Focus to..."
 msgstr "Enfocar en..."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1730
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1728
 #: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3328
 msgid "Add to bookmarks"
 msgstr "Añadir a marcadores"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1749
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1747
 msgid "Add breakpoint"
 msgstr "Añadir breakpoint"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1870
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1868
 msgid ""
 "Filter syntax (boolean expression):\n"
 "Atoms (leaf tokens):\n"
@@ -4303,24 +4303,24 @@ msgstr ""
 "  (port:CE pc:42) | port:CF  grupo OR grupo\n"
 "  !(in | out)                ni IN ni OUT"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1896
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1894
 msgid "Clear##io_hist_clear"
 msgstr "Limpiar##io_hist_clear"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1930
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1928
 msgid "Latest##io_hist_latest"
 msgstr "Más reciente##io_hist_latest"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1936
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1934
 msgid "Re-enable auto-follow and scroll to latest event"
 msgstr ""
 "Volver a habilitar auto-seguimiento y desplazarse al evento más reciente"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1940
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1938
 msgid "Auto-follow##io_hist_af"
 msgstr "Auto-seguir##io_hist_af"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1952
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1950
 msgid ""
 "Auto-scroll History tab to latest event. User scroll up disables follow; "
 "click [Latest] re-enables."
@@ -4329,27 +4329,27 @@ msgstr ""
 "usuario hacia arriba deshabilita el seguimiento; clic en [Más reciente] lo "
 "vuelve a habilitar."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1958
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1956
 msgid "Clear history##io_hist_purge"
 msgstr "Limpiar historial##io_hist_purge"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:1965
+#: src/ui-imgui/debugger/ioview/io_window.cpp:1963
 msgid "Discard all recorded IORQ events"
 msgstr "Descartar todos los eventos IORQ registrados"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2010
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2008
 msgid "Track##io_hist_track"
 msgstr "Seguir##io_hist_track"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2029
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2027
 msgid "Filter error"
 msgstr "Error de filtro"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2168
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2166
 msgid "Filter actions for this event:"
 msgstr "Acciones de filtro para este evento:"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2447
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2445
 msgid ""
 "Wraps the current filter in parentheses, then appends ' & token'. Use to AND-"
 "narrow an OR chain (parser precedence: & binds tighter than |)."
@@ -4358,7 +4358,7 @@ msgstr ""
 "estrechar con AND una cadena OR (precedencia del parser: & se enlaza más "
 "fuertemente que |)."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2451
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2449
 msgid ""
 "Wraps the current filter in parentheses, then appends ' | token'. Use when "
 "the current filter is itself an AND chain that should be OR-extended as a "
@@ -4368,15 +4368,15 @@ msgstr ""
 "filtro actual es en sí una cadena AND que debe extenderse con OR como un "
 "todo."
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2747
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2745
 msgid "I/O Ports###io_main"
 msgstr "Puertos I/O###io_main"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2783
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2781
 msgid "Overview##io_tab_ov"
 msgstr "Vista general##io_tab_ov"
 
-#: src/ui-imgui/debugger/ioview/io_window.cpp:2797
+#: src/ui-imgui/debugger/ioview/io_window.cpp:2795
 msgid "History##io_tab_hist"
 msgstr "Historial##io_tab_hist"
 
@@ -5094,7 +5094,7 @@ msgid "Snapshot Δ"
 msgstr "Δ de instantánea"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_layers.cpp:497
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:137
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:146
 #: src/ui-imgui/maxspeed_bench_window.cpp:156
 #: src/ui-imgui/plotter/plotter_window.cpp:414
 #: src/ui-imgui/topmenu/topmenu.cpp:41
@@ -5933,133 +5933,191 @@ msgstr "Clic: expandir al modo normal"
 msgid "Click: collapse to compact mode"
 msgstr "Clic: contraer al modo compacto"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:100
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:109
 #: src/ui-imgui/memext/memext_load_dialog.cpp:106
 #: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:99
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:259
 msgid "File"
 msgstr "Archivo"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:103
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:112
 msgid "Load MZF into RAM..."
 msgstr "Cargar MZF en RAM..."
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:114
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:123
 msgid "Hide"
 msgstr "Ocultar"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:135
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:144
 msgid "Emulation"
 msgstr "Emulación"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:144
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:153
 msgid "Max Speed"
 msgstr "Velocidad máxima"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:149
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:158
 #: src/ui-imgui/topmenu/topmenu.cpp:36
 msgid "Pause Emulation"
 msgstr "Pausar emulación"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:160
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:169
 msgid "Forced Full Screen Refresh"
 msgstr "Actualización forzada de pantalla completa"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:193
-msgid "Settings"
-msgstr "Ajustes"
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:218
+msgid "Max size [MB]"
+msgstr "Tamaño máx. [MB]"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:205
-msgid "CPU Instruction History"
-msgstr "Historial de instrucciones de CPU"
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:222
+msgid ""
+"Maximum recording size per channel in MB. 0 = unlimited. Takes effect when "
+"recording (re)starts."
+msgstr ""
+"Tamaño máximo de grabación por canal en MB. 0 = sin límite. Se aplica al "
+"(re)iniciar la grabación."
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:211
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:248
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:321
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:341
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:246
+msgid "Chunk [MB]"
+msgstr "Chunk [MB]"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:250
+msgid ""
+"RAM buffer size per chunk in MB before it is flushed to disk. Takes effect "
+"when recording (re)starts."
+msgstr "Tamaño del búfer RAM por fragmento en MB antes de volcarse al disco. Se aplica al (re)iniciar la grabación."
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:281
+msgid "Select trace output directory"
+msgstr "Seleccionar directorio de salida de trace"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:301
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:342
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:379
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:475
 msgid "Off"
 msgstr "Desactivado"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:217
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:253
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:323
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:344
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:303
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:348
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:384
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:479
 msgid "Only With Debug Window"
 msgstr "Solo con ventana de depuración"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:223
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:258
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:325
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:347
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:305
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:354
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:389
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:483
 msgid "Always"
 msgstr "Siempre"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:242
-msgid "CDL"
-msgstr "CDL"
-
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:266
-msgid "Export on Exit"
-msgstr "Exportar al salir"
-
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:276
-msgid "Show heatmap window"
-msgstr "Mostrar ventana de heatmap"
-
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:284
-msgid "Set directory..."
-msgstr "Establecer directorio..."
-
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:295
-msgid "Select CDL export directory"
-msgstr "Seleccionar directorio de exportación CDL"
-
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:313
-msgid "Trace Suite"
-msgstr "Trace Suite"
-
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:329
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:352
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:311
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:492
 msgid "Save on Exit"
 msgstr "Guardar al salir"
 
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:315
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:415
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:507
+msgid "Set directory..."
+msgstr "Establecer directorio..."
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:324
+msgid "Settings"
+msgstr "Ajustes"
+
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:336
+msgid "CPU Instruction History"
+msgstr "Historial de instrucciones de CPU"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:373
+msgid "CDL"
+msgstr "CDL"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:397
+msgid "Export on Exit"
+msgstr "Exportar al salir"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:407
+msgid "Show heatmap window"
+msgstr "Mostrar ventana de heatmap"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:426
+msgid "Select CDL export directory"
+msgstr "Seleccionar directorio de exportación CDL"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:446
+msgid "Trace Suite"
+msgstr "Trace Suite"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:453
+msgid "All channels"
+msgstr "Todos los canales"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:520
 msgid "CPU Track"
 msgstr "CPU Track"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:360
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:533
 msgid "PC range filter [lo,hi]:"
 msgstr "Filtro de rango PC [lo,hi]:"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:366
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:539
 msgid "lo (hex)"
 msgstr "lo (hex)"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:373
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:546
 msgid "hi (hex)"
 msgstr "hi (hex)"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:379
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:552
 msgid "Reset range (whole space)"
 msgstr "Restablecer rango (espacio completo)"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:407
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:558
+msgid "IORQ Log"
+msgstr "IORQ Log"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:567
+msgid "Interrupt Log"
+msgstr "Interrupt Log"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:576
+msgid "HW Log"
+msgstr "HW Log"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:588
+msgid "Marker Log"
+msgstr "Marker Log"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:597
+msgid "Print marks to stdout"
+msgstr "Imprimir marcas en stdout"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:601
+msgid ""
+"Print [BP-MARK] <name> to stdout when a mark fires; independent of the "
+"binary log."
+msgstr "Imprime [BP-MARK] <name> en stdout cuando se dispara una marca; independiente del registro binario."
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:619
 msgid "Disassembled"
 msgstr "Desensamblado"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:418
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:630
 msgid "Show branch arrows"
 msgstr "Mostrar flechas de bifurcación"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:427
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:639
 msgid "Screen"
 msgstr "Pantalla"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:435
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:647
 msgid "Auto refresh on edit"
 msgstr "Actualización automática al editar"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:446
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:658
 msgid "Auto refresh at every CPU step"
 msgstr "Actualización automática en cada paso de CPU"
 

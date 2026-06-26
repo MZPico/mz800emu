@@ -67,7 +67,6 @@ extern "C"
 #include "emulator/debugger/debugger.h"
 #include "emulator/debugger/symbols/sym_db.h"
 #include "emulator/debugger/bookmarks/bookmarks.h"
-#include "emulator/mzarch/mzarch_platform_functions.h"
 /* GDG include pro g_gdg (= total_elapsed.screens cur_frame v fix #10
  * last value cache age), per-arch dispatch jako v io_catalog.c. */
 #if MZARCH == 800
@@ -1099,10 +1098,12 @@ static void io_window_render_overview_tab ( void )
      * Také aktualizuj cfg klíč (= persist user preference při exit).
      *
      * KRITICKÉ: při změně g_io_window_tracking_active (= 0→1 nebo 1→0)
-     * je nutné volat mzarch_platform_fn_debugger_state_changed(), aby
+     * je nutné přepočítat debugger callbacky přes dbg_ui_debugger_state_recompute()
+     * (= mzarch_platform_fn_debugger_state_changed na EMU vlákně), aby
      * Z80 CPU pře-bindovala port_read/write callbacks na logging variantu
      * (jinak zůstanou default callbacks bez io_activity / io_history hooku
-     * a Activity column + History tab zůstanou prázdné).
+     * a Activity column + History tab zůstanou prázdné). Recompute jde přes
+     * dbgapi na emu vlákno (ne přímo z UI vlákna) kvůli thread-safety.
      *
      * Volat jen na edge change, ne každý frame (= zbytečné z80_set_pread
      * každých 16 ms). */
@@ -1110,7 +1111,7 @@ static void io_window_render_overview_tab ( void )
         uint8_t want = g_io_ui.tracking_enable ? 1u : 0u;
         if ( g_io_window_tracking_active != want ) {
             g_io_window_tracking_active = want;
-            mzarch_platform_fn_debugger_state_changed ( TEST_DEBUGGER_ACTIVE );
+            dbg_ui_debugger_state_recompute ( );
         }
     }
     g_io_ui.cfg_tracking_active = g_io_ui.tracking_enable;
@@ -2010,7 +2011,7 @@ static void io_window_render_history_tab ( void )
         uint8_t want = g_io_ui.tracking_enable ? 1u : 0u;
         if ( g_io_window_tracking_active != want ) {
             g_io_window_tracking_active = want;
-            mzarch_platform_fn_debugger_state_changed ( TEST_DEBUGGER_ACTIVE );
+            dbg_ui_debugger_state_recompute ( );
         }
         g_io_ui.cfg_tracking_active = g_io_ui.tracking_enable;
     }
@@ -2720,7 +2721,7 @@ void io_window_render ( bool *p_open )
          * aby se CPU callbacks vrátily na default (bez logging overhead). */
         if ( g_io_window_tracking_active ) {
             g_io_window_tracking_active = 0;
-            mzarch_platform_fn_debugger_state_changed ( TEST_DEBUGGER_ACTIVE );
+            dbg_ui_debugger_state_recompute ( );
         }
         g_io_ui.was_open_last_frame = false;
         return;
@@ -2754,15 +2755,15 @@ void io_window_render ( bool *p_open )
      * trvalé vypnutí). Tracking je gated na otevřené okno = overhead jen
      * při UI session.
      *
-     * Změna g_io_window_tracking_active musí jít přes
-     * mzarch_platform_fn_debugger_state_changed (callback swap), jinak
-     * hooky v port_*_with_logging_cb nikdy neběží. */
+     * Změna g_io_window_tracking_active musí vyvolat recompute callbacků přes
+     * dbg_ui_debugger_state_recompute() (= mzarch_platform_fn_debugger_state_changed
+     * na emu vlákně), jinak hooky v port_*_with_logging_cb nikdy neběží. */
     if ( !g_io_ui.was_open_last_frame ) {
         g_io_ui.tracking_enable = g_io_ui.cfg_tracking_active;
         uint8_t want = g_io_ui.cfg_tracking_active ? 1u : 0u;
         if ( g_io_window_tracking_active != want ) {
             g_io_window_tracking_active = want;
-            mzarch_platform_fn_debugger_state_changed ( TEST_DEBUGGER_ACTIVE );
+            dbg_ui_debugger_state_recompute ( );
         }
     }
     g_io_ui.was_open_last_frame = true;

@@ -1,4 +1,8 @@
 
+	- BUGFIX: Trace Suite - vypnutí záznamu (nebo změna režimu kanálu) z menu za běhu emulace mohlo způsobit pád emulátoru. Zapínání i vypínání záznamu nyní probíhá bezpečně na emulačním vlákně.
+
+	- ZMĚNA: Záznam trace-suite má nově výchozí strop velikosti 2 GB na kanál (dříve bez omezení), aby dlouhý záznam (hlavně CPU Track) nezaplnil disk. Po dosažení se kanál zastaví; strop lze změnit v nastavení (max_total_mb, 0 = bez omezení).
+
 	- BUGFIX: oprava timingu CPU jádra z80-mz800 - CPU vykonávalo interrupt ihned po EI a nikoliv až po další instrukci. Chyba vznikla ve verzi v2.0.2
 
 	- BUGFIX: Pokud v IM2 režimu přijde interrupt, který nepochází od PIO-Z80, tak jsme dříve chybně vraceli vektor 0x00. Nyní se vrací hodnotu "ducha sběrnice". Dále doplněna drobná oprava v I/O ports window a Events window. Snapshot: po načtení poškodil konfiguraci Unicard SD root dir.

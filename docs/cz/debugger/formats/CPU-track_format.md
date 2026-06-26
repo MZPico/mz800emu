@@ -15,11 +15,13 @@ cputrack se ovládá z menu debug okna v položce
 - `Only With Debug Window` - aktivní jen pokud je otevřené debug okno.
 - `Always` - aktivní trvale.
 
-Volby `Save on Exit`, `Set directory...`, `Chunk MB` a `Max Total MB`
-v témže menu řídí finalizační chování, cílový adresář a velikostní
-limity. Všechny volby jsou persistentní v emulátorové ini konfiguraci
-(sekce `[TRACE_CPUTRACK]`, klíče `mode`, `dir`, `name`, `chunk_mb`,
-`max_total_mb`, `save_on_exit`).
+V témže menu jsou dále volby `Save on Exit` (finalizace záznamu při
+ukončení emulátoru), `Max size [MB]` (limit velikosti záznamu na kanál,
+0 = bez omezení), `Chunk [MB]` (velikost RAM bufferu), `Set directory...`
+(cílový adresář) a PC range filtr (lo/hi). Basename (name) se nastavuje jen
+přes CLI / INI. Všechny volby jsou persistentní v ini sekci `[TRACE_CPUTRACK]`
+(klíče `mode`, `dir`, `name`, `chunk_mb`, `max_total_mb`, `save_on_exit`,
+`pc_range_lo`, `pc_range_hi`).
 
 Recording běží ve společné pomalé cestě s CDL/cpuhist (callback swap),
 hot path emulátoru bez aktivních diagnostik zůstává beze změny vůči
@@ -270,8 +272,8 @@ ROM image (= verze v `meta.json` přes `platform`).
 
 1. Vybrat režim recording (Off / Only With Debug Window / Always).
 2. Volitelně zapnout `Save on Exit` (default zapnuto).
-3. Nastavit cílový adresář a basename, případně `chunk_mb` /
-   `max_total_mb`.
+3. Volitelně nastavit `Max size [MB]` (limit), `Chunk [MB]`, cílový adresář
+   (`Set directory...`) a PC range filtr; basename (name) přes CLI / INI.
 4. Spustit emulovaný program. Recording běží na pozadí.
 
 ### Načtení dat v Pythonu (příklad)

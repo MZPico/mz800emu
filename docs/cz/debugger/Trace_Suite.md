@@ -31,7 +31,7 @@ Per-subsystém options (každý subsystém má identické):
 - `--<sys>-dir=<path>` (default: `./trace-suite/`)
 - `--<sys>-name=<basename>` (default: shodné s sys, např. `cputrack`)
 - `--<sys>-chunk-mb=<N>` (default: 64)
-- `--<sys>-max-total-mb=<N>` (default: 0 = unlimited)
+- `--<sys>-max-total-mb=<N>` (default: 2048 = 2 GB; 0 = bez omezení)
 - `--<sys>-save-on-exit=on|off` (default: on)
 
 `<sys>` = `cputrack` / `iorqlog` / `intlog` / `hwlog` / `marklog`.
@@ -72,15 +72,26 @@ vyplní pouze ty subsystémy, kde uživatel per-subsys option nepředal.
 
 ### GUI menu
 
-Debugger Settings -> Trace Suite -> [CPU Track | IORQ Log | Interrupt Log | HW Log | Marker Log]
+Debugger Settings -> Trace Suite -> [All channels | CPU Track | IORQ Log | Interrupt Log | HW Log | Marker Log]
 
-Per-subsystém: radio (Off / Only With Debug Window / Always) + Save on Exit toggle.
+Per-subsystém: radio (Off / Only With Debug Window / Always), Save on Exit toggle,
+pole "Max size [MB]" (limit velikosti záznamu na kanál; 0 = bez omezení), pole
+"Chunk [MB]" (velikost RAM bufferu před flushem na disk) a "Set directory..."
+(výběr cílového adresáře). Změny velikostí / adresáře se projeví až při
+(znovu)spuštění záznamu daného kanálu. Basename (name) se nastavuje jen přes
+CLI / INI.
+
+Položka "All channels" nastaví mode / Save on Exit / Max size / Chunk / adresář
+u všech 5 kanálů (cputrack / iorqlog / intlog / hwlog / marklog) najednou.
 
 Submenu CPU Track má navíc pole "PC range filter [lo,hi]:" se dvěma hex
 vstupy (lo, hi) a položkou "Reset range (whole space)". Nastavuje stejný
 range-scope filtr jako CLI `--cputrack-pc-lo` / `--cputrack-pc-hi`
 (záznam jen pro PC v rozsahu). Reset vrátí rozsah na `0000`-`FFFF`
 (= celý adresový prostor, bez filtru).
+
+Submenu Marker Log má navíc přepínač "Print marks to stdout" (back-compat výpis
+`[BP-MARK] <name>` na stdout, nezávislý na binárním logu).
 
 #### Status indikátor v titulku okna
 
@@ -122,7 +133,7 @@ mode=OFF
 dir=trace-suite
 name=cputrack
 chunk_mb=64
-max_total_mb=0
+max_total_mb=2048
 save_on_exit=1
 pc_range_lo=0                    # range-scope filtr: dolní mez PC (default 0)
 pc_range_hi=65535               # horní mez PC (default 0xFFFF = bez filtru)
@@ -141,7 +152,7 @@ mode=OFF
 dir=trace-suite
 name=marklog
 chunk_mb=64
-max_total_mb=0
+max_total_mb=2048
 save_on_exit=1
 stdout_enabled=1                # back-compat printout [BP-MARK] na stdout
 ```
@@ -386,9 +397,10 @@ stabilní `uint16 marker_id`. Mapování id -> name se dumpuje do `meta.json`
 
 - chunk-mb (default 64 MB): RAM buffer per subsystém. Vyšší =
   méně častý flush, vyšší peak RAM
-- max-total-mb (default 0 = unlimited): hard limit na celkovou
-  velikost recordingu. Při dosažení se subsystém zastaví, do meta.json
-  se zapíše `"truncated": true, "truncated_reason": "max_total_mb"`,
+- max-total-mb (default 2048 = 2 GB na kanál; 0 = unlimited): hard limit
+  na celkovou velikost recordingu - pojistka proti zaplnění disku (cputrack
+  jinak roste prakticky neomezeně). Při dosažení se subsystém zastaví, do
+  meta.json se zapíše `"truncated": true, "truncated_reason": "max_total_mb"`,
   na konzoli zpráva `[trace-suite] <subsys>: max-total-mb=N reached,
   recording stopped`.
 
