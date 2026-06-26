@@ -78,6 +78,7 @@
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>        /* TCP_NODELAY (na Windows je v ws2tcpip.h) */
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <errno.h>
@@ -351,54 +352,112 @@ static const char *_wsa_strerror(int err)
 /* ====================================================================== */
 
 /**
- * @brief Načte jeden JSONL řádek ze socketu.
+ * @brief Maximální délka jednoho JSONL řádku (ochrana proti zacyklené
+ *        alokaci / DoS od chybného klienta).
+ *
+ * Nejdelší legitimní request je `mem_write` (hex, 2 znaky/bajt) s 64 KiB
+ * dat = ~131 KB řádek, případně `region_write` (base64) s 64 KiB = ~87 KB.
+ * 8 MiB je bohatá rezerva i pro budoucí větší payloady. Řádek přesahující
+ * tento limit se odmítne (return -3), spojení se ale nedrží zbytečně.
+ */
+enum { MCP_TCP_MAX_LINE = 8u * 1024u * 1024u };
+
+/**
+ * @brief Velikost bloku jednoho `recv()` volání řádkového readeru.
+ *
+ * Reader čte ze socketu po blocích této velikosti (ne po bajtech), takže
+ * velký request projde řádově méně syscally a nevzniká interakce pomalého
+ * per-byte vysávání recv bufferu s Nagle / delayed-ACK.
+ */
+enum { MCP_TCP_RECV_CHUNK = 65536 };
+
+/**
+ * @brief Stav řádkového readeru jednoho spojení.
+ *
+ * Drží přečtený, ještě nezkonzumovaný blok dat ze socketu. `recv()` může
+ * vrátit víc než jeden řádek nebo část dalšího řádku; zbytek za nalezeným
+ * '\n' se uchová zde pro další volání `_recv_line`.
+ *
+ * Invariant: `pos <= len <= sizeof(buf)`.
+ */
+typedef struct {
+    char   buf[MCP_TCP_RECV_CHUNK]; /**< @brief Raw recv buffer. */
+    size_t len;                     /**< @brief Počet platných bajtů v buf. */
+    size_t pos;                     /**< @brief První nezkonzumovaný bajt. */
+} st_MCP_RECV_CTX;
+
+/**
+ * @brief Načte jeden JSONL řádek ze socketu (blokově bufferovaný reader).
  *
  * `jsonl_read_line` pracuje nad `FILE*`, ne `SOCKET`. Pro TCP používáme
- * raw `recv` s vlastním řádkovým bufferingem - jednoduché a vyhne se
- * nutnosti `fdopen(sock)` (které není přenositelné mezi WinSock a
- * POSIX sockety).
+ * vlastní reader: ze socketu čteme po blocích (`MCP_TCP_RECV_CHUNK`) do
+ * `ctx->buf` a z něj skládáme řádek do rostoucího `GString` až po '\n'.
+ * Tím odpadá per-byte `recv()` (dřív 1 syscall na bajt) i pevný strop
+ * délky řádku - velké `region_write` / `mem_write` requesty (desítky až
+ * stovky KB) projdou bez useknutí spojení.
+ *
+ * Znaky '\r' se přeskakují (tolerance `\r\n`). Řádek delší než
+ * `MCP_TCP_MAX_LINE` se odmítne (návrat -3), aby chybný klient nevyčerpal
+ * paměť.
  *
  * @param sock     klientský socket
- * @param buf      pracovní buffer (alokovaný v caller)
- * @param buf_size velikost bufferu (= max délka jednoho JSONL řádku)
- * @param out_line výstupní nově alokovaný řádek bez '\n' (caller g_free)
- * @return 0 OK, -1 EOF, -2 chyba (overflow nebo recv)
+ * @param ctx      per-connection stav readeru (drží nezkonzumovaný zbytek)
+ * @param out_line výstupní nově alokovaný řádek bez '\n' (caller `g_free`)
+ * @return 0 OK, -1 EOF (clean), -2 chyba `recv`, -3 řádek přes limit
  */
-static int _recv_line(SOCKET sock, char *buf, size_t buf_size,
-                      char **out_line)
+static int _recv_line(SOCKET sock, st_MCP_RECV_CTX *ctx, char **out_line)
 {
-    size_t used = 0;
-    while (used + 1 < buf_size)
+    GString *line = g_string_sized_new(256);
+
+    for (;;)
     {
-        char c;
-        int rc = recv(sock, &c, 1, 0);
-        if (rc == 0)
+        /* Doplň blok, pokud je spotřebovaný. */
+        if (ctx->pos >= ctx->len)
         {
-            /* Klient zavřel spojení. */
-            if (used == 0) return -1; /* žádný data = clean EOF */
-            buf[used] = '\0';
-            *out_line = g_strdup(buf);
-            return 0;
+            int n = recv(sock, ctx->buf, (int)sizeof(ctx->buf), 0);
+            if (n == 0)
+            {
+                /* Peer zavřel spojení. */
+                if (line->len == 0)
+                {
+                    g_string_free(line, TRUE);
+                    return -1;            /* žádná data = clean EOF */
+                }
+                /* Částečný řádek bez '\n' - vrátíme ho jako kompletní
+                 * (zachované původní chování při EOF uprostřed řádku). */
+                *out_line = g_string_free(line, FALSE);
+                return 0;
+            }
+            if (n == SOCKET_ERROR)
+            {
+                g_string_free(line, TRUE);
+                return -2;
+            }
+            ctx->len = (size_t)n;
+            ctx->pos = 0;
         }
-        if (rc == SOCKET_ERROR)
+
+        /* Zpracuj načtený blok až po '\n'. */
+        while (ctx->pos < ctx->len)
         {
-            return -2;
+            char c = ctx->buf[ctx->pos++];
+            if (c == '\n')
+            {
+                *out_line = g_string_free(line, FALSE);
+                return 0;
+            }
+            if (c == '\r')
+            {
+                continue;                 /* tolerance \r\n */
+            }
+            g_string_append_c(line, c);
+            if (line->len > MCP_TCP_MAX_LINE)
+            {
+                g_string_free(line, TRUE);
+                return -3;                /* řádek přes limit */
+            }
         }
-        if (c == '\n')
-        {
-            buf[used] = '\0';
-            *out_line = g_strdup(buf);
-            return 0;
-        }
-        if (c == '\r')
-        {
-            /* Přeskočíme CR (pro \r\n line endings) */
-            continue;
-        }
-        buf[used++] = c;
     }
-    /* Overflow - řádek delší než buffer. */
-    return -2;
 }
 
 
@@ -418,10 +477,11 @@ static gpointer _client_thread_func(gpointer data)
     st_MCP_TCP_SERVER *srv = (st_MCP_TCP_SERVER *)data;
     SOCKET sock = srv->client_sock;
 
-    /* Buffer pro jeden JSONL řádek. 64 KB je vědomě nadsazené - největší
-     * očekávaná zpráva v V0.A.3 (mem_read max 4096 B) má < 16 KB raw JSON. */
-    enum { LINE_BUF_SIZE = 65536 };
-    char *buf = g_new(char, LINE_BUF_SIZE);
+    /* Stav řádkového readeru tohoto spojení (blokově bufferovaný recv +
+     * nezkonzumovaný zbytek mezi řádky). Velikost řádku není omezena pevným
+     * bufferem - reader skládá řádek do rostoucího GString až po
+     * MCP_TCP_MAX_LINE (viz _recv_line). */
+    st_MCP_RECV_CTX *rx = g_new0(st_MCP_RECV_CTX, 1);
 
     /* Pošli HELLO zprávu (sdílí builder s pipe transportem). */
     char *hello = NULL;
@@ -446,7 +506,7 @@ static gpointer _client_thread_func(gpointer data)
         if (stop) break;
 
         char *line = NULL;
-        int rr = _recv_line(sock, buf, LINE_BUF_SIZE, &line);
+        int rr = _recv_line(sock, rx, &line);
         if (rr == -1)
         {
             /* Clean EOF - klient zavřel. */
@@ -454,7 +514,7 @@ static gpointer _client_thread_func(gpointer data)
         }
         if (rr == -2)
         {
-            /* Chyba - log a vyskočení. */
+            /* Skutečná recv chyba - log a vyskočení. */
             int err = WSAGetLastError();
             /* WSAEINTR / WSAECONNRESET při shutdownu jsou očekávané. */
             if (err != WSAEINTR && err != WSAECONNRESET &&
@@ -463,6 +523,16 @@ static gpointer _client_thread_func(gpointer data)
                 fprintf(stderr, "[MCP] TCP recv error: %s\n",
                         _wsa_strerror(err));
             }
+            break;
+        }
+        if (rr == -3)
+        {
+            /* Řádek přesáhl MCP_TCP_MAX_LINE - chybný / nepřátelský klient.
+             * Logujeme srozumitelně (ne matoucí "WSA error 0") a spojení
+             * uzavřeme; legitimní requesty se do limitu pohodlně vejdou. */
+            fprintf(stderr,
+                    "[MCP] TCP request line exceeds %u bytes - dropping client\n",
+                    (unsigned)MCP_TCP_MAX_LINE);
             break;
         }
 
@@ -514,7 +584,21 @@ static gpointer _client_thread_func(gpointer data)
         g_free(line);
     }
 
-    /* Cleanup spojení. Logujeme peer info, pokud lze získat. */
+    /* Uvolni single-client slot HNED po opuštění smyčky, JEŠTĚ PŘED
+     * teardownem socketu (getpeername/shutdown/closesocket). Tím se zmenší
+     * race okno, kdy by okamžitý reconnect téhož klienta narazil na
+     * "max_clients_exceeded", přestože spojení už fakticky skončilo
+     * (mzdos 0024). Teardown níže pracuje nad LOKÁLNÍM `sock`, takže je na
+     * srv->client_sock nezávislý a smí proběhnout po uvolnění slotu.
+     * client_thread NULL zde nenulujeme - listener ho potřebuje pro
+     * zombie-join v _accept_client (resp. _stop). */
+    g_mutex_lock(&srv->state_mutex);
+    srv->client_sock = INVALID_SOCKET;
+    g_atomic_int_set(&srv->client_count, 0);
+    g_mutex_unlock(&srv->state_mutex);
+
+    /* Cleanup spojení. Logujeme peer info, pokud lze získat (socket je do
+     * closesocket níže stále otevřený). */
     struct sockaddr_in peer;
     socklen_t peerlen = sizeof(peer);
     char ip[INET_ADDRSTRLEN] = "?.?.?.?";
@@ -528,16 +612,9 @@ static gpointer _client_thread_func(gpointer data)
     shutdown(sock, SD_BOTH);
     closesocket(sock);
 
-    g_mutex_lock(&srv->state_mutex);
-    srv->client_sock = INVALID_SOCKET;
-    /* client_thread NULL nastavíme až v _stop nebo když vlákno končí
-     * spontánně - jinak by listener neměl odkud zjistit handle pro join. */
-    g_atomic_int_set(&srv->client_count, 0);
-    g_mutex_unlock(&srv->state_mutex);
-
     g_print("[MCP] Client %s:%d disconnected (clean)\n", ip, peer_port);
 
-    g_free(buf);
+    g_free(rx);
     return NULL;
 }
 
@@ -576,6 +653,21 @@ static void _accept_client(st_MCP_TCP_SERVER *srv, SOCKET sock,
     }
     g_mutex_unlock(&srv->state_mutex);
     if (zombie) g_thread_join(zombie);
+
+    /* Vypni Nagle na klientském socketu. MCP je request/response s malými
+     * i velkými JSONL řádky; bez TCP_NODELAY by Nagle (čekání na ACK před
+     * odesláním dalšího segmentu) interagoval s delayed-ACK a přidával
+     * latenci, obzvlášť u velkých requestů čtených po blocích. */
+    {
+        int one = 1;
+        if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
+                       (const char *)&one, sizeof(one)) == SOCKET_ERROR)
+        {
+            /* Není fatální - jen latence, ne korektnost. */
+            fprintf(stderr, "[MCP] setsockopt(TCP_NODELAY) failed: %s\n",
+                    _wsa_strerror(WSAGetLastError()));
+        }
+    }
 
     g_mutex_lock(&srv->state_mutex);
     srv->client_sock = sock;
