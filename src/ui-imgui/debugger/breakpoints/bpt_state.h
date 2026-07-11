@@ -147,6 +147,7 @@ typedef struct BptEditPanelState {
     en_BP_MATCH_MODE wc_bank_match_mode; /**< MMEXT_BANK match mode */
     char wc_bank_id_end[4];              /**< RANGE upper pro bank (max 2 hex + nul) */
     char wc_bank_id_mask[4];             /**< AND mask pro bank MASK */
+    en_BP_ADDR_SPACE wc_bp_addr_space;   /**< Feature D: CPU_VIEW / BANK_OFFSET (MMEXT_BANK) */
     en_BP_SP_MODE wc_sp_mode;            /**< SP_THRESHOLD mode (SINGLE/WINDOW) */
     char wc_sp_upper[7];                 /**< Upper bound pro SP WINDOW (hex) */
 

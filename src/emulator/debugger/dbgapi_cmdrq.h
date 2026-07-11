@@ -1365,6 +1365,7 @@ typedef struct st_DBGAPI_BP_UPDATE_PARAM
     uint8_t bank_match_mode; /**< UM_BANK_MATCH_MODE - cast na en_BP_MATCH_MODE */
     uint8_t bank_id_end;     /**< UM_BANK_ID_END */
     uint8_t bank_id_mask;    /**< UM_BANK_ID_MASK */
+    uint8_t bp_addr_space;   /**< UM_ADDR_SPACE - cast na en_BP_ADDR_SPACE (feature D) */
     uint8_t sp_mode;         /**< UM_SP_MODE - cast na en_BP_SP_MODE */
     uint16_t sp_upper;       /**< UM_SP_UPPER */
 
@@ -1467,6 +1468,7 @@ typedef struct st_DBGAPI_BP_UPDATE_PARAM
 /* 0019 vrstva 2 - per-BP rate-limit override těžkých FWD akcí (snapshot/trace) */
 #define DBGAPI_BP_UM_FWD_MIN_INTERVAL_MS (UINT64_C(1) << 43)  /**< fwd_min_interval_ms (0 = global/built-in default) */
 #define DBGAPI_BP_UM_FWD_MAX_FIRES       (UINT64_C(1) << 44)  /**< fwd_max_fires (0 = neomezeno) */
+#define DBGAPI_BP_UM_ADDR_SPACE          (UINT64_C(1) << 45)  /**< bp_addr_space (feature D: cpu_view / bank_offset) */
 
 /**
  * @brief Parametr pro CMD_BP_SET_ENABLED - quick toggle enabled flag.

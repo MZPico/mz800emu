@@ -78,6 +78,7 @@ void bptmap_clear_all ( void ) {
         g_bptmap.per_type_active[i] = false;
     };
     g_bptmap.any_active = false;
+    g_bptmap.has_enabled_bp = false;
 }
 
 

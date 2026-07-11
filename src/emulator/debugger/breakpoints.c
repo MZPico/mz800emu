@@ -665,6 +665,10 @@ static void breakpoints_json_emit_bpt ( JsonBuilder *b, const st_BPT *bpt ) {
     json_builder_set_member_name ( b, "bank_id_mask" );
     json_builder_add_int_value ( b, bpt->bank_id_mask );
 
+    /* Feature D: interpretace addr pro MMEXT_BANK (cpu_view / bank_offset). */
+    json_builder_set_member_name ( b, "bp_addr_space" );
+    json_builder_add_string_value ( b, bp_addr_space_to_string ( bpt->bp_addr_space ) );
+
     json_builder_set_member_name ( b, "port" );
     json_builder_add_int_value ( b, bpt->port );
 
@@ -1136,6 +1140,7 @@ static int breakpoints_json_load_bpt ( JsonObject *obj ) {
         };
     };
 
+    bpt.bp_addr_space = BP_ADDR_SPACE_CPU_VIEW;
     bpt.bank_match_mode = BP_MATCH_SINGLE;
     {
         const char *bmm_str = breakpoints_json_get_string_or ( obj, "bank_match_mode", NULL );
@@ -1151,6 +1156,14 @@ static int breakpoints_json_load_bpt ( JsonObject *obj ) {
     };
     bpt.bank_id_end = (uint8_t) breakpoints_json_get_int_or ( obj, "bank_id_end", 0 );
     bpt.bank_id_mask = (uint8_t) breakpoints_json_get_int_or ( obj, "bank_id_mask", 0xFF );
+    /* Feature D: bp_addr_space (default CPU_VIEW pro starší .bpt bez pole). */
+    {
+        const char *as_str = breakpoints_json_get_string_or ( obj, "bp_addr_space", NULL );
+        en_BP_ADDR_SPACE as;
+        if ( as_str && bp_addr_space_from_string ( as_str, &as ) ) {
+            bpt.bp_addr_space = as;
+        };
+    }
 
     bpt.sp_mode = BP_SP_SINGLE;
     {
@@ -1666,6 +1679,7 @@ int breakpoints_add ( uint16_t addr, const char *name, int parent ) {
     bpt.bank_match_mode = BP_MATCH_SINGLE;
     bpt.bank_id_end = 0;
     bpt.bank_id_mask = 0xFF;
+    bpt.bp_addr_space = BP_ADDR_SPACE_CPU_VIEW;
     bpt.sp_mode = BP_SP_SINGLE;
     bpt.sp_upper = 0;
 
@@ -1749,6 +1763,7 @@ int breakpoints_add_auto ( uint16_t addr, const char *name, int parent ) {
     bpt.bank_match_mode = BP_MATCH_SINGLE;
     bpt.bank_id_end = 0;
     bpt.bank_id_mask = 0xFF;
+    bpt.bp_addr_space = BP_ADDR_SPACE_CPU_VIEW;
     bpt.sp_mode = BP_SP_SINGLE;
     bpt.sp_upper = 0;
 
@@ -1990,9 +2005,6 @@ bool breakpoints_set_addr ( int bpt_id, uint16_t new_addr ) {
     st_BPT *bpt = breakpoints_find_by_id ( bpt_id );
     if ( !bpt ) return false;
 
-    /* Odregistrovat starou adresu z bptmap */
-    bptmap_event_clear ( bpt->addr, bpt->id );
-
     /* Pokud byl single-point BP (addr == addr_end), drž je v sync.
      * Pro range BP (addr_end > addr) ponechej addr_end nezměněné -
      * uživatel si range řídí explicitně. */
@@ -2010,16 +2022,15 @@ bool breakpoints_set_addr ( int bpt_id, uint16_t new_addr ) {
         bpt->name = g_strdup ( auto_name_buf );
     };
 
-    /* Zaregistrovat novou adresu — pokud je efektivně povolený */
-    if ( bpt->enabled && breakpoints_is_group_enabled ( bpt->parent ) ) {
-        int conflict = bptmap_event_add ( new_addr, bpt->id );
-        if ( conflict > 0 ) {
-            /* Na nové adrese je jiný BPT — auto-disable */
-            bpt->enabled = false;
-        };
-    };
-
     g_breakpoints.version++;
+
+    /* Přeregistrace v bptmap podle AKTUÁLNÍHO typu BP. Dřív se tu ručně
+     * volalo bptmap_event_add(new_addr) BEZ kontroly typu - to byl bug:
+     * MEM_R/W (a jiné non-PC_EXEC) BP se tím dostaly do bpmap[] jako by byly
+     * PC_EXEC, takže EXEC na jejich adrese je spustil přes enforce_pc_exec
+     * (bpmap[] cesta). breakpoints_sync_bptmap() je type-aware: PC_EXEC ->
+     * bpmap[], ostatní -> per-typ list. Tím se pollution odstraní. */
+    breakpoints_sync_bptmap ( );
     return true;
 }
 
@@ -2339,6 +2350,16 @@ bool breakpoints_set_port_mode ( int bpt_id, en_BP_PORT_MODE mode ) {
     if ( !bpt ) return false;
     if ( mode < 0 || mode >= BP_PORT_MODE_COUNT ) return false;
     bpt->port_mode = mode;
+    g_breakpoints.version++;
+    return true;
+}
+
+
+bool breakpoints_set_bp_addr_space ( int bpt_id, en_BP_ADDR_SPACE space ) {
+    st_BPT *bpt = breakpoints_find_by_id ( bpt_id );
+    if ( !bpt ) return false;
+    if ( space < 0 || space >= BP_ADDR_SPACE_COUNT ) return false;
+    bpt->bp_addr_space = space;
     g_breakpoints.version++;
     return true;
 }
@@ -2702,6 +2723,37 @@ bool bp_match_mode_from_string ( const char *s, en_BP_MATCH_MODE *out ) {
 
 
 /*
+ * Tabulka mapping en_BP_ADDR_SPACE → string (feature D). Index = enum
+ * hodnota. Stabilní klíče pro .bpt JSON serializaci.
+ */
+static const char *s_bp_addr_space_names[ BP_ADDR_SPACE_COUNT ] = {
+    [ BP_ADDR_SPACE_CPU_VIEW ]    = "cpu_view",
+    [ BP_ADDR_SPACE_BANK_OFFSET ] = "bank_offset",
+};
+
+
+const char* bp_addr_space_to_string ( en_BP_ADDR_SPACE space ) {
+    if ( space < 0 || space >= BP_ADDR_SPACE_COUNT ) {
+        return "cpu_view";
+    };
+    return s_bp_addr_space_names[ space ];
+}
+
+
+bool bp_addr_space_from_string ( const char *s, en_BP_ADDR_SPACE *out ) {
+    if ( !s || !out ) return false;
+    int i;
+    for ( i = 0; i < BP_ADDR_SPACE_COUNT; i++ ) {
+        if ( strcmp ( s, s_bp_addr_space_names[ i ] ) == 0 ) {
+            *out = (en_BP_ADDR_SPACE) i;
+            return true;
+        };
+    };
+    return false;
+}
+
+
+/*
  * Tabulka mapping en_BP_SP_MODE → string. Index = enum hodnota.
  */
 static const char *s_bp_sp_mode_names[ BP_SP_MODE_COUNT ] = {
@@ -2891,6 +2943,24 @@ void breakpoints_sync_bptmap ( void ) {
      * bp_event_active[] je separátní rychlý fast-skip a musí být v
      * souladu. */
     breakpoints_recompute_event_active ( );
+
+    /* Historie CPU je k dispozici i bez okna, pokud je aspoň jeden BP
+     * enabled - přepočti fast-skip flag has_enabled_bp. */
+    breakpoints_recompute_has_enabled ( );
+}
+
+
+void breakpoints_recompute_has_enabled ( void ) {
+    bool any = false;
+    unsigned i;
+    for ( i = 0; i < g_breakpoints.breakpoints->len; i++ ) {
+        st_BPT *bpt = &g_array_index ( g_breakpoints.breakpoints, st_BPT, i );
+        if ( bpt->enabled && breakpoints_is_group_enabled ( bpt->parent ) ) {
+            any = true;
+            break;
+        };
+    };
+    g_bptmap.has_enabled_bp = any;
 }
 
 
@@ -3501,8 +3571,21 @@ static void breakpoints_dispatch_addr_list ( en_BPTMAP_TYPE_IDX idx,
              * uzivatel nezadal end), pouzijeme addr jako horni bound -
              * stejne jako V1 hi = max(addr, addr_end). */
             uint16_t end = ( bpt->addr_end >= bpt->addr ) ? bpt->addr_end : bpt->addr;
-            if ( !bp_match16 ( bpt->addr_match_mode, hit_addr,
-                                bpt->addr, end, bpt->addr_mask ) ) continue;
+            if ( bpt->zone == BP_ZONE_MMEXT_BANK
+                 && bpt->bp_addr_space == BP_ADDR_SPACE_BANK_OFFSET ) {
+                /* Feature D: match offset v PEHU bance misto CPU adresy.
+                 * Kontrola banky (bank_id/bank_match_mode) zustava na
+                 * bp_zone_is_active_at v breakpoints_enforce (ctx->Address =
+                 * hit_addr). Pokud write nemiri do PEHU banky, offset = -1
+                 * a BP se preskoci. */
+                int32_t off = mmext_pehu_offset_from_addr ( hit_addr );
+                if ( off < 0 ) continue;
+                if ( !bp_match16 ( bpt->addr_match_mode, (uint16_t) off,
+                                    bpt->addr, end, bpt->addr_mask ) ) continue;
+            } else {
+                if ( !bp_match16 ( bpt->addr_match_mode, hit_addr,
+                                    bpt->addr, end, bpt->addr_mask ) ) continue;
+            }
         } else if ( idx == BPTMAP_IDX_IORQ_R || idx == BPTMAP_IDX_IORQ_W ) {
             /* V1.5.A7 - port mode rozhoduje šířku porovnání:
              *   8BIT  = jen low byte (IN A,(n) / OUT (n),A pattern, B

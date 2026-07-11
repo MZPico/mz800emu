@@ -75,6 +75,33 @@ TSTATES pokud je per-instance toggle ON).
 Splitter mezi historií a dolní tabulkou je drag-resizable (poměr se
 pamatuje v rámci session).
 
+### Režim zaznamenávání (CPU Instruction History)
+
+Kdy se ring buffer historie plní, řídí volba `CPU Instruction History`
+(submenu s radiobuttony v menu debug okna). Má čtyři režimy:
+
+| Režim | Kdy se historie nahrává |
+|-------|-------------------------|
+| `Off` | Nikdy - historie se nezaznamenává (žádná režie). |
+| `Only With Debug Window` | Jen když je debug okno otevřené. |
+| `With Debug Window or Breakpoints` (default) | Když je debug okno otevřené **nebo** je aspoň jeden breakpoint enabled. |
+| `Always` | Trvale, nezávisle na stavu okna i breakpointů. |
+
+Režim `With Debug Window or Breakpoints` je **nově výchozí** (dříve byl
+default `Only With Debug Window`). Důvod: historie je pak k dispozici
+i bez otevřeného okna v okamžiku, kdy breakpoint zastaví běh - lze se
+podívat na posledních 32 instrukcí, které zásahu předcházely. `Off` se
+respektuje i při enabled breakpointech (= explicitní vypnutí historie).
+
+**Persistence:** ini modul `DEBUGGER`, klíč `cpuhist_mode` (KEYWORD),
+hodnoty `OFF` / `WITH_WINDOW` / `WITH_WINDOW_OR_BP` / `ALWAYS`, default
+`WITH_WINDOW_OR_BP`.
+
+Pozn.: Toto je informativní instrukční historie (32 posledních
+instrukcí). Pro plnohodnotné tracking logy s časovými razítky a dumpem
+paměti viz subsystém cputrack (Debugger Settings -> Trace Suite),
+popsaný v [formats/CPU-track_format.md](formats/CPU-track_format.md).
+
 ## Dolní tabulka - DISASSEMBLY
 
 Hlavní pracovní oblast. Render disassemblovaných instrukcí od
@@ -386,6 +413,7 @@ Modul `DEBUGGER`:
 | `disasm_extra<N>_focus` | uint16 | 0 | Sekundární okno N (2..5) focus |
 | `disasm_extra<N>_follow_pc` | bool | false | Sekundární okno N Follow PC |
 | `disasm_extra<N>_show_tstates` | bool | false | Sekundární okno N T-states |
+| `cpuhist_mode` | KEYWORD | `WITH_WINDOW_OR_BP` | Kdy plnit ring buffer historie (viz Horní tabulka - HISTORIE) |
 
 Layout (pozice / velikost / split ratio) řeší ImGui samostatně přes
 `imgui.ini`.

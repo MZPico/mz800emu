@@ -1418,6 +1418,7 @@ Args:
   `"edge_triggered"`, `"addr_match_mode"`, `"addr_mask"`,
   `"port_match_mode"`, `"port_end"`, `"port_mask"`, `"port_mode"`,
   `"bank_match_mode"`, `"bank_id_end"`, `"bank_id_mask"`,
+  `"bp_addr_space"`,
   `"sp_mode"`, `"sp_upper"`, `"im2_vector_filter"`,
   `"im2_vector_match_mode"`, `"im2_vector_addr_end"`,
   `"im2_vector_mask"`, `"im2_isr_filter"`,

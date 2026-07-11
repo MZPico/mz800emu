@@ -100,6 +100,7 @@ serializují (= konzistentní schema).
   "bank_id_end": 0,
   "bank_match_mode": "SINGLE",
   "bank_id_mask": 255,
+  "bp_addr_space": "cpu_view",
   "port": 0,
   "port_end": 0,
   "port_match_mode": "SINGLE",
@@ -172,6 +173,7 @@ serializují (= konzistentní schema).
 | `bank_id_end` | int (uint8) | 0 | RANGE upper pro bank. |
 | `bank_match_mode` | string | `"SINGLE"` | SINGLE / RANGE / MASK pro bank. |
 | `bank_id_mask` | int (uint8) | 255 (0xFF) | AND mask pro bank. |
+| `bp_addr_space` | string | `"cpu_view"` | Interpretace `addr` pro MEM_R / MEM_W v zóně MMEXT_BANK (jen PEHU): `cpu_view` = `addr` je Z80 adresa; `bank_offset` = `addr` je offset `0x0000-0x1FFF` v bance. Viz `match-modes.md`. |
 
 ### IORQ pole (IORQ_R, IORQ_W)
 
@@ -304,6 +306,17 @@ BC aliasy (existující `.bpt` soubory se akceptují bez warningu):
 | `RANGE` | rozsah lower..upper |
 | `MASK` | AND mask |
 
+### `bp_addr_space`
+
+Platí jen pro MEM_R / MEM_W v zóně MMEXT_BANK (PEHU). Viz `match-modes.md`.
+
+| String | Význam |
+|--------|--------|
+| `cpu_view` | default - `addr` je Z80 adresa (banking-aware) |
+| `bank_offset` | `addr` je offset `0x0000-0x1FFF` v PEHU bance |
+
+Soubory bez tohoto klíče se načtou s defaultem `cpu_view`.
+
 ### `sp_mode`
 
 | String | Význam |
@@ -432,6 +445,7 @@ a enforce je ignoruje.
   "addr_match_mode": "SINGLE", "addr_mask": 65535,
   "zone": "CPU_VIEW", "bank_id": 0,
   "bank_id_end": 0, "bank_match_mode": "SINGLE", "bank_id_mask": 255,
+  "bp_addr_space": "cpu_view",
   "port": 0, "port_end": 0, "port_match_mode": "SINGLE", "port_mask": 65535, "port_mode": "8BIT",
   "event_name": null, "event_trigger": "rising",
   "sp_threshold": 0, "sp_upper": 0, "sp_mode": "SINGLE",
@@ -457,6 +471,7 @@ PC_EXEC s condition - zastaví na 0x1000 jen pokud A == 0x42.
   "addr_match_mode": "RANGE", "addr_mask": 65535,
   "zone": "CPU_VIEW", "bank_id": 0, "bank_id_end": 0,
   "bank_match_mode": "SINGLE", "bank_id_mask": 255,
+  "bp_addr_space": "cpu_view",
   "port": 0, "port_end": 0, "port_match_mode": "SINGLE", "port_mask": 65535, "port_mode": "8BIT",
   "event_name": null, "event_trigger": "rising",
   "sp_threshold": 0, "sp_upper": 0, "sp_mode": "SINGLE",

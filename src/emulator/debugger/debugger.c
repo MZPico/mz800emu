@@ -321,10 +321,11 @@ void debugger_init ( void ) {
     cfgelement_set_handlers ( elm, (void*) &g_debugger.auto_save_breakpoints, (void*) &g_debugger.auto_save_breakpoints );
 
     /* CPU Instruction History (cpuhist) mode - kdy zaznamenávat instrukční historii. */
-    elm = cfgmodule_register_new_element ( cmod, "cpuhist_mode", CFGENTYPE_KEYWORD, DEBUGGER_CPUHIST_MODE_WITH_WINDOW,
-                                           DEBUGGER_CPUHIST_MODE_WITH_WINDOW, "WITH_WINDOW",
-                                           DEBUGGER_CPUHIST_MODE_ALWAYS,      "ALWAYS",
-                                           DEBUGGER_CPUHIST_MODE_OFF,         "OFF",
+    elm = cfgmodule_register_new_element ( cmod, "cpuhist_mode", CFGENTYPE_KEYWORD, DEBUGGER_CPUHIST_MODE_WITH_WINDOW_OR_BP,
+                                           DEBUGGER_CPUHIST_MODE_WITH_WINDOW,       "WITH_WINDOW",
+                                           DEBUGGER_CPUHIST_MODE_ALWAYS,            "ALWAYS",
+                                           DEBUGGER_CPUHIST_MODE_OFF,               "OFF",
+                                           DEBUGGER_CPUHIST_MODE_WITH_WINDOW_OR_BP, "WITH_WINDOW_OR_BP",
                                            -1 );
     cfgelement_set_handlers ( elm, (void*) &g_debugger.cpuhist_mode, (void*) &g_debugger.cpuhist_mode );
 

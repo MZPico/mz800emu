@@ -30,7 +30,9 @@
 #include "debugger/debugger.h"
 #include "debugger/dbgapi_emu.h"
 #include "debugger/dbgapi_msg.h"
+#include "debugger/bp_zone.h"
 #include "emulator/emulator.h"
+#include "hw-generic/memory/memext.h"
 
 #include <string.h>
 #include <glib.h>
@@ -303,6 +305,131 @@ void test_action_disable_self ( void ) {
 /**
  * MEM_W single-point trigger + ctx Value naplnění.
  */
+/* Fix C: NEED_DEBUG_CALLBACKS musí být true i jen kvůli existenci MEM/IORQ
+ * breakpointu (jinak logging callback není nainstalován a BP tiše nestřílí,
+ * když není otevřené žádné debug okno / recording). */
+void test_need_callbacks_includes_mem_iorq_bp ( void ) {
+    /* Reset: žádný recording aktivní. */
+    g_debugger.cpuhist_mode = DEBUGGER_CPUHIST_MODE_OFF;
+    g_debugger.mhmap_mode = DEBUGGER_MHMAP_MODE_OFF;
+    g_iorqlog_active = 0;
+    g_io_window_tracking_active = 0;
+    g_eventlog_active = 0;
+    memset ( g_bptmap.per_type_active, 0, sizeof ( g_bptmap.per_type_active ) );
+
+    /* Bez callback-dispatchovaného BP: nevyžaduje debug callbacky. */
+    TEST_ASSERT_FALSE ( TEST_DEBUGGER_NEED_DEBUG_CALLBACKS );
+
+    /* Každý ze čtyř callback-dispatchovaných typů musí makro zapnout. */
+    g_bptmap.per_type_active[ BPTMAP_IDX_MEM_W ] = true;
+    TEST_ASSERT_TRUE ( TEST_DEBUGGER_NEED_DEBUG_CALLBACKS );
+    g_bptmap.per_type_active[ BPTMAP_IDX_MEM_W ] = false;
+
+    g_bptmap.per_type_active[ BPTMAP_IDX_MEM_R ] = true;
+    TEST_ASSERT_TRUE ( TEST_DEBUGGER_NEED_DEBUG_CALLBACKS );
+    g_bptmap.per_type_active[ BPTMAP_IDX_MEM_R ] = false;
+
+    g_bptmap.per_type_active[ BPTMAP_IDX_IORQ_R ] = true;
+    TEST_ASSERT_TRUE ( TEST_DEBUGGER_NEED_DEBUG_CALLBACKS );
+    g_bptmap.per_type_active[ BPTMAP_IDX_IORQ_R ] = false;
+
+    g_bptmap.per_type_active[ BPTMAP_IDX_IORQ_W ] = true;
+    TEST_ASSERT_TRUE ( TEST_DEBUGGER_NEED_DEBUG_CALLBACKS );
+    g_bptmap.per_type_active[ BPTMAP_IDX_IORQ_W ] = false;
+}
+
+
+/* Feature D: MEM_W BP v offset módu matchuje offset v PEHU bance bez ohledu
+ * na to, do kterého CPU okna je banka namapovaná. Bank check zůstává na
+ * zone (bp_zone_is_active_at). */
+void test_enforce_mmext_bank_offset ( void ) {
+    /* PEHU: bank 9 na stránce 2 (map[2]=18 dolní, map[3]=19 horní). */
+    g_memext.connection = MEMEXT_CONNECTION_YES;
+    g_memext.type = MEMEXT_TYPE_PEHU;
+    g_memext.map[ 2 ] = 18;
+    g_memext.map[ 3 ] = 19;
+
+    int id = make_bp ( BPT_TYPE_MEM_W, 0x0463 );   /* addr = offset v bance */
+    breakpoints_set_zone ( id, BP_ZONE_MMEXT_BANK );
+    breakpoints_set_bank_id ( id, 9 );
+    st_BPT *bpt = &g_array_index ( g_breakpoints.breakpoints, st_BPT, 0 );
+    bpt->bp_addr_space = BP_ADDR_SPACE_BANK_OFFSET;
+
+    /* Write do bank 9 offset 0x463 (CPU addr 0x2463) -> fire (stop). */
+    g_emulator.paused = false;
+    breakpoints_enforce_mem_w ( 0x2463, 0xAA );
+    TEST_ASSERT_TRUE ( g_emulator.paused );
+
+    /* Jiný offset (CPU 0x2464 = offset 0x464) -> no fire. */
+    g_emulator.paused = false;
+    breakpoints_enforce_mem_w ( 0x2464, 0xAA );
+    TEST_ASSERT_FALSE ( g_emulator.paused );
+
+    /* Správný offset, ale na stránce je teď jiná bank (10) -> no fire. */
+    g_memext.map[ 2 ] = 20;
+    g_memext.map[ 3 ] = 21;
+    g_emulator.paused = false;
+    breakpoints_enforce_mem_w ( 0x2463, 0xAA );
+    TEST_ASSERT_FALSE ( g_emulator.paused );
+}
+
+
+/* Bug B / Divnost 2: MEM_W (a jakýkoliv non-PC_EXEC) BP NESMÍ vystřelit na
+ * EXEC své adresy. Repro create-with-init flow: PC_EXEC default -> set_type
+ * MEM_W -> set_addr. set_addr dřív bezpodmínečně přidal BP do bpmap[] (jako
+ * PC_EXEC), takže exec na té adrese ho spustil přes enforce_pc_exec. */
+/* CPU historie v režimu WITH_WINDOW_OR_BP: k dispozici když je okno otevřené
+ * NEBO je aspoň jeden BP enabled. Režim WITH_WINDOW na BP nereaguje. OFF se
+ * respektuje. */
+void test_cpuhist_active_when_enabled_bp ( void ) {
+    g_debugger.active = 0;   /* okno zavřené -> TEST_DEBUGGER_ACTIVE false */
+
+    /* WITH_WINDOW_OR_BP, bez BP: neaktivní. */
+    g_debugger.cpuhist_mode = DEBUGGER_CPUHIST_MODE_WITH_WINDOW_OR_BP;
+    breakpoints_clear_all ( );
+    breakpoints_sync_bptmap ( );
+    TEST_ASSERT_FALSE ( TEST_DEBUGGER_CPUHIST_ACTIVE );
+
+    /* WITH_WINDOW_OR_BP, s enabled BP: aktivní i bez okna. */
+    int id = breakpoints_add ( 0x4000, "T", -1 );
+    breakpoints_sync_bptmap ( );
+    TEST_ASSERT_TRUE ( TEST_DEBUGGER_CPUHIST_ACTIVE );
+
+    /* Režim WITH_WINDOW se stejným enabled BP: NEaktivní (BP nereaguje). */
+    g_debugger.cpuhist_mode = DEBUGGER_CPUHIST_MODE_WITH_WINDOW;
+    TEST_ASSERT_FALSE ( TEST_DEBUGGER_CPUHIST_ACTIVE );
+
+    /* Zpět WITH_WINDOW_OR_BP, disabled BP: neaktivní. */
+    g_debugger.cpuhist_mode = DEBUGGER_CPUHIST_MODE_WITH_WINDOW_OR_BP;
+    breakpoints_set_enabled ( id, false );
+    breakpoints_sync_bptmap ( );
+    TEST_ASSERT_FALSE ( TEST_DEBUGGER_CPUHIST_ACTIVE );
+
+    /* OFF + enabled BP: respektuj OFF (BP historii nepřebíjí). */
+    breakpoints_set_enabled ( id, true );
+    breakpoints_sync_bptmap ( );
+    g_debugger.cpuhist_mode = DEBUGGER_CPUHIST_MODE_OFF;
+    TEST_ASSERT_FALSE ( TEST_DEBUGGER_CPUHIST_ACTIVE );
+}
+
+
+void test_mem_w_bp_does_not_fire_on_exec ( void ) {
+    int id = breakpoints_add ( 0x4000, "T", -1 );  /* PC_EXEC -> bpmap[0x4000] */
+    breakpoints_set_type ( id, BPT_TYPE_MEM_W );    /* resync -> bpmap cleared */
+    breakpoints_set_addr ( id, 0x4000 );            /* nesmí znovu zapsat bpmap[] */
+
+    /* Exec na 0x4000 NESMÍ spustit MEM_W BP. */
+    g_emulator.paused = false;
+    breakpoints_enforce_pc_exec ( 0x4000 );
+    TEST_ASSERT_FALSE ( g_emulator.paused );
+
+    /* Ale zápis na 0x4000 spustit MUSÍ (BP funguje). */
+    g_emulator.paused = false;
+    breakpoints_enforce_mem_w ( 0x4000, 0x11 );
+    TEST_ASSERT_TRUE ( g_emulator.paused );
+}
+
+
 void test_mem_w_single_point ( void ) {
     int id = make_bp ( BPT_TYPE_MEM_W, 0x4000 );
     breakpoints_set_action ( id, "$last_v = Value" );
@@ -1337,8 +1464,16 @@ int main ( int argc, char *argv[] ) {
     RUN_TEST ( test_action_continue );
     RUN_TEST ( test_action_disable_self );
 
+    /* Fix C - callback gating */
+    RUN_TEST ( test_need_callbacks_includes_mem_iorq_bp );
+
+    /* CPU history gating */
+    RUN_TEST ( test_cpuhist_active_when_enabled_bp );
+
     /* MEM_R/W */
+    RUN_TEST ( test_mem_w_bp_does_not_fire_on_exec );
     RUN_TEST ( test_mem_w_single_point );
+    RUN_TEST ( test_enforce_mmext_bank_offset );
     RUN_TEST ( test_mem_r_range );
     RUN_TEST ( test_mem_r_multi_bp );
 

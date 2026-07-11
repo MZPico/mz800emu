@@ -183,6 +183,33 @@ The BP fires only if:
 The Bank Match Mode (separate from the addr Match Mode) can cover a
 group of banks (RANGE/MASK on bank).
 
+## Address as (MMEXT_BANK MEM_R / MEM_W)
+
+For a MEM_R / MEM_W breakpoint in the `MMEXT_BANK` zone there is an
+additional per-BP `Address as` choice that decides how the `Address`
+field is interpreted:
+
+| Address as | Address field | When the BP fires |
+|------------|---------------|-------------------|
+| `CPU view` (default) | Z80 address `0x0000-0xFFFF` | on a read/write to that CPU address while the bank is currently mapped into the CPU window (= the previous behavior) |
+| `Bank offset` | offset `0x0000-0x1FFF` within the PEHU bank | on a read/write to the pair `(bank_id, offset)` regardless of which CPU window the bank is currently mapped into |
+
+- The choice is available **only for the `MMEXT_BANK` zone and only for
+  the PEHU memext** (8 KB bank, offset `0x0000-0x1FFF`).
+- In the Edit BP dialog, when `Zone = MMEXT_BANK`, a dropdown
+  `Address as: CPU view | Bank offset` appears. When `Bank offset` is
+  selected the `Address:` row is renamed to `Offset:`.
+- **The Match Mode (SINGLE / RANGE / MASK) works in both modes.** In
+  `Bank offset` mode the Match Mode is applied to the offset
+  (`0x0000-0x1FFF`) instead of the CPU address.
+
+Difference: `Bank offset` tracks the physical bank across remapping - it
+catches a write to `(bank_id, offset)` in whichever CPU window the bank
+is currently mapped into (even if that window changes between writes).
+`CPU view` in contrast is a banking-aware view of one specific CPU
+address. A write only reaches the bank while it is mapped somewhere - an
+unmapped bank is not hit by a CPU write in either mode.
+
 ## Interaction with the Condition expression
 
 The match mode is evaluated **BEFORE** the condition expression. If

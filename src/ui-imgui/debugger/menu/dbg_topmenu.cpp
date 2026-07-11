@@ -337,6 +337,7 @@ static void dbg_menu_settings(void)
         {
             bool tl_off         = (g_debugger.cpuhist_mode == DEBUGGER_CPUHIST_MODE_OFF);
             bool tl_with_window = (g_debugger.cpuhist_mode == DEBUGGER_CPUHIST_MODE_WITH_WINDOW);
+            bool tl_window_or_bp = (g_debugger.cpuhist_mode == DEBUGGER_CPUHIST_MODE_WITH_WINDOW_OR_BP);
             bool tl_always      = (g_debugger.cpuhist_mode == DEBUGGER_CPUHIST_MODE_ALWAYS);
 
             if (ImGui::MenuItem(_L("Off"), NULL, tl_off))
@@ -348,6 +349,12 @@ static void dbg_menu_settings(void)
             if (ImGui::MenuItem(_L("Only With Debug Window"), NULL, tl_with_window))
             {
                 g_debugger.cpuhist_mode = DEBUGGER_CPUHIST_MODE_WITH_WINDOW;
+                dbg_ui_debugger_state_recompute();
+            };
+
+            if (ImGui::MenuItem(_L("With Debug Window or Breakpoints"), NULL, tl_window_or_bp))
+            {
+                g_debugger.cpuhist_mode = DEBUGGER_CPUHIST_MODE_WITH_WINDOW_OR_BP;
                 dbg_ui_debugger_state_recompute();
             };
 

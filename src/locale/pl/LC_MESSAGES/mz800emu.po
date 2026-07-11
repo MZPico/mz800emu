@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-26 16:53+0200\n"
+"POT-Creation-Date: 2026-07-11 12:48+0200\n"
 "PO-Revision-Date: 2026-03-11 22:00+0100\n"
 "Last-Translator: Claude Code\n"
 "Language-Team: Polski\n"
@@ -963,22 +963,22 @@ msgstr "CPU / Punkt"
 msgid "Other"
 msgstr "Inne"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1153
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1164
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1158
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1169
 msgid "(root)"
 msgstr "(korzeń)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1365
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1370
 #: src/ui-imgui/debugger/watch/watch_window.cpp:497
 #: src/ui-imgui/memext/memext_save_dialog.cpp:131
 msgid "Type:"
 msgstr "Typ:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1404
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1409
 msgid "Zone:"
 msgstr "Strefa:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1431
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1436
 msgid ""
 "Banking-aware filter. CPU view = whatever PC sees now. Specific zone = only "
 "when the bank is paged in."
@@ -986,17 +986,15 @@ msgstr ""
 "Filtr uwzględniający banking. widok CPU = to, to, co PC widzi teraz. "
 "Konkretna strefa = pouze kdyż je bank aktywnie mapowana."
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1437
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1442
 msgid "Bank ID (hex):"
 msgstr "ID banku (hex):"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1448
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1514
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1598
-msgid "Match Mode:"
-msgstr "Tryb dopasowania:"
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1453
+msgid "Bank Match Mode:"
+msgstr "Tryb dopasowania banku:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1450
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1455
 msgid ""
 "Single = trigger on exact bank ID (default).\n"
 "Range  = trigger when active bank within [Bank ID..End Bank].\n"
@@ -1010,26 +1008,26 @@ msgstr ""
 "         Użyteczne dla porównanie vice banków nakładkowych najednou.\n"
 "Reference: docs/cz/debugger/breakpoints/match-modes.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1460
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1465
 msgid "End Bank:"
 msgstr "Końcowy bank:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1469
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1536
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1619
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1474
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1578
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1661
 msgid ""
 "Upper bound for RANGE match (inclusive). Active only when Match Mode = Range."
 msgstr ""
 "Górna granica pro RANGE porównanie (vczetne). Aktivni pouze kdyż Match Mode "
 "= Range."
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1475
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1543
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1625
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1480
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1585
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1667
 msgid "Mask:"
 msgstr "Maska:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1484
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1489
 msgid ""
 "AND mask for MASK match. Example: Bank=0x08, Mask=0x18 triggers on banks 8, "
 "9, 10, 11 (= 0x08..0x0B with high bits cleared).\n"
@@ -1040,13 +1038,47 @@ msgstr ""
 "Reference: docs/cz/debugger/breakpoints/match-modes.md"
 
 #: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1497
+msgid "Address as:"
+msgstr "Adres jako:"
+
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1503
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1513
+msgid "Bank offset"
+msgstr "Offset banku"
+
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1503
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1506
+msgid "CPU view"
+msgstr "Widok CPU"
+
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1522
+msgid ""
+"CPU view = Address is a Z80 address (0000-FFFF).\n"
+"Bank offset = Address is an offset within the PEHU bank (0000-1FFF), matched "
+"wherever the bank is mapped.\n"
+"PEHU memext only."
+msgstr ""
+"Widok CPU = Adres jest adresem Z80 (0000-FFFF).\n"
+"Offset banku = Adres jest offsetem w obrębie banku PEHU (0000-1FFF), dopasowywanym wszędzie tam, gdzie bank jest zmapowany.\n"
+"Tylko PEHU memext."
+
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1537
+#: src/ui-imgui/memext/memext_load_dialog.cpp:128
+msgid "Offset:"
+msgstr "Offset:"
+
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1537
 #: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1641
 #: src/ui-imgui/debugger/sections/dbg_focus_to.cpp:211
 #: src/ui-imgui/debugger/watch/watch_window.cpp:464
 msgid "Address:"
 msgstr "Adres:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1505
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1546
+msgid "Offset within the PEHU bank (0000-1FFF)."
+msgstr "Offset w obrębie banku PEHU (0000-1FFF)."
+
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1547
 msgid ""
 "CPU address for PC_EXEC, memory address for MEM_R/W. For MEM range use End "
 "Addr below as well."
@@ -1054,7 +1086,12 @@ msgstr ""
 "CPU adresa pro PC_EXEC, adresa pamięci pro MEM_R/W. Pro MEM zakres użyj i "
 "End Addr niże."
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1516
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1556
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1640
+msgid "Match Mode:"
+msgstr "Tryb dopasowania:"
+
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1558
 msgid ""
 "Single = trigger only on exact value (default V1 behavior).\n"
 "Range  = trigger when value is within [Address..End Addr] inclusive.\n"
@@ -1069,11 +1106,11 @@ msgstr ""
 "         Użyteczne dla grupy adres sdilejicich bitovy wzór.\n"
 "Reference: docs/cz/debugger/breakpoints/match-modes.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1527
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1569
 msgid "End Addr:"
 msgstr "Końcowy adres:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1552
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1594
 msgid ""
 "AND mask for MASK match. Trigger when (value & Mask) == (Address & Mask). "
 "Example: Address=0x0042, Mask=0x00FF triggers on any address with low byte "
@@ -1089,11 +1126,11 @@ msgstr ""
 "na ref adresu) - pro pełne wsparcie masky użyj MEM_R/W.\n"
 "Reference: docs/cz/debugger/breakpoints/match-modes.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1568
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1610
 msgid "Port Mode:"
 msgstr "Tryb portu:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1570
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1612
 msgid ""
 "Port Mode:\n"
 "  8-bit  = IN A,(n) / OUT (n),A pattern (port literal 0..0xFF, B register on "
@@ -1113,11 +1150,11 @@ msgstr ""
 "hardware, ktery dekóduje B jako souczast adresy portu.\n"
 "Reference: docs/cz/debugger/breakpoints/match-modes.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1584
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1626
 msgid "Port:"
 msgstr "Port:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1592
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1634
 msgid ""
 "Z80 I/O port value. Width follows Port Mode (8-bit = 0..0xFF, 16-bit = "
 "0..0xFFFF where B = high, C = low byte). In 8-bit mode upper byte of input "
@@ -1127,7 +1164,7 @@ msgstr ""
 "= 0..0xFFFF, kde B = horni, C = dolny bajt). V 8-bit reżimu je górny bajt "
 "vstupu w czasie wykonywania ignorovan."
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1600
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1642
 msgid ""
 "Single = trigger on exact port (default).\n"
 "Range  = trigger when port within [Port..End Port].\n"
@@ -1141,11 +1178,11 @@ msgstr ""
 "         Użyteczne dla porównanie grup I/O portu (naprz. 0xCC..0xCF).\n"
 "Reference: docs/cz/debugger/breakpoints/match-modes.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1610
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1652
 msgid "End Port:"
 msgstr "Końcowy port:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1634
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1676
 msgid ""
 "AND mask for MASK match. Example: Port=0xCC, Mask=0xFC triggers on 0xCC, "
 "0xCD, 0xCE, 0xCF.\n"
@@ -1155,15 +1192,15 @@ msgstr ""
 "0xCC, 0xCD, 0xCE, 0xCF.\n"
 "Reference: docs/cz/debugger/breakpoints/match-modes.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1643
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1685
 msgid "Event:"
 msgstr "Zdarzenie:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1649
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1691
 msgid "(select event)"
 msgstr "(wybierz zdarzenie)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1654
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1696
 #: src/ui-imgui/debugger/ctc_window.cpp:356
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1947
 #: src/ui-imgui/debugger/pioz80_window.cpp:424
@@ -1173,7 +1210,7 @@ msgstr "(wybierz zdarzenie)"
 msgid "(none)"
 msgstr "(brak)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1707
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1749
 msgid ""
 "Hardware event to monitor. Categorized:\n"
 "  Signal - 0/1 line with trigger condition (Low/High/Rising/Falling/"
@@ -1189,11 +1226,11 @@ msgstr ""
 "  Point  - parametrizovana (raster:N) nebo jednorazova (CPU udalosti)\n"
 "Reference: docs/cz/debugger/breakpoints/hw-events.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1717
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1759
 msgid "Trigger:"
 msgstr "Wyzwalacz:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1756
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1798
 msgid ""
 "Trigger condition (only for Signal events):\n"
 "  0 (Low)   - fires while signal level is low\n"
@@ -1213,24 +1250,24 @@ msgstr ""
 "Domyślny Rising zachovawa puvodni chovani 'fire-on-event'.\n"
 "Reference: docs/cz/debugger/breakpoints/hw-events.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1771
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1813
 msgid "Param:"
 msgstr "Parametr:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1786
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1828
 #, c-format
 msgid "(scanline 0..%u)"
 msgstr "(scanline 0..%u)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1798
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1840
 msgid "Lower bound:"
 msgstr "Dolna granica:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1798
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1840
 msgid "SP Threshold:"
 msgstr "Próg SP:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1808
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1850
 msgid ""
 "SINGLE: SP value to cross down (stack overflow detect).\n"
 "WINDOW: Lower bound of allowed SP range."
@@ -1239,14 +1276,14 @@ msgstr ""
 "przepełnienia stosu).\n"
 "WINDOW: Dolna granica povolenego zakresie SP."
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1812
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2383
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1854
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2425
 #: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:664
 #: src/ui-imgui/debugger/watch/watch_window.cpp:443
 msgid "Mode:"
 msgstr "Tryb:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1814
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1856
 msgid ""
 "Single = trigger when SP descends through SP Threshold (stack overflow "
 "detect, default V1).\n"
@@ -1260,11 +1297,11 @@ msgstr ""
 "poszkozeni stosu / przełączenie między zadaniami).\n"
 "Reference: docs/cz/debugger/breakpoints/match-modes.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1824
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1866
 msgid "Upper bound:"
 msgstr "Górna granica:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1833
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1875
 msgid ""
 "Upper SP value of the allowed window. Lower = SP Threshold. Trigger fires on "
 "transition from inside [Lower..Upper] to outside. Edge-triggered: pre-"
@@ -1276,27 +1313,27 @@ msgstr ""
 "okno przy starcie nespamuje - czeka na przechod.\n"
 "Reference: docs/cz/debugger/breakpoints/match-modes.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1859
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1901
 msgid "IRQ - CPU acknowledged INT (post-dispatch)"
 msgstr "IRQ - INT potwierdzony przez CPU (po dispatchu)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1863
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1905
 msgid "IM modes:"
 msgstr "Tryby IM:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1866
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1908
 msgid "IM 0##bpt_irq_im0_en"
 msgstr "IM 0##bpt_irq_im0_en"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1870
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1912
 msgid "IM 1##bpt_irq_im1_en"
 msgstr "IM 1##bpt_irq_im1_en"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1874
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1916
 msgid "IM 2##bpt_irq_im2_en"
 msgstr "IM 2##bpt_irq_im2_en"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1878
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1920
 msgid ""
 "Choose Z80 interrupt modes to monitor. At least one must be selected. BP "
 "fires only when CPU dispatches in an enabled mode. Each enabled IM mode "
@@ -1308,11 +1345,11 @@ msgstr ""
 "povoleny IM reżim odkryva vlastni sekci podfiltru niże.\n"
 "Reference: docs/cz/debugger/breakpoints/irq-filter.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1892
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1934
 msgid "IM 0 RST filter (none = match all):"
 msgstr "Filtr IM 0 RST (brak = porównaj wszystko):"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1894
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1936
 msgid ""
 "Filter triggers by RST opcode pushed on the bus during IM 0 dispatch. Empty "
 "(no checkbox set) = match all RSTs (legacy V1 behavior). Mask bit i matches "
@@ -1324,11 +1361,11 @@ msgstr ""
 "V1). Bit i maski odpowiada RST opcode (0xC7 + i*8).\n"
 "Reference: docs/cz/debugger/breakpoints/irq-filter.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1953
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1995
 msgid "IM 1 always dispatches RST 38h (no extra filter)"
 msgstr "IM 1 zawsze dispatchuje RST 38h (brak dalszi filtr)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1955
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1997
 msgid ""
 "In IM 1 the Z80 always dispatches via RST 38h. There are no per-vector or "
 "per-source sub-filters available - if IM 1 is enabled, every IM 1 dispatch "
@@ -1340,15 +1377,15 @@ msgstr ""
 "wyzwoli BP (s ohledem na ostatni zasady BP - condition, hits, skip).\n"
 "Reference: docs/cz/debugger/breakpoints/irq-filter.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1971
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2013
 msgid "IM 2 sub-filters:"
 msgstr "Podfiltry IM 2:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1978
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2020
 msgid "Filter by IM2 vector address##bpt_irq_vec_en"
 msgstr "Filtrovat podle adresy IM2 wektora##bpt_irq_vec_en"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1981
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2023
 msgid ""
 "Filter triggers only when CPU dispatches IM2 INT through this exact vector "
 "slot. Vector address is computed as (I register << 8) | (low byte from "
@@ -1363,15 +1400,15 @@ msgstr ""
 "ignorovan.\n"
 "Reference: docs/cz/debugger/breakpoints/irq-filter.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1993
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2035
 msgid "IM2 Vector:"
 msgstr "IM2 wektor:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2009
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2051
 msgid "Vector Match Mode:"
 msgstr "Tryb dopasowania wektora:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2012
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2054
 msgid ""
 "Single = trigger on exact vector address (default V1.5).\n"
 "Range  = trigger when vector within [Vector..End] inclusive.\n"
@@ -1389,11 +1426,11 @@ msgstr ""
 "i runtime wektor przed porównaniem.\n"
 "Reference: docs/cz/debugger/breakpoints/irq-filter.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2024
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2066
 msgid "Vector End:"
 msgstr "Koniec wektora:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2034
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2076
 msgid ""
 "Upper bound for RANGE match (inclusive). Active only when Vector Match Mode "
 "= Range."
@@ -1401,11 +1438,11 @@ msgstr ""
 "Górna granica pro RANGE porównanie (vczetne). Aktivni pouze kdyż Vector "
 "Match Mode = Range."
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2040
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2082
 msgid "Vector Mask:"
 msgstr "Maska wektora:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2050
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2092
 msgid ""
 "AND mask for MASK match. Trigger when (vector & Mask) == (Vector & Mask). "
 "Default 0xFFFF = identical to Single mode. Example: Vector=0xFE10, "
@@ -1416,11 +1453,11 @@ msgstr ""
 "Vector=0xFE10, Mask=0xFFE0 spouszti na libovolnem wektora v zakresie slotu "
 "strony 0xFE00..0xFE1F."
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2063
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2105
 msgid "Filter by IM2 ISR address##bpt_irq_isr_en"
 msgstr "Filtrovat podle adresy IM2 ISR##bpt_irq_isr_en"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2066
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2108
 msgid ""
 "Filter triggers only when CPU jumps to this ISR after IM2 dispatch. ISR "
 "address is read by CPU from the IM2 vector table during dispatch.\n"
@@ -1430,15 +1467,15 @@ msgstr ""
 "Adres ISR czytany przez CPU z tabeli wektorów IM2 podczas dispatchu.\n"
 "Reference: docs/cz/debugger/breakpoints/irq-filter.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2072
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2114
 msgid "IM2 ISR:"
 msgstr "IM2 ISR:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2086
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2128
 msgid "ISR Match Mode:"
 msgstr "Tryb dopasowania ISR:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2089
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2131
 msgid ""
 "Single = trigger on exact ISR address (default V1.5).\n"
 "Range  = trigger when ISR within [ISR..End] inclusive.\n"
@@ -1452,11 +1489,11 @@ msgstr ""
 "         Użyteczne dla porównanie obszarów pamięci ISR.\n"
 "Reference: docs/cz/debugger/breakpoints/irq-filter.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2099
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2141
 msgid "ISR End:"
 msgstr "Koniec ISR:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2109
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2151
 msgid ""
 "Upper bound for RANGE match (inclusive). Active only when ISR Match Mode = "
 "Range."
@@ -1464,11 +1501,11 @@ msgstr ""
 "Górna granica pro RANGE porównanie (vczetne). Aktivni pouze kdyż ISR Match "
 "Mode = Range."
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2115
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2157
 msgid "ISR Mask:"
 msgstr "Maska ISR:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2125
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2167
 msgid ""
 "AND mask for MASK match. Trigger when (isr & Mask) == (ISR & Mask). Default "
 "0xFFFF = identical to Single mode."
@@ -1476,19 +1513,19 @@ msgstr ""
 "maska AND pro MASK porównanie. Spusti se, kdyż (isr & Mask) == (ISR & Mask). "
 "Domyślny 0xFFFF = identicke se Single reżimem."
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2146
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2188
 msgid "IRQ_SIG - peripheral INT line raise (pre-dispatch)"
 msgstr "IRQ_SIG - podniesienie linii INT peryferii (przed dispatchem)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2150
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2192
 msgid "Sources:"
 msgstr "Źródła:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2154
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2196
 msgid "(at least one required, OR semantics)"
 msgstr "(co najmniej jeden wymagany, semantyka OR)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2156
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2198
 msgid ""
 "Choose peripheral INT line sources to monitor (pre-dispatch). PIOZ80 PORT_A/"
 "B = Z80 PIO chip interrupts. CTC2 = CTC channel 2 (timer/counter). FDC = "
@@ -1504,37 +1541,37 @@ msgstr ""
 "JAKYKOLI vybrany źródło zvedne (OR semantika).\n"
 "Reference: docs/cz/debugger/breakpoints/irq-sig.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2224
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2266
 msgid "Global BP - fires when condition is true (per-instruction probe)"
 msgstr ""
 "Globalny BP - wyzwala, gdy warunek jest prawdziwy (sonda na każdej "
 "instrukcji)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2243
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2285
 msgid "Group:"
 msgstr "Grupa:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2247
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2289
 msgid "Tree organization. Drag-drop in BP list = move between groups."
 msgstr ""
 "Organizacja drzewa. Drag-drop na liście BP = przeniesienie między grupami."
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2250
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2292
 msgid "Auto-generated name##bpt_panel"
 msgstr "Automatycznie wygenerowana nazwa##bpt_panel"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2253
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2603
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2295
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2645
 #: src/ui-imgui/debugger/vars/vars_window.cpp:808
 #: src/ui-imgui/debugger/watch/watch_window.cpp:487
 msgid "Name:"
 msgstr "Nazwa:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2303
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2345
 msgid "Condition (expression):"
 msgstr "Warunek (wyrażenie):"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2304
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2346
 msgid ""
 "Expression evaluated BEFORE the trigger. Returns zero = BP does not fire. "
 "Reference: docs/cz/debugger/breakpoints/expression-syntax.md"
@@ -1542,11 +1579,11 @@ msgstr ""
 "Wyrażenie obliczane PRZED wyzwoleniem. Zwraca zero = BP się nie wyzwala. "
 "Referencja: docs/cz/debugger/breakpoints/expression-syntax.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2324
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2366
 msgid "Edge-triggered##bpt_edge"
 msgstr "Wyzwalane zboczem##bpt_edge"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2327
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2369
 msgid ""
 "Trigger only on false->true transition (= for state machines and global "
 "conditions where level-trigger would spam)."
@@ -1554,23 +1591,23 @@ msgstr ""
 "Wyzwalaj tylko na przejściu false->true (= dla automatów stanowych i "
 "globalnych warunków, gdzie level-trigger by spamował)."
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2335
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2377
 msgid "Hit count:"
 msgstr "Liczba trafień:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2346
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2388
 msgid "Fire on Nth pass (0 = every hit)."
 msgstr "Wyzwól przy N-tym przejściu (0 = każde trafienie)."
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2349
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2391
 msgid "Skip count:"
 msgstr "Liczba pominięć:"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2360
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2402
 msgid "Ignore first N passes, then start counting hit count."
 msgstr "Ignoruj pierwsze N przejść, potem zacznij liczyć liczbę trafień."
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2401
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2443
 msgid ""
 "Reaction AFTER the trigger:\n"
 "  Stop = classic BP, halts the emulator\n"
@@ -1584,115 +1621,115 @@ msgstr ""
 "  Custom = pełny skrypt mini-DSL\n"
 "Referencja: docs/cz/debugger/breakpoints/action-dsl.md"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2432
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2474
 msgid "(action empty - BP halts the emulator)"
 msgstr "(akcja pusta - BP zatrzymuje emulator)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2475
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2517
 msgid "Test Eval##bpt_panel"
 msgstr "Test ewaluacji##bpt_panel"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2534
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2576
 msgid "Enabled##bpt_panel_top"
 msgstr "Włączone##bpt_panel_top"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2545
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2587
 #, c-format
 msgid "Hits: %llu events"
 msgstr "Trafienia: %llu zdarzeń"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2555
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2597
 msgid "Reset###bpt_hits"
 msgstr "Reset###bpt_hits"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2566
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2608
 msgid "BP Options"
 msgstr "Opcje BP"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2571
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2613
 msgid "Name / Parent"
 msgstr "Nazwa / Rodzic"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2576
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2618
 msgid "Trigger logic"
 msgstr "Logika wyzwalania"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2581
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2623
 msgid "Action on trigger"
 msgstr "Akcja przy wyzwoleniu"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2586
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2628
 msgid "Live Eval Test (optional)"
 msgstr "Test ewaluacji na żywo (opcjonalne)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2599
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2641
 msgid "Enabled (cascade)##bpt_grp_panel"
 msgstr "Włączone (kaskadowo)##bpt_grp_panel"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2628
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2670
 #, c-format
 msgid "Children: %d BP (%d enabled)"
 msgstr "Potomków: %d BP (%d włączonych)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2644
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2648
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2686
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2690
 msgid "Discard changes?##bpt_discard"
 msgstr "Zahodit zmeny?##bpt_discard"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2651
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2693
 msgid "Editor has unsaved changes. Discard them?"
 msgstr "Edytor ma niezapisane zmiany. Odrzucić je?"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2653
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2695
 msgid "Discard##bpt_disc"
 msgstr "Odrzuć##bpt_disc"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2663
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2705
 msgid "Cancel##bpt_disc"
 msgstr "Anuluj##bpt_disc"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2671
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2675
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2713
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2717
 msgid "Discard and close?##bpt_close"
 msgstr "Zahodit a zavrzit?##bpt_close"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2678
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2720
 msgid "Editor has unsaved changes. Close anyway?"
 msgstr "Edytor ma niezapisane zmiany. Zamknąć mimo to?"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2680
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2722
 msgid "Close##bpt_clo"
 msgstr "Zamknij##bpt_clo"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2687
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2729
 msgid "Cancel##bpt_clo"
 msgstr "Anuluj##bpt_clo"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2732
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2774
 msgid "Edit Group"
 msgstr "Edytuj grupę"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2737
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2779
 msgid "New Group"
 msgstr "Nowa grupa"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2791
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2833
 msgid "Edit BP"
 msgstr "Edytuj BP"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2796
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2838
 msgid "New BP"
 msgstr "Nowy BP"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2848
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2890
 msgid "Cancel##bpt_panel_btn"
 msgstr "Anuluj##bpt_panel_btn"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:3005
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:3047
 msgid "OK##bpt_panel_btn"
 msgstr "OK##bpt_panel_btn"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:3019
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:3061
 msgid "(check ranges: end >= start)"
 msgstr "(sprawdź zakresy: end >= start)"
 
@@ -5981,41 +6018,43 @@ msgstr "Chunk [MB]"
 msgid ""
 "RAM buffer size per chunk in MB before it is flushed to disk. Takes effect "
 "when recording (re)starts."
-msgstr "Rozmiar bufora RAM na fragment w MB przed zrzuceniem na dysk. Działa po (ponownym) uruchomieniu nagrywania."
+msgstr ""
+"Rozmiar bufora RAM na fragment w MB przed zrzuceniem na dysk. Działa po "
+"(ponownym) uruchomieniu nagrywania."
 
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:281
 msgid "Select trace output directory"
 msgstr "Wybierz katalog wyjściowy trace"
 
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:301
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:342
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:379
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:475
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:343
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:386
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:482
 msgid "Off"
 msgstr "Wył"
 
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:303
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:348
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:384
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:479
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:349
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:391
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:486
 msgid "Only With Debug Window"
 msgstr "Tylko z oknem DBG"
 
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:305
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:354
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:389
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:483
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:361
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:396
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:490
 msgid "Always"
 msgstr "Zawsze"
 
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:311
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:492
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:499
 msgid "Save on Exit"
 msgstr "Zapisz przy zamknięciu"
 
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:315
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:415
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:507
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:422
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:514
 msgid "Set directory..."
 msgstr "Ustaw katalog..."
 
@@ -6027,93 +6066,99 @@ msgstr "Ustawienia"
 msgid "CPU Instruction History"
 msgstr "Historia instrukcji CPU"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:373
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:355
+msgid "With Debug Window or Breakpoints"
+msgstr "Z oknem debugowania lub breakpointami"
+
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:380
 msgid "CDL"
 msgstr "CDL"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:397
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:404
 msgid "Export on Exit"
 msgstr "Eksport przy zamknięciu"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:407
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:414
 msgid "Show heatmap window"
 msgstr "Pokaż okno heatmapy"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:426
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:433
 msgid "Select CDL export directory"
 msgstr "Wybierz katalog dla eksportu CDL"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:446
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:453
 msgid "Trace Suite"
 msgstr "Trace Suite"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:453
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:460
 msgid "All channels"
 msgstr "Wszystkie kanały"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:520
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:527
 msgid "CPU Track"
 msgstr "Śledzenie CPU"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:533
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:540
 msgid "PC range filter [lo,hi]:"
 msgstr "Filtr zakresu PC [lo,hi]:"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:539
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:546
 msgid "lo (hex)"
 msgstr "lo (hex)"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:546
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:553
 msgid "hi (hex)"
 msgstr "hi (hex)"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:552
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:559
 msgid "Reset range (whole space)"
 msgstr "Resetuj zakres (cała przestrzeń)"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:558
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:565
 msgid "IORQ Log"
 msgstr "IORQ Log"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:567
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:574
 msgid "Interrupt Log"
 msgstr "Interrupt Log"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:576
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:583
 msgid "HW Log"
 msgstr "HW Log"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:588
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:595
 msgid "Marker Log"
 msgstr "Marker Log"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:597
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:604
 msgid "Print marks to stdout"
 msgstr "Wypisuj znaczniki na stdout"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:601
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:608
 msgid ""
 "Print [BP-MARK] <name> to stdout when a mark fires; independent of the "
 "binary log."
-msgstr "Wypisuje [BP-MARK] <name> na stdout, gdy wyzwoli się znacznik; niezależne od logu binarnego."
+msgstr ""
+"Wypisuje [BP-MARK] <name> na stdout, gdy wyzwoli się znacznik; niezależne od "
+"logu binarnego."
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:619
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:626
 msgid "Disassembled"
 msgstr "Zdezasemblowano"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:630
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:637
 msgid "Show branch arrows"
 msgstr "Pokaż strzałki rozgałęzień"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:639
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:646
 msgid "Screen"
 msgstr "Ekran"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:647
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:654
 msgid "Auto refresh on edit"
 msgstr "Auto odświeżanie przy edycji"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:658
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:665
 msgid "Auto refresh at every CPU step"
 msgstr "Auto odświeżanie przy każdym kroku CPU"
 
@@ -9881,10 +9926,6 @@ msgstr "Rozmiar pliku"
 #: src/ui-imgui/memext/memext_load_dialog.cpp:127
 msgid "File Offset"
 msgstr "Offset w pliku"
-
-#: src/ui-imgui/memext/memext_load_dialog.cpp:128
-msgid "Offset:"
-msgstr "Offset:"
 
 #: src/ui-imgui/memext/memext_load_dialog.cpp:132
 #: src/ui-imgui/memext/memext_save_dialog.cpp:114

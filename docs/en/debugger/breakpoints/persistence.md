@@ -102,6 +102,7 @@ still serialized (= consistent schema).
   "bank_id_end": 0,
   "bank_match_mode": "SINGLE",
   "bank_id_mask": 255,
+  "bp_addr_space": "cpu_view",
   "port": 0,
   "port_end": 0,
   "port_match_mode": "SINGLE",
@@ -174,6 +175,7 @@ still serialized (= consistent schema).
 | `bank_id_end` | int (uint8) | 0 | RANGE upper for bank. |
 | `bank_match_mode` | string | `"SINGLE"` | SINGLE / RANGE / MASK for bank. |
 | `bank_id_mask` | int (uint8) | 255 (0xFF) | AND mask for bank. |
+| `bp_addr_space` | string | `"cpu_view"` | Interpretation of `addr` for MEM_R / MEM_W in the MMEXT_BANK zone (PEHU only): `cpu_view` = `addr` is a Z80 address; `bank_offset` = `addr` is an offset `0x0000-0x1FFF` inside the bank. See `match-modes.md`. |
 
 ### IORQ fields (IORQ_R, IORQ_W)
 
@@ -308,6 +310,18 @@ BC aliases (existing `.bpt` files are accepted without a warning):
 | `RANGE` | range lower..upper |
 | `MASK` | AND mask |
 
+### `bp_addr_space`
+
+Applies only to MEM_R / MEM_W in the MMEXT_BANK zone (PEHU). See
+`match-modes.md`.
+
+| String | Meaning |
+|--------|---------|
+| `cpu_view` | default - `addr` is a Z80 address (banking-aware) |
+| `bank_offset` | `addr` is an offset `0x0000-0x1FFF` inside the PEHU bank |
+
+Files without this key are loaded with the default `cpu_view`.
+
 ### `sp_mode`
 
 | String | Meaning |
@@ -437,6 +451,7 @@ loader tolerates them and enforce ignores them.
   "addr_match_mode": "SINGLE", "addr_mask": 65535,
   "zone": "CPU_VIEW", "bank_id": 0,
   "bank_id_end": 0, "bank_match_mode": "SINGLE", "bank_id_mask": 255,
+  "bp_addr_space": "cpu_view",
   "port": 0, "port_end": 0, "port_match_mode": "SINGLE", "port_mask": 65535, "port_mode": "8BIT",
   "event_name": null, "event_trigger": "rising",
   "sp_threshold": 0, "sp_upper": 0, "sp_mode": "SINGLE",
@@ -462,6 +477,7 @@ PC_EXEC with a condition - stops at 0x1000 only if A == 0x42.
   "addr_match_mode": "RANGE", "addr_mask": 65535,
   "zone": "CPU_VIEW", "bank_id": 0, "bank_id_end": 0,
   "bank_match_mode": "SINGLE", "bank_id_mask": 255,
+  "bp_addr_space": "cpu_view",
   "port": 0, "port_end": 0, "port_match_mode": "SINGLE", "port_mask": 65535, "port_mode": "8BIT",
   "event_name": null, "event_trigger": "rising",
   "sp_threshold": 0, "sp_upper": 0, "sp_mode": "SINGLE",

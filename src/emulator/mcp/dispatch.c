@@ -2443,6 +2443,7 @@ static const st_BP_UM_FIELD_MAP _bp_um_field_map[] = {
     { "bank_match_mode",        DBGAPI_BP_UM_BANK_MATCH_MODE },
     { "bank_id_end",            DBGAPI_BP_UM_BANK_ID_END },
     { "bank_id_mask",           DBGAPI_BP_UM_BANK_ID_MASK },
+    { "bp_addr_space",          DBGAPI_BP_UM_ADDR_SPACE },
     { "sp_mode",                DBGAPI_BP_UM_SP_MODE },
     { "sp_upper",               DBGAPI_BP_UM_SP_UPPER },
     /* IRQ A8 */
@@ -2650,6 +2651,14 @@ static gboolean _conv_bp_port_mode(const char *s, unsigned *out) {
     return TRUE;
 }
 
+/** @brief Thunk pro `bp_addr_space_from_string` (en_BP_ADDR_SPACE, feature D). */
+static gboolean _conv_bp_addr_space(const char *s, unsigned *out) {
+    en_BP_ADDR_SPACE a;
+    if (!bp_addr_space_from_string(s, &a)) return FALSE;
+    *out = (unsigned)a;
+    return TRUE;
+}
+
 /** @brief Thunk pro `bp_sp_mode_from_string` (en_BP_SP_MODE). */
 static gboolean _conv_bp_sp_mode(const char *s, unsigned *out) {
     en_BP_SP_MODE m;
@@ -2790,6 +2799,11 @@ static gboolean _bp_fill_param_from_json(JsonObject *obj,
     }
     if (json_object_has_member(obj, "bank_id_mask")) {
         p->bank_id_mask = (uint8_t)_obj_int_or(obj, "bank_id_mask", 0);
+    }
+    if (!_bp_parse_enum8(obj, "bp_addr_space", &p->bp_addr_space,
+                         _conv_bp_addr_space)) {
+        if (err_field) *err_field = "bp_addr_space";
+        return FALSE;
     }
     if (!_bp_parse_enum8(obj, "sp_mode", &p->sp_mode, _conv_bp_sp_mode)) {
         if (err_field) *err_field = "sp_mode";

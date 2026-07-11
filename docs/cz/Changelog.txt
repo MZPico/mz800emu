@@ -1,4 +1,10 @@
 
+	- BUGFIX: Debugger - breakpoint MEM_W/MEM_R se chybně aktivoval už při vykonání instrukce na hlídané adrese. 
+
+	- BUGFIX: Debugger - breakpointy MEM_W/MEM_R a IORQ se aktivovaly jen tehdy, když bylo otevřené okno Disassembled. Nyní fungují i bez otevřeného okna Disassembled #1.
+
+	- Debugger - u breakpointu na přístup do paměti v zóně paměťové banky (MMEXT_BANK) lze nově zvolit, jak se čte zadaná adresa: buď jako adresa v pohledu CPU (0000-FFFF), nebo jako offset v rámci banky (např. 0000-1FFF). Offset v bance zachytí přístup do dané banky bez ohledu na to, do kterého okna CPU je banka právě namapovaná.
+
 	- BUGFIX: Trace Suite - vypnutí záznamu (nebo změna režimu kanálu) z menu za běhu emulace mohlo způsobit pád emulátoru. Zapínání i vypínání záznamu nyní probíhá bezpečně na emulačním vlákně.
 
 	- ZMĚNA: Záznam trace-suite má nově výchozí strop velikosti 2 GB na kanál (dříve bez omezení), aby dlouhý záznam (hlavně CPU Track) nezaplnil disk. Po dosažení se kanál zastaví; strop lze změnit v nastavení (max_total_mb, 0 = bez omezení).

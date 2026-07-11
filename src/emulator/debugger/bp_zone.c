@@ -115,6 +115,17 @@ static bool zone_addr_in_any_mmext_bank ( uint16_t addr ) {
 }
 
 
+int32_t mmext_pehu_offset_from_addr ( uint16_t addr ) {
+    if ( !MEMEXT_TEST_CONNECTED_PEHU ) return -1;
+    int addr_point = ( addr >> 12 ) & 0x0F;
+    uint32_t rawbank = g_memext.map[ addr_point ];
+    if ( rawbank >= 128 ) return -1;
+    /* PEHU bank = 8 KB = dvě 4 KB stránky. rawbank sudý = dolní půl banky
+     * (offset 0x000-0xFFF), lichý = horní půl (0x1000-0x1FFF). */
+    return (int32_t) ( ( ( rawbank & 1u ) << 12 ) | ( (uint32_t) addr & 0x0FFFu ) );
+}
+
+
 /* ========================================================================= */
 /*  MZ-800 implementace                                                       */
 /* ========================================================================= */

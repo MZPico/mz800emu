@@ -483,6 +483,7 @@ static void working_copy_init(BptItemType type, int edit_id)
                          "%02X", bpt->bank_id_end);
                 snprintf(ep->wc_bank_id_mask, sizeof(ep->wc_bank_id_mask),
                          "%02X", bpt->bank_id_mask);
+                ep->wc_bp_addr_space = bpt->bp_addr_space;
                 ep->wc_sp_mode = bpt->sp_mode;
                 snprintf(ep->wc_sp_upper, sizeof(ep->wc_sp_upper),
                          "%04X", bpt->sp_upper);
@@ -566,6 +567,7 @@ static void working_copy_init(BptItemType type, int edit_id)
             ep->wc_bank_match_mode = BP_MATCH_SINGLE;
             ep->wc_bank_id_end[0] = '\0';
             snprintf(ep->wc_bank_id_mask, sizeof(ep->wc_bank_id_mask), "FF");
+            ep->wc_bp_addr_space = BP_ADDR_SPACE_CPU_VIEW;
             ep->wc_sp_mode = BP_SP_SINGLE;
             ep->wc_sp_upper[0] = '\0';
 
@@ -895,6 +897,9 @@ static void working_copy_apply(void)
             p.bank_id_mask = (uint8_t)(bmask & 0xFF);
             mask |= DBGAPI_BP_UM_BANK_ID_MASK;
         }
+        /* Feature D: interpretace addr pole pro MMEXT_BANK. */
+        p.bp_addr_space = (uint8_t)ep->wc_bp_addr_space;
+        mask |= DBGAPI_BP_UM_ADDR_SPACE;
 
         p.sp_mode = (uint8_t)ep->wc_sp_mode;
         mask |= DBGAPI_BP_UM_SP_MODE;
@@ -1445,7 +1450,7 @@ static void render_section_bp_options(BptEditPanelState *ep)
                 ep->dirty = true;
 
             /* V1.5.E - bank Match Mode */
-            if (render_match_mode_combo(_("Match Mode:"), "##bpt_bank_mm",
+            if (render_match_mode_combo(_("Bank Match Mode:"), "##bpt_bank_mm",
                                          &ep->wc_bank_match_mode,
                                          _("Single = trigger on exact bank ID (default).\n"
                                            "Range  = trigger when active bank within [Bank ID..End Bank].\n"
@@ -1486,15 +1491,50 @@ static void render_section_bp_options(BptEditPanelState *ep)
                               "with high bits cleared).\n"
                               "Reference: docs/cz/debugger/breakpoints/match-modes.md"));
             }
+
+            /* Feature D: interpretace Address pole - CPU view vs offset v bance. */
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn(); ImGui::Text("%s", _("Address as:"));
+            ImGui::TableNextColumn();
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(120);
+            const char *as_preview =
+                (ep->wc_bp_addr_space == BP_ADDR_SPACE_BANK_OFFSET)
+                    ? _("Bank offset") : _("CPU view");
+            if (ImGui::BeginCombo("##bpt_addr_space", as_preview))
+            {
+                if (ImGui::Selectable(_("CPU view"),
+                                      ep->wc_bp_addr_space == BP_ADDR_SPACE_CPU_VIEW)
+                    && ep->wc_bp_addr_space != BP_ADDR_SPACE_CPU_VIEW)
+                {
+                    ep->wc_bp_addr_space = BP_ADDR_SPACE_CPU_VIEW;
+                    ep->dirty = true;
+                }
+                if (ImGui::Selectable(_("Bank offset"),
+                                      ep->wc_bp_addr_space == BP_ADDR_SPACE_BANK_OFFSET)
+                    && ep->wc_bp_addr_space != BP_ADDR_SPACE_BANK_OFFSET)
+                {
+                    ep->wc_bp_addr_space = BP_ADDR_SPACE_BANK_OFFSET;
+                    ep->dirty = true;
+                }
+                ImGui::EndCombo();
+            }
+            help_marker(_("CPU view = Address is a Z80 address (0000-FFFF).\n"
+                          "Bank offset = Address is an offset within the PEHU bank "
+                          "(0000-1FFF), matched wherever the bank is mapped.\n"
+                          "PEHU memext only."));
         }
     }
 
     /* === Per-type identifier row(s) === */
     if (is_mem_type)
     {
-        /* Address */
+        /* Address (feature D: v offset módu se jmenuje "Offset:"). */
+        bool bank_offset_mode = (ep->wc_zone == BP_ZONE_MMEXT_BANK &&
+                                 ep->wc_bp_addr_space == BP_ADDR_SPACE_BANK_OFFSET);
         ImGui::TableNextRow();
-        ImGui::TableNextColumn(); ImGui::Text("%s", _("Address:"));
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", bank_offset_mode ? _("Offset:") : _("Address:"));
         ImGui::TableNextColumn(); ImGui::TextDisabled("0x");
         ImGui::TableNextColumn();
         ImGui::SetNextItemWidth(80);
@@ -1502,8 +1542,10 @@ static void render_section_bp_options(BptEditPanelState *ep)
                               ImGuiInputTextFlags_CharsHexadecimal |
                                   ImGuiInputTextFlags_CharsUppercase))
             ep->dirty = true;
-        help_marker(_("CPU address for PC_EXEC, memory address for MEM_R/W. "
-                      "For MEM range use End Addr below as well."));
+        help_marker(bank_offset_mode
+                    ? _("Offset within the PEHU bank (0000-1FFF).")
+                    : _("CPU address for PC_EXEC, memory address for MEM_R/W. "
+                        "For MEM range use End Addr below as well."));
 
         /* V1.5.E - addr Match Mode dropdown + adaptive End/Mask radky.
          * Plati pro PC_EXEC i MEM_R/W. End Addr (pro MEM) zustava

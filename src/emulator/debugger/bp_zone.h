@@ -125,6 +125,19 @@ extern bool bp_zone_is_active_at ( en_BP_ZONE zone, uint16_t addr,
 extern en_BP_ZONE bp_zone_active_at_pc ( uint16_t addr );
 
 
+/**
+ * @brief Přepočte Z80 write adresu na offset v rámci PEHU banky (feature D).
+ *
+ * PEHU bank = 8 KB = dvě 4 KB stránky. rawbank sudý = dolní půl banky
+ * (offset 0x000-0xFFF), lichý = horní půl (0x1000-0x1FFF).
+ *
+ * @param addr Z80 adresa 0x0000-0xFFFF.
+ * @return offset 0x0000-0x1FFF, nebo -1 když addr nemíří do platné PEHU
+ *         banky (PEHU nepřipojen nebo rawbank>=128).
+ */
+extern int32_t mmext_pehu_offset_from_addr ( uint16_t addr );
+
+
 #ifdef __cplusplus
 }
 #endif

@@ -90,6 +90,7 @@ extern "C" {
         GArray *per_type_lists [ BPTMAP_IDX_COUNT ];   /**< GArray(int bp_id) per typ */
         bool   per_type_active [ BPTMAP_IDX_COUNT ];   /**< fast-skip flag per typ */
         bool   any_active;                              /**< OR všech per_type_active (= jen jeden test pro fast-skip) */
+        bool   has_enabled_bp;                          /**< true pokud existuje aspoň jeden efektivně povolený BP (jakýkoliv typ, vč. PC_EXEC v bpmap[]). Nastavuje breakpoints_sync_bptmap. Používá TEST_DEBUGGER_CPUHIST_ACTIVE - historie CPU je k dispozici i bez okna, pokud je BP enabled. */
     } st_BPTMAP;
 
     extern st_BPTMAP g_bptmap;

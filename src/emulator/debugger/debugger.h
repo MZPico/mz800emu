@@ -58,9 +58,10 @@ extern "C"
      */
     typedef enum en_DEBUGGER_CPUHIST_MODE
     {
-        DEBUGGER_CPUHIST_MODE_WITH_WINDOW = 0,   /**< default - jen při otevřeném debug okně */
+        DEBUGGER_CPUHIST_MODE_WITH_WINDOW = 0,   /**< jen při otevřeném debug okně */
         DEBUGGER_CPUHIST_MODE_ALWAYS,            /**< trvale (i když okno není otevřené) */
         DEBUGGER_CPUHIST_MODE_OFF,               /**< vůbec nezaznamenávat */
+        DEBUGGER_CPUHIST_MODE_WITH_WINDOW_OR_BP, /**< default - při otevřeném okně NEBO když je aspoň jeden BP enabled */
     } en_DEBUGGER_CPUHIST_MODE;
 
     /**
@@ -84,7 +85,7 @@ extern "C"
     {
         en_DEBUGGER_STATE state;
         unsigned active;                          /**< Debug window otevřené */
-        en_DEBUGGER_CPUHIST_MODE cpuhist_mode;    /**< Režim aktivace CPU Instruction History (default WITH_WINDOW) */
+        en_DEBUGGER_CPUHIST_MODE cpuhist_mode;    /**< Režim aktivace CPU Instruction History (default WITH_WINDOW_OR_BP) */
         en_DEBUGGER_MHMAP_MODE mhmap_mode;        /**< Režim aktivace Memory Heatmap / CDL (default OFF) */
         unsigned cdl_export_on_exit;              /**< Exportovat CDL data při ukončení emulátoru (default 0) */
         char *cdl_export_dir;                     /**< Cesta k cílovému adresáři CDL exportu (default "./cdl-export/") */
@@ -182,9 +183,18 @@ extern "C"
      *  - ALWAYS: aktivní vždy
      *  - OFF: nikdy aktivní
      */
+    /* Režimy:
+     *  - ALWAYS: vždy.
+     *  - WITH_WINDOW: jen když je okno Disassembled otevřené.
+     *  - WITH_WINDOW_OR_BP: okno otevřené NEBO je aspoň jeden BP enabled
+     *    (g_bptmap.has_enabled_bp) - historie je k dispozici v okamžiku, kdy
+     *    BP zastaví, bez nutnosti mít okno otevřené.
+     *  - OFF: nikdy (respektováno - žádný BP to nepřebíjí). */
 #define TEST_DEBUGGER_CPUHIST_ACTIVE \
     ((g_debugger.cpuhist_mode == DEBUGGER_CPUHIST_MODE_ALWAYS) || \
-     ((g_debugger.cpuhist_mode == DEBUGGER_CPUHIST_MODE_WITH_WINDOW) && TEST_DEBUGGER_ACTIVE))
+     ((g_debugger.cpuhist_mode == DEBUGGER_CPUHIST_MODE_WITH_WINDOW) && TEST_DEBUGGER_ACTIVE) || \
+     ((g_debugger.cpuhist_mode == DEBUGGER_CPUHIST_MODE_WITH_WINDOW_OR_BP) && \
+      (TEST_DEBUGGER_ACTIVE || g_bptmap.has_enabled_bp)))
 
     /**
      * @brief Test, zda Memory Heatmap aktuálně běží.
@@ -213,10 +223,18 @@ extern "C"
      *       Bez něj v tomto makru by se default callbacks nepřepnuly na
      *       logging variantu a hooky by nikdy neběžely.
      */
+    /* Feature/Fix C: callback-dispatchované BP typy (MEM_R/W, IORQ_R/W) fajrují
+     * jen z memory/port logging callbacků. Existence takového BP proto musí
+     * logging cestu vynutit i bez otevřeného okna / recordingu - jinak BP tiše
+     * nestřílí. per_type_active flagy jsou v g_bptmap (bptmap.h). */
 #define TEST_DEBUGGER_NEED_DEBUG_CALLBACKS (TEST_DEBUGGER_CPUHIST_ACTIVE || TEST_DEBUGGER_MHMAP_ACTIVE \
     || (g_iorqlog_active != 0) \
     || (g_io_window_tracking_active != 0) \
-    || (g_eventlog_active != 0))
+    || (g_eventlog_active != 0) \
+    || (g_bptmap.per_type_active[ BPTMAP_IDX_MEM_W ] != 0) \
+    || (g_bptmap.per_type_active[ BPTMAP_IDX_MEM_R ] != 0) \
+    || (g_bptmap.per_type_active[ BPTMAP_IDX_IORQ_R ] != 0) \
+    || (g_bptmap.per_type_active[ BPTMAP_IDX_IORQ_W ] != 0))
 
 extern int g_iorqlog_active; /* fwd decl pro TEST_DEBUGGER_NEED_DEBUG_CALLBACKS */
 extern uint8_t g_io_window_tracking_active; /* fwd decl pro TEST_DEBUGGER_NEED_DEBUG_CALLBACKS */

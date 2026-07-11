@@ -322,6 +322,28 @@ void test_zone_pehu_bank_active ( void ) {
 }
 
 
+/* Feature D: přepočet CPU adresy na offset v PEHU bance. */
+void test_mmext_pehu_offset_resolver ( void ) {
+    g_memext.connection = MEMEXT_CONNECTION_YES;
+    g_memext.type = MEMEXT_TYPE_PEHU;
+    g_memext.map[ 2 ] = 18;   /* bank 9 dolní půl (offset 0x000..0xFFF) */
+    g_memext.map[ 3 ] = 19;   /* bank 9 horní půl (offset 0x1000..0x1FFF) */
+
+    /* addr 0x2463: rawbank 18 (sudý) -> offset (0<<12)|0x463 = 0x0463 */
+    TEST_ASSERT_EQUAL_HEX32 ( 0x0463, mmext_pehu_offset_from_addr ( 0x2463 ) );
+    /* addr 0x3463: rawbank 19 (lichý) -> offset (1<<12)|0x463 = 0x1463 */
+    TEST_ASSERT_EQUAL_HEX32 ( 0x1463, mmext_pehu_offset_from_addr ( 0x3463 ) );
+
+    /* Stránka bez PEHU banky (rawbank>=128) -> -1. */
+    g_memext.map[ 4 ] = 200;
+    TEST_ASSERT_EQUAL_INT32 ( -1, mmext_pehu_offset_from_addr ( 0x4000 ) );
+
+    /* PEHU odpojen -> -1. */
+    g_memext.connection = MEMEXT_CONNECTION_NO;
+    TEST_ASSERT_EQUAL_INT32 ( -1, mmext_pehu_offset_from_addr ( 0x2463 ) );
+}
+
+
 /* ========================================================================= */
 /*  bp_zone_active_at_pc - priority                                            */
 /* ========================================================================= */
@@ -439,6 +461,11 @@ void test_persist_zone_bank_id_roundtrip ( void ) {
     int id = breakpoints_add ( 0x2080, "T", -1 );
     breakpoints_set_zone ( id, BP_ZONE_MMEXT_BANK );
     breakpoints_set_bank_id ( id, 9 );
+    /* Feature D: bp_addr_space musí přežít save/load. */
+    {
+        st_BPT *pre = &g_array_index ( g_breakpoints.breakpoints, st_BPT, 0 );
+        pre->bp_addr_space = BP_ADDR_SPACE_BANK_OFFSET;
+    }
 
     gchar *tmpfile = g_build_filename ( g_get_tmp_dir ( ),
                                          "test_bp_zone.bpt", NULL );
@@ -451,9 +478,29 @@ void test_persist_zone_bank_id_roundtrip ( void ) {
     st_BPT *bpt = &g_array_index ( g_breakpoints.breakpoints, st_BPT, 0 );
     TEST_ASSERT_EQUAL ( BP_ZONE_MMEXT_BANK, bpt->zone );
     TEST_ASSERT_EQUAL_UINT8 ( 9, bpt->bank_id );
+    TEST_ASSERT_EQUAL ( BP_ADDR_SPACE_BANK_OFFSET, bpt->bp_addr_space );
 
     g_unlink ( tmpfile );
     g_free ( tmpfile );
+}
+
+
+/* ------------------------------------------------------------------------- */
+/*  Feature D - en_BP_ADDR_SPACE string round-trip                             */
+/* ------------------------------------------------------------------------- */
+
+void test_addr_space_string_roundtrip ( void ) {
+    TEST_ASSERT_EQUAL_STRING ( "cpu_view",    bp_addr_space_to_string ( BP_ADDR_SPACE_CPU_VIEW ) );
+    TEST_ASSERT_EQUAL_STRING ( "bank_offset", bp_addr_space_to_string ( BP_ADDR_SPACE_BANK_OFFSET ) );
+    /* Mimo rozsah -> bezpečný default. */
+    TEST_ASSERT_EQUAL_STRING ( "cpu_view",    bp_addr_space_to_string ( (en_BP_ADDR_SPACE) 99 ) );
+
+    en_BP_ADDR_SPACE v;
+    TEST_ASSERT_TRUE  ( bp_addr_space_from_string ( "bank_offset", &v ) );
+    TEST_ASSERT_EQUAL ( BP_ADDR_SPACE_BANK_OFFSET, v );
+    TEST_ASSERT_TRUE  ( bp_addr_space_from_string ( "cpu_view", &v ) );
+    TEST_ASSERT_EQUAL ( BP_ADDR_SPACE_CPU_VIEW, v );
+    TEST_ASSERT_FALSE ( bp_addr_space_from_string ( "nonsense", &v ) );
 }
 
 
@@ -467,6 +514,9 @@ int main ( int argc, char *argv[] ) {
     mztest_init ( );
 
     UNITY_BEGIN ( );
+
+    /* Feature D - addr space string round-trip */
+    RUN_TEST ( test_addr_space_string_roundtrip );
 
     /* CPU_VIEW */
     RUN_TEST ( test_zone_cpu_view_always_active );
@@ -496,6 +546,7 @@ int main ( int argc, char *argv[] ) {
     /* MMEXT_BANK */
     RUN_TEST ( test_zone_pehu_disconnected_no_fire );
     RUN_TEST ( test_zone_pehu_bank_active );
+    RUN_TEST ( test_mmext_pehu_offset_resolver );
 
     /* active_at_pc */
     RUN_TEST ( test_active_at_pc_rom_lower );

@@ -631,6 +631,8 @@ static bool dbgapi_emu_bp_apply_update ( st_DBGAPI_BP_UPDATE_PARAM *p, bool allo
         ok &= breakpoints_set_bank_id_end ( target_id, p->bank_id_end );
     if ( mask & DBGAPI_BP_UM_BANK_ID_MASK )
         ok &= breakpoints_set_bank_id_mask ( target_id, p->bank_id_mask );
+    if ( mask & DBGAPI_BP_UM_ADDR_SPACE )
+        ok &= breakpoints_set_bp_addr_space ( target_id, (en_BP_ADDR_SPACE)p->bp_addr_space );
     if ( mask & DBGAPI_BP_UM_SP_MODE )
         ok &= breakpoints_set_sp_mode ( target_id, (en_BP_SP_MODE)p->sp_mode );
     if ( mask & DBGAPI_BP_UM_SP_UPPER )
@@ -1060,6 +1062,27 @@ int dbgapi_trace_lifecycle ( en_DBGAPI_TRACE_CHANNEL channel,
     }
 
     return -1;
+}
+
+
+/**
+ * @brief Fix C: přepočet gatingu logging callbacků po BP mutaci.
+ *
+ * Existence callback-dispatchovaného BP (MEM_R/W, IORQ_R/W) musí vynutit
+ * swap na logging memory/port callbacky (viz TEST_DEBUGGER_NEED_DEBUG_CALLBACKS),
+ * jinak takový BP tiše nestřílí, dokud není otevřené debug okno nebo aktivní
+ * recording. Swap se jinak přepočítává jen při změně debug oken / trace / CDL,
+ * ne při BP CRUD - proto ho voláme po BP mutačních příkazech. Běží na EMU
+ * vlákně (dispatch), stejně jako DBGAPI_CMD_DEBUGGER_STATE_RECOMPUTE.
+ * Idempotentní - když je stav callbacků už správný, swap je no-op.
+ */
+static void dbgapi_bp_recompute_cb_gating ( void )
+{
+    /* Historie: existence enabled BP zapíná CPU historii i bez okna
+     * (TEST_DEBUGGER_CPUHIST_ACTIVE -> has_enabled_bp). Add/remove/enable
+     * cesty nesyncují, proto flag přepočítáme tady, před swapem callbacků. */
+    breakpoints_recompute_has_enabled ( );
+    mzarch_platform_fn_debugger_state_changed ( TEST_DEBUGGER_ACTIVE );
 }
 
 
@@ -1517,6 +1540,7 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             {
                 rq->success = false;
             };
+            dbgapi_bp_recompute_cb_gating ( );  /* historie: PC_EXEC BP -> cpuhist */
             break;
 
         case DBGAPI_CMD_BP_REMOVE:
@@ -1532,6 +1556,7 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             {
                 rq->success = false;
             };
+            dbgapi_bp_recompute_cb_gating ( );  /* Fix C */
             break;
 
         case DBGAPI_CMD_BP_LIST:
@@ -1593,6 +1618,7 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             {
                 rq->success = false;
             };
+            dbgapi_bp_recompute_cb_gating ( );  /* Fix C */
             break;
 
         case DBGAPI_CMD_BP_SET_ENABLED:
@@ -1607,6 +1633,7 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             {
                 rq->success = false;
             };
+            dbgapi_bp_recompute_cb_gating ( );  /* Fix C */
             break;
 
         case DBGAPI_CMD_BP_SET_PARENT:
@@ -1643,6 +1670,7 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             {
                 rq->success = false;
             };
+            dbgapi_bp_recompute_cb_gating ( );  /* Fix C */
             break;
 
         case DBGAPI_CMD_BPGRP_ADD:

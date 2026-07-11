@@ -79,6 +79,35 @@ MNEM (+ TSTATES if the per-instance toggle is ON).
 The splitter between history and the lower table is drag-resizable (the
 ratio is remembered for the session).
 
+### Recording mode (CPU Instruction History)
+
+When the history ring buffer is filled is controlled by the `CPU
+Instruction History` choice (a radio-button submenu in the debug window
+menu). It has four modes:
+
+| Mode | When the history is recorded |
+|------|------------------------------|
+| `Off` | Never - the history is not recorded (no overhead). |
+| `Only With Debug Window` | Only while the debug window is open. |
+| `With Debug Window or Breakpoints` (default) | While the debug window is open **or** at least one breakpoint is enabled. |
+| `Always` | Continuously, regardless of window and breakpoint state. |
+
+The `With Debug Window or Breakpoints` mode is **now the default**
+(previously the default was `Only With Debug Window`). Rationale: the
+history is then available even without an open window at the moment a
+breakpoint stops execution - you can inspect the last 32 instructions
+that preceded the hit. `Off` is respected even with enabled breakpoints
+(= an explicit way to disable the history).
+
+**Persistence:** ini module `DEBUGGER`, key `cpuhist_mode` (KEYWORD),
+values `OFF` / `WITH_WINDOW` / `WITH_WINDOW_OR_BP` / `ALWAYS`, default
+`WITH_WINDOW_OR_BP`.
+
+Note: this is the informational instruction history (the last 32
+instructions). For full tracking logs with timestamps and a memory dump
+see the cputrack subsystem (Debugger Settings -> Trace Suite),
+described in [formats/CPU-track_format.md](formats/CPU-track_format.md).
+
 ## Lower table - DISASSEMBLY
 
 The main work area. Renders disassembled instructions from `focus_addr`,
@@ -394,6 +423,7 @@ Module `DEBUGGER`:
 | `disasm_extra<N>_focus` | uint16 | 0 | Secondary window N (2..5) focus |
 | `disasm_extra<N>_follow_pc` | bool | false | Secondary window N Follow PC |
 | `disasm_extra<N>_show_tstates` | bool | false | Secondary window N T-states |
+| `cpuhist_mode` | KEYWORD | `WITH_WINDOW_OR_BP` | When to fill the history ring buffer (see Upper table - HISTORY) |
 
 Layout (position / size / split ratio) is handled by ImGui itself via
 `imgui.ini`.

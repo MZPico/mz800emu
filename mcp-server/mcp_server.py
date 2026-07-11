@@ -4529,12 +4529,18 @@ async def emu_bp_create_with_init(addr: int,
         fields: Names of payload fields to apply. Valid names match
             the ``DBGAPI_BP_UM_*`` mask bits, e.g. ``"enabled"``,
             ``"name"``, ``"type"``, ``"expr"``, ``"action"``,
-            ``"hit_count"``, ``"im2_vector_filter"``,
-            ``"fwd_min_interval_ms"``, ``"fwd_max_fires"``, ...
+            ``"hit_count"``, ``"bp_addr_space"``,
+            ``"im2_vector_filter"``, ``"fwd_min_interval_ms"``,
+            ``"fwd_max_fires"``, ...
         values: Map of field name to value. Only fields listed in
             ``fields`` are read from this map; surplus keys are
             ignored. ``name`` / ``expr`` / ``action`` / ``event_name``
             accept ``None`` to clear the value.
+            ``bp_addr_space`` (``"cpu_view"`` default / ``"bank_offset"``)
+            controls how ``addr`` is interpreted for a MEM_R / MEM_W
+            breakpoint in the ``MMEXT_BANK`` zone (PEHU only):
+            ``"bank_offset"`` matches an offset 0x0000-0x1FFF inside the
+            bank regardless of the current CPU mapping.
             ``fwd_min_interval_ms`` (int ms; ``0`` = use the global /
             built-in default) and ``fwd_max_fires`` (int; ``0`` =
             unlimited) override the per-breakpoint rate limit for heavy
@@ -4597,7 +4603,10 @@ async def emu_bp_update(id: int,
         fields: Names of fields to apply (subset of
             ``DBGAPI_BP_UM_*``). An empty list is a successful no-op.
             Includes ``"fwd_min_interval_ms"`` / ``"fwd_max_fires"``
-            for the per-breakpoint heavy-forward-action rate limit.
+            for the per-breakpoint heavy-forward-action rate limit, and
+            ``"bp_addr_space"`` (``"cpu_view"`` / ``"bank_offset"``) for
+            a MEM_R / MEM_W breakpoint in the ``MMEXT_BANK`` zone
+            (PEHU only).
         values: Map of field name to value. Same conventions as
             ``emu_bp_create_with_init``.
 

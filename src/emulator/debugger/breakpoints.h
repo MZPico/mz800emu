@@ -172,6 +172,28 @@ struct st_BP_ACTION;
     } en_BP_MATCH_MODE;
 
 
+    /**
+     * @brief Interpretace pole `addr` u MEM_R/W breakpointu v zóně
+     *        BP_ZONE_MMEXT_BANK (feature D).
+     *
+     * CPU_VIEW    = default, zpětně kompatibilní: `addr` je Z80 adresa
+     *               0x0000-0xFFFF (BP fajruje na write na tuto adresu,
+     *               když je daná banka namapovaná).
+     * BANK_OFFSET = `addr` je offset 0x0000-0x1FFF v rámci PEHU banky;
+     *               BP fajruje na write do (bank_id, offset) bez ohledu
+     *               na to, do kterého CPU okna je banka právě namapovaná.
+     *
+     * Pro ostatní zóny se pole ignoruje (ale persistuje se, aby přepnutí
+     * zóny/typu neztratilo hodnotu). Hodnoty stabilní - serializace do
+     * .bpt JSON přes bp_addr_space_to_string().
+     */
+    typedef enum en_BP_ADDR_SPACE {
+        BP_ADDR_SPACE_CPU_VIEW = 0,     /* default - addr je Z80 adresa */
+        BP_ADDR_SPACE_BANK_OFFSET,      /* addr je offset v PEHU bance */
+        BP_ADDR_SPACE_COUNT             /* sentinel */
+    } en_BP_ADDR_SPACE;
+
+
     /*
      * SP threshold mode (V1.5.E) - oddělený enum, sémantika jiná než
      * obecný match mode.
@@ -314,6 +336,10 @@ struct st_BP_ACTION;
         en_BP_MATCH_MODE bank_match_mode;   /* MMEXT_BANK zone match mode */
         uint8_t bank_id_end;                /* RANGE upper pro bank */
         uint8_t bank_id_mask;               /* AND mask pro bank (default 0xFF) */
+
+        /* Feature D: interpretace addr pro BP_ZONE_MMEXT_BANK (CPU_VIEW
+         * default / BANK_OFFSET = offset 0x0000-0x1FFF v PEHU bance). */
+        en_BP_ADDR_SPACE bp_addr_space;
 
         en_BP_SP_MODE sp_mode;              /* SP_THRESHOLD mode (SINGLE / WINDOW) */
         uint16_t sp_upper;                  /* WINDOW upper bound (lower = sp_threshold) */
@@ -566,6 +592,11 @@ struct st_BP_ACTION;
     /* Resynchronizuje celý bptmap s aktuálním stavem breakpointů (zachovává temporary BPT). */
     extern void breakpoints_sync_bptmap ( void );
 
+    /* Přepočte g_bptmap.has_enabled_bp (= existuje aspoň jeden efektivně
+     * povolený BP). Volá se po BP CRUD mimo sync (add/remove/enable), aby
+     * TEST_DEBUGGER_CPUHIST_ACTIVE viděl aktuální stav. */
+    extern void breakpoints_recompute_has_enabled ( void );
+
 
     /* === Smart BP setters (V1, fáze D.1) =================================== */
 
@@ -676,6 +707,13 @@ struct st_BP_ACTION;
      * @return false pokud BP neexistuje nebo mode mimo BP_PORT_MODE_COUNT.
      */
     extern bool breakpoints_set_port_mode ( int bpt_id, en_BP_PORT_MODE mode );
+
+    /**
+     * @brief Nastaví bp_addr_space (feature D: CPU_VIEW / BANK_OFFSET) pro
+     *        MEM_R/W v zóně MMEXT_BANK.
+     * @return false pokud BP neexistuje nebo space mimo BP_ADDR_SPACE_COUNT.
+     */
+    extern bool breakpoints_set_bp_addr_space ( int bpt_id, en_BP_ADDR_SPACE space );
 
     /** @brief Nastaví bank_match_mode (MMEXT_BANK zone). */
     extern bool breakpoints_set_bank_match_mode ( int bpt_id, en_BP_MATCH_MODE mode );
@@ -864,6 +902,12 @@ struct st_BP_ACTION;
 
     /** @brief Konverze řetězec → en_BP_MATCH_MODE. Vrátí true při úspěchu. */
     extern bool bp_match_mode_from_string ( const char *s, en_BP_MATCH_MODE *out );
+
+    /** @brief Konverze en_BP_ADDR_SPACE → stabilní string ("cpu_view"/"bank_offset"). */
+    extern const char* bp_addr_space_to_string ( en_BP_ADDR_SPACE space );
+
+    /** @brief Konverze řetězec → en_BP_ADDR_SPACE. Vrátí true při úspěchu. */
+    extern bool bp_addr_space_from_string ( const char *s, en_BP_ADDR_SPACE *out );
 
     /** @brief Vrátí stabilní řetězec pro SP mode ("SINGLE" / "WINDOW"). */
     extern const char* bp_sp_mode_to_string ( en_BP_SP_MODE mode );

@@ -178,6 +178,32 @@ BP fire jen pokud:
 Bank Match Mode (oddělený od addr Match Mode) může pokrýt skupinu
 banks (RANGE/MASK na bank).
 
+## Address as (MMEXT_BANK MEM_R / MEM_W)
+
+Pro MEM_R / MEM_W breakpoint v zóně `MMEXT_BANK` je navíc per-BP volba
+`Address as`, která určuje, jak se interpretuje pole `Address`:
+
+| Address as | Pole Address | Kdy BP fire |
+|------------|--------------|-------------|
+| `CPU view` (default) | Z80 adresa `0x0000-0xFFFF` | při čtení/zápisu na tuto CPU adresu, když je banka právě namapovaná do CPU okna (= dosavadní chování) |
+| `Bank offset` | offset `0x0000-0x1FFF` v rámci PEHU banky | při čtení/zápisu do dvojice `(bank_id, offset)` bez ohledu na to, do kterého CPU okna je banka právě namapovaná |
+
+- Volba je dostupná **jen pro zónu `MMEXT_BANK` a jen pro PEHU memext**
+  (8 KB banka, offset `0x0000-0x1FFF`).
+- V dialogu Edit BP se při `Zone = MMEXT_BANK` zobrazí dropdown
+  `Address as: CPU view | Bank offset`. Při volbě `Bank offset` se řádek
+  `Address:` přejmenuje na `Offset:`.
+- **Match Mode (SINGLE / RANGE / MASK) funguje v obou režimech.** V
+  režimu `Bank offset` se Match Mode aplikuje na offset
+  (`0x0000-0x1FFF`) místo na CPU adresu.
+
+Rozdíl: `Bank offset` sleduje fyzickou banku napříč remapováním -
+zachytí zápis do `(bank_id, offset)`, ať je banka právě namapovaná do
+libovolného CPU okna (a i když se okno mezi zápisy mění). `CPU view` je
+naproti tomu banking-aware pohled na jednu konkrétní CPU adresu. Zápis
+se k bance dostane jen když je někam namapovaná - nemapovanou banku CPU
+zápisem nezasáhne ani v jednom režimu.
+
 ## Interakce s Condition expression
 
 Match mode se vyhodnocuje **PŘED** condition expression. Pokud match

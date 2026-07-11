@@ -2185,6 +2185,14 @@ bool bp_match_mode_from_string ( const char *s, en_BP_MATCH_MODE *out )
     return false;
 }
 
+bool bp_addr_space_from_string ( const char *s, en_BP_ADDR_SPACE *out )
+{
+    if ( !s || !out ) return false;
+    if ( strcmp ( s, "cpu_view" ) == 0 )    { *out = BP_ADDR_SPACE_CPU_VIEW;    return true; }
+    if ( strcmp ( s, "bank_offset" ) == 0 ) { *out = BP_ADDR_SPACE_BANK_OFFSET; return true; }
+    return false;
+}
+
 bool bp_sp_mode_from_string ( const char *s, en_BP_SP_MODE *out )
 {
     if ( !s || !out ) return false;
