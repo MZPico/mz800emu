@@ -1,0 +1,139 @@
+# Build check na vsech podporovanych platformach (Linux, macOS, Windows).
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux (Ubuntu)
+    runs-on: ubuntu-latest
+    env:
+      DEPS_PREFIX: ${{ github.workspace }}/.deps
+      SDL_TAG: release-3.4.4
+      SDL_IMAGE_TAG: release-3.4.2
+      MINIZIP_TAG: 4.1.2
+    steps:
+      - uses: actions/checkout@v4
+
+      # Projektove zavislosti + oficialni SDL3 build-deps seznam pro
+      # Ubuntu (https://wiki.libsdl.org/SDL3/README-linux#build-dependencies)
+      - name: Install apt packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build pkg-config gettext \
+            libglib2.0-dev libjson-glib-dev libcurl4-openssl-dev zlib1g-dev libgl-dev \
+            libasound2-dev libpulse-dev libaudio-dev libfribidi-dev libjack-dev \
+            libsndio-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev \
+            libdrm-dev libgbm-dev libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev \
+            libdbus-1-dev libibus-1.0-dev libudev-dev libthai-dev libusb-1.0-0-dev \
+            libpipewire-0.3-dev libwayland-dev libdecor-0-dev liburing-dev \
+            wayland-protocols
+
+      # SDL3 / SDL3_image / minizip-ng nejsou v Ubuntu 24.04 balicich -
+      # budujeme ze zdrojaku (viz docs/build_ubuntu.md) do $DEPS_PREFIX
+      # a cachujeme podle tagu verzi.
+      - name: Cache SDL3 + SDL3_image + minizip-ng
+        id: deps-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DEPS_PREFIX }}
+          key: linux-deps-${{ env.SDL_TAG }}-${{ env.SDL_IMAGE_TAG }}-${{ env.MINIZIP_TAG }}
+
+      - name: Build SDL3 from source
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "$SDL_TAG" https://github.com/libsdl-org/SDL.git
+          cmake -S SDL -B SDL/build -G Ninja \
+            -DSDL_SHARED=ON -DSDL_STATIC=OFF -DSDL_TEST_LIBRARY=OFF \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$DEPS_PREFIX"
+          cmake --build SDL/build
+          cmake --install SDL/build
+
+      - name: Build SDL3_image from source
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "$SDL_IMAGE_TAG" https://github.com/libsdl-org/SDL_image.git
+          cmake -S SDL_image -B SDL_image/build -G Ninja \
+            -DSDL3IMAGE_VENDORED=OFF -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$DEPS_PREFIX" -DCMAKE_INSTALL_PREFIX="$DEPS_PREFIX"
+          cmake --build SDL_image/build
+          cmake --install SDL_image/build
+
+      - name: Build minizip-ng from source
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "$MINIZIP_TAG" https://github.com/zlib-ng/minizip-ng.git
+          cmake -S minizip-ng -B minizip-ng/build -G Ninja \
+            -DMZ_COMPAT=OFF -DMZ_ZSTD=OFF -DMZ_BZIP2=OFF -DMZ_LZMA=OFF -DMZ_PPMD=OFF \
+            -DMZ_PKCRYPT=OFF -DMZ_WZAES=OFF -DMZ_OPENSSL=OFF -DMZ_LIBBSD=OFF \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$DEPS_PREFIX"
+          cmake --build minizip-ng/build
+          cmake --install minizip-ng/build
+
+      - name: Build
+        run: |
+          export PKG_CONFIG_PATH="$DEPS_PREFIX/lib/pkgconfig:$DEPS_PREFIX/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
+          export LD_LIBRARY_PATH="$DEPS_PREFIX/lib:$DEPS_PREFIX/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}"
+          export LIBRARY_PATH="$DEPS_PREFIX/lib:$DEPS_PREFIX/lib/x86_64-linux-gnu:${LIBRARY_PATH:-}"
+          make
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Homebrew packages
+        run: |
+          brew install cmake ninja pkg-config glib json-glib curl zlib sdl3 sdl3_image minizip-ng
+
+      - name: Build
+        run: make
+
+  windows:
+    name: Windows (MSYS2 UCRT64)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2 UCRT64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-make
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-glib2
+            mingw-w64-ucrt-x86_64-json-glib
+            mingw-w64-ucrt-x86_64-curl
+            mingw-w64-ucrt-x86_64-minizip-ng
+            mingw-w64-ucrt-x86_64-sdl3
+            mingw-w64-ucrt-x86_64-sdl3-image
+            mingw-w64-ucrt-x86_64-gettext-tools
+
+      # Makefile ma default toolchain dir C:/msys64/<msystem> a TEMP=/tmp;
+      # na runneru je MSYS2 jinde a workspace na D: (native gcc chape /tmp
+      # jako <drive>:\tmp) - prebijeme oboje skutecnymi cestami.
+      - name: Build
+        run: >-
+          mingw32-make
+          MZ_TOOLCHAIN_DIR="$(cygpath -m /ucrt64)"
+          TEMP="$(cygpath -m /tmp)"
+          TMP="$(cygpath -m /tmp)"
