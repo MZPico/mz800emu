@@ -1,4 +1,6 @@
 
+	- The emulator can now be built on macOS as well (guide: docs/build_osx.md). Thanks to Mathias Olsson for the contribution.
+
 	- BUGFIX: macOS - the emulator crashed shortly after start while updating the main window title. (GitHub issue #2)
 
 	- BUGFIX: Debugger - a MEM_W/MEM_R breakpoint incorrectly triggered already when an instruction at the watched address was executed.

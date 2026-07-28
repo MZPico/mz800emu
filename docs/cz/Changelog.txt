@@ -1,4 +1,6 @@
 
+	- Emulátor lze nově sestavit i na macOS (návod: docs/build_osx.md). Díky Mathiasi Olssonovi za příspěvek.
+
 	- BUGFIX: macOS - emulátor krátce po startu spadl při aktualizaci titulku hlavního okna. (GitHub issue #2)
 
 	- BUGFIX: Debugger - breakpoint MEM_W/MEM_R se chybně aktivoval už při vykonání instrukce na hlídané adrese. 

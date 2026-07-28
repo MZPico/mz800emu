@@ -1,6 +1,8 @@
-# Building mz800emu on macOS Tahoe 26.5.2 
+# Building mz800emu on macOS
 
 This guide describes how to compile the `mz800emu` emulator on macOS. It will walk you through installing necessary development tools, downloading the source code, and building the executable.
+
+The guide was tested on macOS Tahoe 26.5.2.
 
 ## 0) Prerequisites
 
@@ -14,7 +16,7 @@ You need Homebrew https://brew.sh :
 
 ## 1) Update your system
 
-Make sure your system is updated: 
+Make sure your system is updated:
 ```softwareupdate --install --all```
 
 Make sure Homebrew is updated:
@@ -29,14 +31,13 @@ Install the base development tools and libraries required to compile `mz800emu`:
 
 ```
 brew install cmake ninja pkg-config git doxygen glib json-glib curl zlib
-``` 
+```
 
 Notes:
 - The build system uses CMake (3.20+) with Ninja as the preferred generator.
-- `libjson-glib-dev` is required since the `D.0.5.B.1` release (build/cmake commit `48ed161`).
-- `zlib1g-dev` is required because `minizip-ng` is typically available only as a static `.a`
-  archive on Linux and `find_package(ZLIB)` in CMake links it explicitly to resolve
-  `inflateEnd`/`deflateEnd` symbols.
+- `json-glib` is required since the `D.0.5.B.1` release (build/cmake commit `48ed161`).
+- `zlib` is required because `find_package(ZLIB)` in CMake links it explicitly
+  as a transitive dependency of `minizip-ng`.
 
 ## 2b) Install SDL3 and SDL3-image
 
@@ -47,7 +48,7 @@ brew install sdl3 sdl3_image
 ## 2c) Install minizip-ng
 
 ```
-brew install minizip-ng 
+brew install minizip-ng
 ```
 
 ## 3) Download the latest mz800emu code
