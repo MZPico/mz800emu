@@ -1,3 +1,4 @@
+2026-07-28 - Released version 2.0.5 - preview
 
 	- Emulátor lze nově sestavit i na macOS (návod: docs/build_osx.md). Díky Mathiasi Olssonovi za příspěvek.
 

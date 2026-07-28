@@ -1,3 +1,4 @@
+2026-07-28 - Released version 2.0.5 - preview
 
 	- The emulator can now be built on macOS as well (guide: docs/build_osx.md). Thanks to Mathias Olsson for the contribution.
 
