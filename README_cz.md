@@ -1,5 +1,7 @@
 # mz800emu
 
+[![Build](https://github.com/michalhucik/mz800emu/actions/workflows/build.yml/badge.svg)](https://github.com/michalhucik/mz800emu/actions/workflows/build.yml)
+
 Open-source emulátor 8bitových počítačů Sharp MZ-800, MZ-700 a MZ-1500.
 
 [English](README.md)
