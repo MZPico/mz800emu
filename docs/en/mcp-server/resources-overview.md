@@ -125,7 +125,7 @@ system, exact clocks, full scanline geometry).
 
 | Field | Value | Notes |
 |-------|-------|-------|
-| `platform` | `mz700-pal` / `mz700-ntsc` / `mz800` / `mz1500` | Compile-time binary (= MZARCH_NAME) |
+| `platform` | `mz700` / `mz800` / `mz1500` | Compile-time binary (= MZARCH_NAME; does not distinguish PAL/NTSC - see `tv_system`) |
 | `full_name` | "MZ-700 (PAL)" / "MZ-800" / "MZ-1500" / etc. | Human-readable |
 | `mode` | `native` / `compat700` | Runtime from GDG regDMD bit (MZ-700 always native) |
 | `tv_system` | `PAL` / `NTSC` | Compile-time from MZTVSYS macro |

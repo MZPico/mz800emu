@@ -73,6 +73,8 @@
 #include "symbols/sym_db.h"
 #include "bookmarks/bookmarks.h"
 #include "freeze/freeze.h"
+#include "dbgapi_ui.h"
+#include "dbgapi_cmdrq.h"
 #include "stack_regions.h"
 #include "stack_history.h"
 #include "watch.h"
@@ -868,6 +870,55 @@ void debugger_show_hide_main_window ( void ) {
         debugger_show_main_window ( );
     } else {
         debugger_hide_main_window ( );
+    };
+}
+
+
+/* Timeout pro synchronní doručení RECOMPUTE na emu vlákno. Stejná hodnota
+ * jako DBG_UI_DEFAULT_TIMEOUT_MS (dbgapi_helpers.h) - UI hlavičku sem
+ * netaháme (vrstvení: emulator core nesmí záviset na ui-imgui). */
+#define DEBUGGER_WINDOW_RECOMPUTE_TIMEOUT_MS 200
+
+
+/* Společné jádro *_request variant: nastaví g_debugger.active (atomický
+ * int zápis) a swap CPU callbacků deleguje na EMU vlákno přes
+ * DBGAPI_CMD_DEBUGGER_STATE_RECOMPUTE (vzor trace-suite). Přímé volání
+ * mzarch_platform_fn_debugger_state_changed() z UI vlákna by souběžně
+ * s běžící instrukční smyčkou přepínalo memory/port callbacky a výběr
+ * instrukční smyčky = data race. */
+static void debugger_window_state_apply_request ( int active ) {
+    g_debugger.active = active;
+    if ( !dbgapi_ui_submit_cmd_sync ( &g_dbgapi_cmdrq_queue,
+                                      DBGAPI_CMD_DEBUGGER_STATE_RECOMPUTE,
+                                      NULL, NULL,
+                                      DEBUGGER_WINDOW_RECOMPUTE_TIMEOUT_MS ) ) {
+        /* Emu vlákno request nestihlo/nepřevzalo (startup, shutdown,
+         * plná fronta). Okno se přesto zobrazí/skryje - callbacky srovná
+         * nejbližší další recompute (další toggle, trace/BP změna). */
+        fprintf ( stderr, "%s(): debugger state recompute not delivered to emu thread!\n", __func__ );
+    };
+}
+
+
+void debugger_show_main_window_request ( void ) {
+    debugger_window_state_apply_request ( 1 );
+    ui_debugger_show_main_window ( );
+    debugger_step_call ( 0 );
+}
+
+
+void debugger_hide_main_window_request ( void ) {
+    debugger_window_state_apply_request ( 0 );
+    ui_debugger_hide_main_window ( );
+    debugger_step_call ( 0 );
+}
+
+
+void debugger_show_hide_main_window_request ( void ) {
+    if ( !TEST_DEBUGGER_ACTIVE ) {
+        debugger_show_main_window_request ( );
+    } else {
+        debugger_hide_main_window_request ( );
     };
 }
 

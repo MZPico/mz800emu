@@ -237,7 +237,7 @@ static inline void iface_keyboard_keydown_hotkeys(SDL_Keycode scancode)
             /*
              * Debugger window: Alt + D
              */
-            debugger_show_hide_main_window();
+            debugger_show_hide_main_window_request();
 #endif
         };
     };

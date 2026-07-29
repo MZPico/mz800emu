@@ -1,3 +1,12 @@
+
+	- BUGFIX: Pressing RESET (F12 or menu) immediately after the window opened could crash the emulator if the emulation thread had not started yet.
+
+	- BUGFIX: Opening/closing the debugger window (Alt+D, menu) while emulation was running, and live memory reads in the Memory Browser, could rarely race with the emulation thread. Both operations are now performed safely.
+
+	- BUGFIX: The accelerated RAM access path is now always recomputed after loading a snapshot. Previously the emulator could keep using the memory mapping from before the snapshot was loaded, until the next banking change.
+
+	- DOCS FIX: MCP - the platform field of platform/info is mz700 / mz800 / mz1500; PAL and NTSC are distinguished by the tv_system field. The documentation previously claimed mz700-pal / mz700-ntsc.
+
 2026-07-28 - Released version 2.0.5 - preview
 
 	- The emulator can now be built on macOS as well (guide: docs/build_osx.md). Thanks to Mathias Olsson for the contribution.

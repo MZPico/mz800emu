@@ -39,6 +39,18 @@ extern "C"
     /*
      * Funkce z mzarch/mzXXX/mzXXX_main.c
      */
+
+    /**
+     * @brief Požádá o reset emulovaného stroje (thread-safe).
+     *
+     * Nastaví příznak reset_request pod mutexem; emu vlákno jej vyzvedne
+     * ve své smyčce a provede reset. Volatelné z libovolného vlákna
+     * (UI: F12, menu Reset, virtuální klávesnice; emu: dbgapi).
+     *
+     * Precondition: žádná. Před mzarch_platform_fn_init() a po
+     * mzarch_platform_fn_exit() mutex neexistuje - požadavek se v tom
+     * případě tiše zahodí (není běžící stroj, který by šlo resetovat).
+     */
     void mzarch_platform_fn_reset_request(void);
     void mzarch_platform_fn_init(void);
     void mzarch_platform_fn_exit(void);

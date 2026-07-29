@@ -4155,7 +4155,7 @@ void dbg_disasm_show_in_slot(int slot_idx, uint16_t addr)
          * focus_addr (Michal 2026-05-11). */
         if (!g_gui->showDebuggerWindow)
         {
-            debugger_show_main_window();
+            debugger_show_main_window_request();
         };
         DisassembledView *main = dbg_disasm_view_get_main();
         if (!main)

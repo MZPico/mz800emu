@@ -13,9 +13,16 @@
  *   - read/write hledá podle id v cache (= O(1) lookup, id == index v cache)
  *
  * Thread safety:
- *   - V dbgapi je serializace přes CMDRQ frontu (= jen jeden emu thread
- *     volá tyto funkce v jednom okamžiku). Statická cache je tedy bezpečná
- *     bez explicitního zámku.
+ *   - CMDRQ serializace kryje jen emu vlákno (dbgapi handlery, freeze).
+ *     Membrowser okna (membrowser_io.cpp, membrowser_diff_window.cpp) ale
+ *     volají dbgapi_regions_read/enumerate PŘÍMO z render smyčky UI
+ *     vlákna - souběh s re-enumerate na emu vlákně je tedy možný.
+ *   - s_region_cache[] proto chrání s_region_cache_mutex; read/write si
+ *     pod zámkem pořídí by-value kopii deskriptoru (struktura nemá
+ *     pointery) a vlastní přístup k datům běží už bez zámku, aby se
+ *     nedržel přes per-kind dispatch (žádné lock-order riziko s device
+ *     zámky). Souběžné čtení živé paměti vs. běžící emulace je u live
+ *     views záměrné (no-side-effect snapshot bez pauzy).
  *
  * Licence: GPLv3
  *
@@ -43,6 +50,8 @@
 
 #include <stdint.h>
 #include <string.h>
+#include <stdbool.h>
+#include <glib.h>
 
 #include "dbgapi_regions.h"
 #include "dbgapi_regions_arch.h"
@@ -74,6 +83,15 @@
 static st_REGION_DESC s_region_cache[REGION_CACHE_MAX];
 static int s_region_cache_count = 0;
 
+/**
+ * @brief Zámek nad s_region_cache[] a s_region_cache_count.
+ *
+ * Statická GMutex (zero-init je dle GLib validní stav). Drží se jen po
+ * dobu plnění cache / kopie deskriptoru - NIKDY přes per-kind přístup
+ * k datům (viz Thread safety v hlavičce souboru).
+ */
+static GMutex s_region_cache_mutex;
+
 
 /* ============================================================================
  * Per-arch dispatch
@@ -97,6 +115,17 @@ static int arch_regions_collect(st_REGION_DESC *out, int max_count)
  * Veřejné API
  * ============================================================================ */
 
+/* Helper: naplní cache z per-arch collect. Volat POUZE pod
+ * s_region_cache_mutex. */
+static void region_cache_fill_locked(void)
+{
+    s_region_cache_count = arch_regions_collect(s_region_cache, REGION_CACHE_MAX);
+    if (s_region_cache_count > REGION_CACHE_MAX) {
+        s_region_cache_count = REGION_CACHE_MAX;
+    }
+}
+
+
 int dbgapi_regions_enumerate(st_REGION_DESC *out, int max_count)
 {
     if (!out || max_count <= 0) return -1;
@@ -104,18 +133,20 @@ int dbgapi_regions_enumerate(st_REGION_DESC *out, int max_count)
     /* Naplň cache (= internal buffer). Z cache pak zkopíruj do `out`
      * limit max_count. Tím vyhneme race kdyby caller poslal menší out
      * než výsledný count - cache si pamatuje VŠECHNY. */
-    s_region_cache_count = arch_regions_collect(s_region_cache, REGION_CACHE_MAX);
-    if (s_region_cache_count > REGION_CACHE_MAX) {
-        s_region_cache_count = REGION_CACHE_MAX;
-    }
+    g_mutex_lock(&s_region_cache_mutex);
+    region_cache_fill_locked();
 
     int n = (s_region_cache_count < max_count) ? s_region_cache_count : max_count;
     memcpy(out, s_region_cache, n * sizeof(st_REGION_DESC));
+    g_mutex_unlock(&s_region_cache_mutex);
     return n;
 }
 
 
-/* Helper: získá descriptor z cache podle id. NULL = invalid.
+/* Helper: pod zámkem pořídí by-value kopii deskriptoru z cache podle id
+ * do @p out_desc. Vrací false = invalid id. Struktura nemá pointery,
+ * kopie je tedy plnohodnotný snapshot a volající s ní pracuje už bez
+ * zámku (viz Thread safety v hlavičce souboru).
  *
  * Lazy auto-enumerate: pokud cache ještě nebyla naplněná (= klient zavolal
  * region_read/write bez předchozího regions_list a bez otevřeného Memory
@@ -124,16 +155,19 @@ int dbgapi_regions_enumerate(st_REGION_DESC *out, int max_count)
  * explicitní enumerate-first (mzdos 0012). Re-enumerace při už naplněné
  * cache se NEdělá - ID zůstávají stabilní v rámci session (re-enumerate je
  * na dbgapi_regions_enumerate / regions_list). */
-static const st_REGION_DESC *lookup_region(int region_id)
+static bool lookup_region_copy(int region_id, st_REGION_DESC *out_desc)
 {
+    bool found = false;
+    g_mutex_lock(&s_region_cache_mutex);
     if (s_region_cache_count <= 0) {
-        s_region_cache_count = arch_regions_collect(s_region_cache, REGION_CACHE_MAX);
-        if (s_region_cache_count > REGION_CACHE_MAX) {
-            s_region_cache_count = REGION_CACHE_MAX;
-        }
+        region_cache_fill_locked();
     }
-    if (region_id < 0 || region_id >= s_region_cache_count) return NULL;
-    return &s_region_cache[region_id];
+    if (region_id >= 0 && region_id < s_region_cache_count) {
+        *out_desc = s_region_cache[region_id];
+        found = true;
+    }
+    g_mutex_unlock(&s_region_cache_mutex);
+    return found;
 }
 
 
@@ -169,8 +203,9 @@ static uint8_t *vram_plane_pointer(int sub_id)
 int dbgapi_regions_read(int region_id, uint32_t offset, uint8_t *out, uint32_t len)
 {
     if (!out || len == 0) return -1;
-    const st_REGION_DESC *desc = lookup_region(region_id);
-    if (!desc) return -1;
+    st_REGION_DESC desc_copy;
+    if (!lookup_region_copy(region_id, &desc_copy)) return -1;
+    const st_REGION_DESC *desc = &desc_copy;
     if (!desc->connected) return -1;
 
     uint32_t n = clamp_len(desc, offset, len);
@@ -370,8 +405,9 @@ int dbgapi_regions_read(int region_id, uint32_t offset, uint8_t *out, uint32_t l
 int dbgapi_regions_write(int region_id, uint32_t offset, const uint8_t *data, uint32_t len)
 {
     if (!data || len == 0) return -1;
-    const st_REGION_DESC *desc = lookup_region(region_id);
-    if (!desc) return -1;
+    st_REGION_DESC desc_copy;
+    if (!lookup_region_copy(region_id, &desc_copy)) return -1;
+    const st_REGION_DESC *desc = &desc_copy;
     if (!desc->connected) return -1;
     if (!desc->writable) return -1;
 

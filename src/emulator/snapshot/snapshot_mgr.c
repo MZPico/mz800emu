@@ -12,6 +12,12 @@
 #include "cfgmain.h"
 #include "mzarch/mzarch.h"
 #include "mzarch/mzarch_config.h"
+
+/* RAM fast-path rebuild po dokončení loadu (jen MZ-800, viz závěr
+ * snapshot_load_through_io). */
+#if MZARCH == 800
+#include "mzarch/mz800/memory/mz800_memory.h"
+#endif
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 #include "debugger/trace/eventlog.h"
 #endif
@@ -529,6 +535,19 @@ static en_SNAPSHOT_RESULT snapshot_load_through_io(snapshot_io_t *io)
             return result;
         }
     }
+
+    /* Po obnově kompletního stavu bezpodmínečně přepočítat RAM fast-path
+     * page-table. snap_gdg obnovuje regDMD surovým přiřazením (mimo
+     * banking-switch cestu s rebuildem) a běží AŽ PO snap_memory, jehož
+     * reconnect_ram tedy rebuildoval ještě nad starým DMD; snap_memext
+     * (další reconnect) běžet nemusí. Bez tohoto by jádro až do nejbližšího
+     * banking/DMD switche používalo tabulku z doby před loadem = tichý
+     * přístup mimo obnovené mapování. */
+#if MZARCH == 800
+#ifdef MZ800EMU_CFG_RAM_FASTPATH
+    mz800_ram_fastpath_rebuild();
+#endif
+#endif
 
     /* Po obnově celého stavu vynutit kompletní překreslení obrazovky z nově
      * načteného VRAM/GDG stavu. Snapshot se typicky načítá do pauzy, kdy se

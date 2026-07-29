@@ -81,7 +81,8 @@
 #endif
 
 /* mzarch_platform exportuje globální fields pro plný platform string,
- * MZARCH_NAME (= např. "mz700-pal") a pixel clock. */
+ * MZARCH_NAME (= "mz700" / "mz800" / "mz1500"; PAL/NTSC nerozlišuje -
+ * oba MZ-700 targety mají "mz700") a pixel clock. */
 #include "../mzarch/mzarch_platform.h"
 
 /* psg.h definuje PSG_DIVIDER (= 16 * GDGCLK2CPU_DIVIDER) - používané
@@ -11881,18 +11882,20 @@ en_MCP_DISPATCH_RESULT mcp_dispatch_request(const st_JSONL_MESSAGE *req,
 /**
  * @brief Detekce aktuálně emulované MZ platformy + módu + TV systému.
  *
- * Platforma je zjištěna z compile-time `MZARCH_NAME` (= obsahuje
- * PAL/NTSC discriminator u MZ-700; např. "mz700-pal" / "mz700-ntsc").
- * TV systém z `MZTVSYS` (= PAL=50 Hz, NTSC=60 Hz). Mód (native vs
- * compat700) je runtime z GDG `regDMD` bit.
+ * Platforma je zjištěna z compile-time `MZARCH_NAME` (= "mz700" /
+ * "mz800" / "mz1500"; PAL/NTSC NErozlišuje - oba MZ-700 targety mají
+ * "mz700"). PAL vs NTSC rozlišuje výhradně `MZTVSYS` (= PAL=50 Hz,
+ * NTSC=60 Hz), viz tv_system_out. Mód (native vs compat700) je runtime
+ * z GDG `regDMD` bit.
  *
  * Časování informace je klíčová pro klienta - MZ-700 PAL vs NTSC mají
  * **rozdílné krystaly + CTC0 deličky** (= jiné BASIC tempo, jiné
- * jiné raster intervals). MZ-1500 ≠ MZ-700 NTSC v CTC0 dělíčce i přes
+ * raster intervals). MZ-1500 ≠ MZ-700 NTSC v CTC0 deličce i přes
  * stejný 14.318 MHz krystal.
  *
- * @param[out] platform_out   "mz700-pal" / "mz700-ntsc" / "mz800" /
- *                            "mz1500" (= MZARCH_NAME).
+ * @param[out] platform_out   "mz700" / "mz800" / "mz1500"
+ *                            (= MZARCH_NAME; PAL/NTSC nerozlišuje,
+ *                            viz tv_system_out).
  * @param[out] full_name_out  "MZ-700 (PAL)" / "MZ-700 (NTSC)" / "MZ-800" /
  *                            "MZ-1500" (= g_mzarch_full_name).
  * @param[out] mode_out       "native" / "compat700" (= runtime GDG regDMD).

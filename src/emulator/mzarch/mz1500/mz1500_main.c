@@ -216,6 +216,14 @@ void mzarch_platform_fn_init(void)
 
 void mzarch_platform_fn_reset_request(void)
 {
+    /* Před mzarch_platform_fn_init (a po fn_exit) mutex neexistuje - UI
+     * vlákno (F12, menu Reset, vkbd) může běžet dřív, než emu vlákno
+     * platformu inicializuje; bez guardu by g_mutex_lock(NULL) spadl.
+     * Reset bez běžícího stroje nemá co resetovat - tiše zahodíme. */
+    if (g_mzarch_main.reset_request_mutex == NULL)
+    {
+        return;
+    };
     APP_MUTEX_LOCK(g_mzarch_main.reset_request_mutex);
     g_mzarch_main.reset_request = true;
     APP_MUTEX_UNLOCK(g_mzarch_main.reset_request_mutex);

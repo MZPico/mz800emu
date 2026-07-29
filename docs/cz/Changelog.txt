@@ -1,3 +1,12 @@
+
+	- BUGFIX: Stisk RESET (F12 nebo menu) okamžitě po startu okna mohl shodit emulátor, pokud se ještě nestihlo spustit emulační vlákno.
+
+	- BUGFIX: Otevírání/zavírání okna debuggeru (Alt+D, menu) za běhu emulace a živé čtení paměti v Memory Browseru se mohly vzácně střetnout s emulačním vláknem (souběh). Obě operace nyní probíhají bezpečně.
+
+	- BUGFIX: Po načtení snapshotu se nyní vždy přepočítá zrychlená cesta přístupu do RAM. Dříve mohl emulátor až do nejbližší změny mapování paměti používat mapování z doby před načtením snapshotu.
+
+	- OPRAVA DOKUMENTACE: MCP - pole platform v platform/info nabývá hodnot mz700 / mz800 / mz1500; PAL a NTSC rozlišuje pole tv_system. Dokumentace dříve chybně uváděla mz700-pal / mz700-ntsc.
+
 2026-07-28 - Released version 2.0.5 - preview
 
 	- Emulátor lze nově sestavit i na macOS (návod: docs/build_osx.md). Díky Mathiasi Olssonovi za příspěvek.

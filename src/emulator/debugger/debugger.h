@@ -265,9 +265,27 @@ extern int g_eventlog_active; /* fwd decl pro TEST_DEBUGGER_NEED_DEBUG_CALLBACKS
     extern void debugger_reset_history(void);
     extern void debugger_init(void);
     extern void debugger_exit(void);
+    /*
+     * Show/hide hlavního okna debuggeru - DVĚ sady podle vlákna:
+     *
+     *  - přímé varianty (bez _request): swap CPU callbacků provádí
+     *    synchronně na aktuálním vlákně. Volat POUZE z EMU vlákna
+     *    (BP hit v bptmap/breakpoints, dbgapi handlery).
+     *
+     *  - *_request varianty: pro UI vlákno (menu, Alt+D, vkbd,
+     *    Focus-to v Disassembled). Nastaví g_debugger.active a swap
+     *    callbacků delegují na EMU vlákno přes
+     *    DBGAPI_CMD_DEBUGGER_STATE_RECOMPUTE - přímé volání z UI by
+     *    souběžně s běžící instrukční smyčkou bylo data race.
+     *    Z EMU vlákna *_request NEvolat (sync submit na vlastní frontu
+     *    = deadlock do timeoutu).
+     */
     extern void debugger_show_main_window(void);
     extern void debugger_hide_main_window(void);
     extern void debugger_show_hide_main_window(void);
+    extern void debugger_show_main_window_request(void);
+    extern void debugger_hide_main_window_request(void);
+    extern void debugger_show_hide_main_window_request(void);
     extern void debugger_update_all(void);
     extern void debugger_animation(void);
     extern uint8_t debugger_dasm_read_cb(uint16_t addr, void *user_data);

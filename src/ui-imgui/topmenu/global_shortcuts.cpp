@@ -428,7 +428,7 @@ void imgui_global_shortcuts(void)
             {
                 if (!g_debugger.active)
                     g_dbg_ui.opened_via_alt_d = true;
-                debugger_show_hide_main_window();
+                debugger_show_hide_main_window_request();
             }
         };
 

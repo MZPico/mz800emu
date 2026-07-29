@@ -122,7 +122,7 @@ přesné clocks, kompletní scanline geometrie).
 
 | Field | Hodnota | Popis |
 |-------|---------|-------|
-| `platform` | `mz700-pal` / `mz700-ntsc` / `mz800` / `mz1500` | Compile-time binárka (= MZARCH_NAME) |
+| `platform` | `mz700` / `mz800` / `mz1500` | Compile-time binárka (= MZARCH_NAME; PAL/NTSC nerozlišuje - viz `tv_system`) |
 | `full_name` | "MZ-700 (PAL)" / "MZ-800" / "MZ-1500" / atd. | Human-readable |
 | `mode` | `native` / `compat700` | Runtime z GDG regDMD bit (MZ-700 vždy native) |
 | `tv_system` | `PAL` / `NTSC` | Compile-time z MZTVSYS makra |

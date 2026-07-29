@@ -74,7 +74,7 @@ void imgui_menu_debugger(en_DBG_MENU_CALLER caller)
         {
             if (ImGui::MenuItem(_L("MZ-800 Debugger"), "Alt+D", g_gui->showDebuggerWindow))
             {
-                debugger_show_hide_main_window();
+                debugger_show_hide_main_window_request();
             };
         };
 
