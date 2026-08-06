@@ -21,7 +21,7 @@ jobs:
       SDL_IMAGE_TAG: release-3.4.2
       MINIZIP_TAG: 4.1.2
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Projektove zavislosti + oficialni SDL3 build-deps seznam pro
       # Ubuntu (https://wiki.libsdl.org/SDL3/README-linux#build-dependencies)
@@ -43,7 +43,7 @@ jobs:
       # a cachujeme podle tagu verzi.
       - name: Cache SDL3 + SDL3_image + minizip-ng
         id: deps-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.DEPS_PREFIX }}
           key: linux-deps-${{ env.SDL_TAG }}-${{ env.SDL_IMAGE_TAG }}-${{ env.MINIZIP_TAG }}
@@ -90,10 +90,13 @@ jobs:
     name: macOS
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Homebrew packages
         run: |
+          # Runner image obsahuje neduvěryhodný tap aws/tap - brew kvůli
+          # němu tiskne tap-trust varování; nepoužíváme ho, pryč s ním.
+          brew untap aws/tap || true
           brew install cmake ninja pkg-config glib json-glib curl zlib sdl3 sdl3_image minizip-ng
 
       - name: Build
@@ -106,7 +109,7 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup MSYS2 UCRT64
         uses: msys2/setup-msys2@v2
