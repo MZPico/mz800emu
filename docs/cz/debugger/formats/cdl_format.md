@@ -203,10 +203,16 @@ na aktuální grafický režim. Bank-mask přichází z hardware:
 | E000h-FFFFh | ROM_E000 mapped, ostatní (NE Prohibited) | bus + rom-upper[bus_addr-E000h] |
 | E000h-FFFFh | ROM_E000 unmapped | bus + ram[bus_addr] |
 
-Pozn.: "Prohibited" = stav po OUT 0xE5, persistuje přes OUT E0/E1/E2/E3 i přes
-DMD bit 3 switch (700 ↔ 800 native). Ruší jen OUT 0xE6 nebo OUT 0xE4 (= reset
-map). V Prohibited stavu CPU čte konstantní 0x1A shadow byte v celém
-$E000-$FFFF - žádný fyzický region (skip resolveru).
+Pozn.: "Prohibited" = stav po OUT 0xE5. Na **MZ-800** persistuje přes OUT
+E0/E1/E2/E3/E4 i přes DMD bit 3 switch (700 ↔ 800 native); ruší ho jen
+OUT 0xE6 nebo reset. V Prohibited stavu CPU čte konstantní 0x1A shadow byte
+v celém $E000-$FFFF - žádný fyzický region (skip resolveru).
+
+Pozor na rozdíl mezi architekturami: na **samostatném MZ-700** naopak
+`OUT 0xE4` Prohibited **zruší**, protože tam `memory_mmap_all_on()` přepisuje
+celé slovo mapy (prosté přiřazení v `mz700_memory.c`), kdežto na MZ-800 jen
+nastavuje bity (`|=` v `mz800_memory.c`) a příznak Prohibited nechává být.
+Formulace "ruší jen 0xE6 nebo 0xE4" bez uvedení architektury je tedy neúplná.
 
 ### Mapování CPU sběrnice na regiony (MZ-700 mód)
 
@@ -225,8 +231,9 @@ do mode-specific MZ-700 souborů **a** do globální `vram.cdl`:
 | E000h-FFFFh | ROM_E000 mapped, ostatní (NE Prohibited) | bus + rom-upper[bus_addr - E000h] |
 | E000h-FFFFh | ROM_E000 unmapped | bus + ram[bus_addr] |
 
-Pozn.: viz "Prohibited" sekce u MZ-800 mapování výše. Sjednocené chování
-banking $E5/$E6 napříč MZ-700 i MZ-800.
+Pozn.: viz "Prohibited" sekce u MZ-800 mapování výše. Chování samotných portů
+$E5 a $E6 je napříč MZ-700 i MZ-800 shodné (E5 aktivuje, E6 ruší); shodné
+**není** chování $E4 - detail v téže sekci.
 
 ### Mode-specific recording (MZ-800 grafické režimy)
 
