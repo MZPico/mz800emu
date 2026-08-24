@@ -44,9 +44,14 @@ extern "C"
                                                     MZ800: 0x8000 - 0x9fff | 0xbfff (VRAM) */
 #define MEMORY_MZ800_MAP_FLAG_ROM_E000 (1 << 3)   /* + MZ700: 0xd000 - 0xdfff (atributova VRAM) */
 #define MEMORY_MZ800_MAP_FLAG_PROHIBITED (1 << 4) /* OUT 0xE5/E6 - "Prohibited" banking mode \
-                                                     na MZ-800. Aktivni = ctene $E009-$FFFF \
-                                                     vraci 0x1A shadow byte; $E000-$E008 \
-                                                     mapped ports zustavaji funkcni. \
+                                                     na MZ-800. Aktivni = ctene CELE \
+                                                     $E000-$FFFF vraci 0x1A shadow byte, \
+                                                     vcetne mapped ports $E000-$E008 - \
+                                                     ctecí makra testuji tento priznak jako \
+                                                     PRVNI podminku, takze se k portum \
+                                                     nedojde. Empiricky overeno v0.5 T4: \
+                                                     $E001 (PIO port B) vraci 0x1A, ne \
+                                                     klavesnicovy scan. \
                                                      Persistuje pres OUT E0/E1/E2/E3/E4 i \
                                                      pres DMD bit 3 switch (700 <-> 800). \
                                                      Reset: OUT E6, gdg_init/reset. \
