@@ -90,7 +90,7 @@ extern "C"
      * One-shot WAIT logika pro MZ-700 mode VRAM/CG-RAM pristup.
      *
      * Pravidla z gate-level HDL simulace GDG (viz mz800-knowledge
-     * reference/agent/hw/08-video-mz700-mode.md):
+     * public/reference/agent/hw/08-video-mz700-mode.md):
      *
      *   1. SIGNAL_GDG_HBLNK = 1 (visible canvas, vcetne 5 px pre-canvas zone):
      *      - Prvni R/W pristup na scanline projde bez WAIT (= "first free").

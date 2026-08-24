@@ -11,9 +11,12 @@
  * rozsahu adres. Pro každý takový cíl vygeneruje auto-label s konvencí
  * S/L/D/W (Subroutine / Label / Data / Warn).
  *
- * Konvence pojmenování (sjednoceno na lowercase hex; mzdisasm
- * konvenci se nepodařilo dohledat v ~/projects/mz800-knowledge/tools/
- * = adresář prázdný):
+ * Konvence pojmenování (sjednoceno na lowercase hex). Pozn.: mzdisasm
+ * (recursive descent Z80 disassembler) žije v samostatném projektu
+ * ~/projects/mz-revtools/ - viz mz800-knowledge/public/tools/README.md.
+ * Používá odlišnou konvenci - uppercase hex s podtržítkem (SUB_xxxx,
+ * L_xxxx, D_xxxx, ENTRY_xxxx, EXT_xxxx; mz-revtools/tools/mzdisasm/
+ * mzdisasm.py:872-900). Sjednocení je otevřená otázka:
  *
  *   S<addr>  - subroutine target (CALL nn / CALL cc,nn / RST n)
  *   L<addr>  - jump target (JP nn / JP cc,nn / JR e / JR cc,e / DJNZ e)

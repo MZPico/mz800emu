@@ -15,7 +15,7 @@ code). For the inverse direction (display -> Sharp ASCII) there is
 `@?DACN`.
 
 Authoritative source:
-`mz800-knowledge/reference/agent/conventions/sharpmz-ascii.md`.
+`mz800-knowledge/public/reference/agent/conventions/sharpmz-ascii.md`.
 
 ## Text VRAM layout (MZ-700 / 700-compat)
 
@@ -103,7 +103,7 @@ chars = base64.b64decode(dump["chars_b64"])
 # Display code -> Sharp MZ ASCII -> standard ASCII (two-step).
 # For a quick text dump of letters / digits use the inverse @?DACN
 # mapping. For a complete mapping use the table from
-# mz800-knowledge/reference/agent/conventions/sharpmz-ascii.md.
+# mz800-knowledge/public/reference/agent/conventions/sharpmz-ascii.md.
 ```
 
 For full UTF-8 conversion (including arrows, card suits, German /
@@ -125,5 +125,5 @@ performs this conversion automatically with `--charset eu` (default).
 
 - `emulator://video/text_dump` - live text VRAM dump (display code).
 - `emulator://docs/memory_layout` - where the text VRAM region lives.
-- `mz800-knowledge/reference/agent/conventions/sharpmz-ascii.md` - full reference (Sharp MZ ASCII <-> ASCII <-> display code).
+- `mz800-knowledge/public/reference/agent/conventions/sharpmz-ascii.md` - full reference (Sharp MZ ASCII <-> ASCII <-> display code).
 - ROM routine `@?ADCN` at `0x0BB9`, `@?DACN` at `0x0BCE`.

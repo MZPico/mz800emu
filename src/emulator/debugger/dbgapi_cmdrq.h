@@ -3054,7 +3054,7 @@ typedef struct st_DBGAPI_PERIPH_AY3_8910_PARAM
  * řízený 1-bit reproduktor - "beeper" je tedy pracovní termín, ne HW
  * pojem ze Sharp dokumentace.
  *
- * Reference: mz800-knowledge/reference/agent/hw/06-ctc-8253.md
+ * Reference: mz800-knowledge/public/reference/agent/hw/06-ctc-8253.md
  * (sekce CTC0 OUT, GATE0), hw/05-pio-8255.md (sekce PC0 audio gate).
  */
 typedef struct st_DBGAPI_PERIPH_BEEPER_PARAM
@@ -3093,7 +3093,7 @@ typedef struct st_DBGAPI_PERIPH_BEEPER_PARAM
  * pro MZ-700/MZ-1500 entries 0..7 (= mode700_color / mode1500_color
  * přetypované do uint8_t).
  *
- * Reference: mz800-knowledge/reference/agent/hw/09-video-mz800-modes.md
+ * Reference: mz800-knowledge/public/reference/agent/hw/09-video-mz800-modes.md
  * (GDG modes), 10-vram-organization.md (VRAM layout).
  */
 typedef struct st_DBGAPI_PERIPH_GDG_PARAM
@@ -3157,7 +3157,7 @@ typedef struct st_DBGAPI_PERIPH_FDC_DRIVE
  * `drives[]` obsahuje per-drive metadata. Image_basename je pouze
  * filename (basename), bez absolutní cesty (security per V1.D.1).
  *
- * Reference: mz800-knowledge/reference/agent/hw/16-floppy.md
+ * Reference: mz800-knowledge/public/reference/agent/hw/16-floppy.md
  * (Sharp WD1793 specifika).
  */
 typedef struct st_DBGAPI_PERIPH_WD1793_PARAM
@@ -3202,7 +3202,7 @@ typedef struct st_DBGAPI_PERIPH_WD1793_PARAM
  * filename bez adresářové cesty (security per V1.D.1). `paused` je
  * orthogonální k `state` (= PLAY + paused = PLAY pozastavený).
  *
- * Reference: mz800-knowledge/reference/agent/formats/mzf.md (CMT
+ * Reference: mz800-knowledge/public/reference/agent/formats/mzf.md (CMT
  * transport format).
  */
 typedef struct st_DBGAPI_PERIPH_CMT_PARAM

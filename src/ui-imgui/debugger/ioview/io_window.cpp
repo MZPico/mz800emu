@@ -151,7 +151,7 @@ static const SectionGroup g_sections[] = {
     /* MemExt = oddělená HW karta (paměťová extenze 64 kB -> 512 kB SRAM),
      * jediný port 0xE7. NENÍ to banking - Sharp banking porty (0xE0-0xE6)
      * jsou v sekci "Memory banking" výše. Reference: mz800-knowledge
-     * reference/agent/hw/23-memext.md. */
+     * public/reference/agent/hw/23-memext.md. */
     { "memext",    "Memory expansion (MemExt)", "Memory ext -" },
     { "psg",       "PSG sound",                "PSG -" },
     /* MZ-1500 ma dva SN76489 (stereo L+R) na portech 0xE9/0xF2/0xF3.

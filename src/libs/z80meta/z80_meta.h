@@ -16,7 +16,7 @@
  * Tabulka je generována skriptem
  * `emu-experiments/disasm-upgrade/tools/z80_meta_gen/gen_z80_meta.py`
  * z explicitních dat (entries.py) a křížově ověřena proti
- * `mz800-knowledge/reference/agent/cpu/z80/06-flag-affection.md`.
+ * `mz800-knowledge/public/reference/agent/cpu/z80/06-flag-affection.md`.
  *
  * @note Knihovna je thread-safe: lookup nepoužívá globální stav.
  *       Vrácený ukazatel míří na statickou paměť (literály), nesmí se
@@ -43,7 +43,7 @@ extern "C" {
  * @brief Hodnota efektu na jeden flag registru F.
  *
  * Notace odpovídá souboru
- * `mz800-knowledge/reference/agent/cpu/z80/06-flag-affection.md`.
+ * `mz800-knowledge/public/reference/agent/cpu/z80/06-flag-affection.md`.
  * Pole `z80_meta_t::flags` má 8 prvků v pořadí
  * S, Z, F5, H, F3, P/V, N, C (od MSB k LSB registru F).
  */

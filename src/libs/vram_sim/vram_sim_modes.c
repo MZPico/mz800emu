@@ -14,7 +14,7 @@
  *  - Emu kód implementuje skrz dispatch fall-through (case 0x03 je obecně
  *    320x200@16 dispatch s VBANK ignorovaným, case 0x07 je 640x200@4
  *    dispatch). Toto chování je hypotéza C-emulátoru, ne ověřeno proti
- *    HDL netlistu (viz mz800-knowledge hw/09a-undoc-dmd-modes.md).
+ *    HDL netlistu (viz mz800-knowledge public/reference/agent/hw/09a-undoc-dmd-modes.md).
  *  - Sim port = stejná hypotéza. Identity test je ověří proti emu (oba
  *    mají stejnou hypotézu), ne proti realitě HW.
  */

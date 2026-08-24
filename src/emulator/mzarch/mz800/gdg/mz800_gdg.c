@@ -375,7 +375,7 @@ void gdg_write_byte(unsigned addr, uint8_t value)
              * Emulator hodnotu udrzuje pro Status read (0xCE / 0xE008 bit 2),
              * ale efekt na horizontalni timing (CKSW=1 zkracuje radek o 16 pxCLK)
              * NEemulujeme - dynamicka zmena sirky radku za behu by rozhodila
-             * dalsi vztahy v emulaci. Viz mz800-knowledge hw/08a-video-timing.md
+             * dalsi vztahy v emulaci. Viz mz800-knowledge public/reference/agent/hw/08a-video-timing.md
              * (rozdil ~1.5 % frame rate). */
             g_gdg.cksw = (value >> 7) & 1;
         };

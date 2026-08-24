@@ -122,7 +122,7 @@ extern "C"
                              * Citelny v Status registru bit 2 (0xCE i 0xE008).
                              * Emulator hodnotu udrzuje, ale zmenu HSYN timingu
                              * (CKSW=1 zkracuje horizontalni periodu o 16 pxCLK)
-                             * NEemulujeme - viz mz800-knowledge hw/08a-video-timing.md.
+                             * NEemulujeme - viz mz800-knowledge public/reference/agent/hw/08a-video-timing.md.
                              */
 
         unsigned tempo;

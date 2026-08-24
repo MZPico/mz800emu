@@ -443,7 +443,7 @@ static int handle_interrupts_internal(z80_t *cpu) {
      * spolu). Fire iff_change vzdy - reason NMI_ACK signalizuje
      * semantiku, ne nutne realnou zmenu IFF2.
      *
-     * Knowledge base reference: ~/projects/mz800-knowledge/reference/agent/
+     * Knowledge base reference: ~/projects/mz800-knowledge/public/reference/agent/
      * cpu/z80/07-interrupts.md radek 24-25, 127.
      */
     if (cpu->nmi_pending) {
@@ -482,7 +482,7 @@ static int handle_interrupts_internal(z80_t *cpu) {
      * IFF1+IFF2 nezavisle na IM mode (Zilog Z80 manual, Sean Young Z80
      * doc). IM mode jen ovlivnuje co se vykona po clearu.
      *
-     * Knowledge base reference: ~/projects/mz800-knowledge/reference/agent/
+     * Knowledge base reference: ~/projects/mz800-knowledge/public/reference/agent/
      * cpu/z80/07-interrupts.md radek 42-43, 105.
      */
     else if (cpu->iff1 && !ei_blocked) {

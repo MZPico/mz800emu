@@ -4,7 +4,7 @@
  * Generator: emu-experiments/disasm-upgrade/tools/z80_meta_gen/gen_z80_meta.py
  * Source data:
  *   - entries.py (hard-coded tabulka tříd instrukcí)
- *   - mz800-knowledge/reference/agent/cpu/z80/06-flag-affection.md
+ *   - mz800-knowledge/public/reference/agent/cpu/z80/06-flag-affection.md
  *     (kanonický zdroj flag effects, použit pro křížovou kontrolu)
  *
  * Pro regeneraci spusť:

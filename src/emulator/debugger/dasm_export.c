@@ -118,10 +118,11 @@ static int label_priority(dasm_label_type_t t)
  * @param      addr  Adresa cíle.
  * @param      type  Klasifikace.
  *
- * @note mzdisasm konvenci se nepodařilo dohledat
- *       (~/projects/mz800-knowledge/tools/mzdisasm/ neexistuje) -
- *       lowercase je volba implementátora pro V1, lze sjednotit
- *       později pokud Michal upřesní.
+ * @note mzdisasm (projekt ~/projects/mz-revtools/) používá jinou konvenci -
+ *       uppercase hex s podtržítkem (SUB_xxxx / L_xxxx / D_xxxx), viz
+ *       mz-revtools/tools/mzdisasm/mzdisasm.py:872-900. Zdejší lowercase
+ *       je volba implementátora pro V1; sjednotit lze později, pokud
+ *       Michal upřesní, která konvence má vyhrát.
  */
 static void make_default_name(char *out, size_t outsz, uint16_t addr,
                               dasm_label_type_t type)

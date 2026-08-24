@@ -44,7 +44,7 @@
  * byl "half-inverted" - Command write bez inverze, Status read s inverzí).
  * Současná varianta je ekvivalentní, jen symetrická vůči datasheetu.
  *
- * Reference: mz800-knowledge/reference/agent/hw/16-floppy.md
+ * Reference: mz800-knowledge/public/reference/agent/hw/16-floppy.md
  * (Sharp invertuje data + side).
  *
  * License: GPLv3.

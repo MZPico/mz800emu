@@ -11020,7 +11020,7 @@ static en_MCP_DISPATCH_RESULT _handle_get_periph_ay3_8910(
  * Pozn.: Sharp MZ nemá dedikovaný 1-bit beeper jako ZX Spectrum;
  * "beeper" je pracovní termín pro audio cestu CTC0 OUT přes hradla
  * GATE0 + PC0. Reference:
- * mz800-knowledge/reference/agent/hw/06-ctc-8253.md (CTC0 OUT),
+ * mz800-knowledge/public/reference/agent/hw/06-ctc-8253.md (CTC0 OUT),
  * hw/05-pio-8255.md (PC0 audio gate).
  *
  * Layout response:

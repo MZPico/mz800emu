@@ -15,7 +15,7 @@
  *   - BP_EVENT_CPU_IFF_CHANGE zachovan (= BC pro V1.5 .bpt files), ale
  *     deprecated ve prospech IFF1/IFF2 split.
  *   - psg:int_pa5 NEPRIDAN - service manual chyba (PA5 = VBLN, ne PSG INT,
- *     viz REVIEW_psg_int_pa5.md v mz800-knowledge).
+ *     viz public/REVIEW_psg_int_pa5.md v mz800-knowledge).
  *
  * Účel:
  *   - Definuje stabilní enum HW eventů (vsync, ctc:zc0, irq:fdc, ...).

@@ -370,7 +370,7 @@ static inline void mzarch_sync_ctc0_and_cmt(unsigned instruction_ticks)
  * column period 320x200.
  *
  * Zdroj: gate-level HDL simulace GDG, viz mz800-knowledge
- * reference/agent/hw/10b-vram-timing.md sekce "Pouziti v emulatoru".
+ * public/reference/agent/hw/10b-vram-timing.md sekce "Pouziti v emulatoru".
  *
  * [neovereno] HW measurement - HDL netlist je gate-accurate, ale realne
  * HW mereni zatim chybi. Hodnoty 6-9 kolisaji v ramci sub-column phase.

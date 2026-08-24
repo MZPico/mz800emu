@@ -7,7 +7,7 @@
  * a callback pro live čtení aktuální hodnoty z g_* state.
  *
  * Data zde uvedená jsou compile-time konstanty (= žádné dynamické
- * loading). Zdroj informací: ~/projects/mz800-knowledge/reference/
+ * loading). Zdroj informací: ~/projects/mz800-knowledge/public/reference/
  * agent/hw/04-io-ports.md a souvisejicí HW reference.
  *
  * UPOZORNĚNÍ: Knowledge base (= ground truth) říká:

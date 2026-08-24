@@ -1592,7 +1592,7 @@ const st_IO_PORT_DESC g_io_ports[] = {
      * mapping selector). `decode` callback ho překládá na symbolický
      * název.
      *
-     * Reference: mz800-knowledge reference/agent/hw/03-banking.md
+     * Reference: mz800-knowledge public/reference/agent/hw/03-banking.md
      * (Sharp banking via GDG, porty 0E0h-0E6h) a hw/23-memext.md (MemExt
      * 64 kB -> 512 kB SRAM karta, port 0E7h). */
 
