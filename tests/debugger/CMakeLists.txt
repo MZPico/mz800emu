@@ -226,3 +226,9 @@ mz_add_test(profiler
     SOURCES  test_profiler.c
     LABELS   "emu;debugger"
 )
+
+mz_add_test(mhmap_resolve
+    TYPE     EMU
+    SOURCES  test_mhmap_resolve.c
+    LABELS   "emu;debugger"
+)

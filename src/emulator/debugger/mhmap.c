@@ -358,15 +358,26 @@ en_MHMAP_RESOLVE_RESULT mhmap_resolve_mem ( uint16_t bus_addr, en_MHMAP_REGION *
 
         case 0xE: /* E000-EFFF: ROM monitor upper, RAM, mapped ports, nebo "off" */
         case 0xF:
+            /* Prohibited se testuje PRVNI - stejne jako v ctecí ceste CPU
+             * (makra memory_internal_read_e000_efff / _f000_ffff v
+             * mz800_memory.c). V tomto stavu CPU cte konstantni 0x1A shadow
+             * byte z CELEHO $E000-$FFFF a fyzickeho cile se nedotkne, at uz
+             * je ROM_E000 namapovana nebo ne.
+             *
+             * Poradi je podstatne: kdyz se testoval az uvnitr vetve
+             * ROM_E000, konfigurace "Prohibited bez ROM_E000" propadla na
+             * zaverecne MH_RESOLVE_RETURN_RAM a heatmapa zaznamenala cteni
+             * z RAM, ktere se fyzicky nestalo.
+             *
+             * Empiricky overeno banking-e800 v0.4 + v0.5 (T4: $E001 vraci
+             * 0x1A, ne klavesnicovy scan). Regresni test:
+             * tests/debugger/test_mhmap_resolve.c */
+            if ( MEMORY_MZ800_MAP_TEST_PROHIBITED )
+            {
+                return MHMAP_RESOLVE_SKIP;
+            }
             if ( MEMORY_MZ800_MAP_TEST_ROM_E000 )
             {
-                /* V Prohibited stavu CPU cte 0x1A shadow byte (NE z ROM),
-                 * fyzicky cil pak neni ROM - skip resolveru.
-                 * Empiricky overeno banking-e800 v0.4 + v0.5. */
-                if ( MEMORY_MZ800_MAP_TEST_PROHIBITED )
-                {
-                    return MHMAP_RESOLVE_SKIP;
-                }
                 /* V 800 native (DMD bit 3 = 0) + K3 je $E000-$E00F = 0xFF
                  * (= mapped ports area "off"). Cil neni ROM - skip resolveru.
                  * Empiricky overeno banking-e800 v0.5 T3. */
