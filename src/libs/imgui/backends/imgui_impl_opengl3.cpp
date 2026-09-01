@@ -365,16 +365,6 @@ bool    ImGui_ImplOpenGL3_Init(const char* glsl_version)
 #endif
 
     bd->UseBufferSubData = false;
-
-    #ifdef __EMSCRIPTEN__
-
-        /* Device bisection switch (?exp=subdata): stream vertex data with
-
-         * glBufferSubData into a preallocated buffer instead of glBufferData per draw list. */
-
-        if (getenv("MZ_WASM_EXP_SUBDATA")) bd->UseBufferSubData = true;
-
-    #endif
     /*
     // Query vendor to enable glBufferSubData kludge
 #ifdef _WIN32

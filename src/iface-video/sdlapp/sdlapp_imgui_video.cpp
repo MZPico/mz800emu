@@ -123,21 +123,11 @@ static void video_sdlapp_imgui_render_cb(SdlAppWindow *win, gpointer user_data)
 #endif
 
     static GLuint imageTexture = 0;
-#ifdef __EMSCRIPTEN__
-    /* Device bisection switches (set from the embedding page via ENV, see ?exp=):
-     * RECREATE  - fresh texture every frame instead of glTexSubImage2D
-     * FULLREDRAW - upload every frame regardless of the emulator's change flag */
-    static const bool exp_recreate = getenv("MZ_WASM_EXP_RECREATE") != NULL;
-    static const bool exp_fullredraw = getenv("MZ_WASM_EXP_FULLREDRAW") != NULL;
-    if (exp_fullredraw) have_new_screen = TRUE;
-#else
-    const bool exp_recreate = false;
-#endif
     if ((have_new_screen) || (DISPLAY_TEST_FORCED_FULL_SCREEN_REDRAWING))
     {
         // g_print("Redrawing screen fb: %u, ren_id: %u\n", g_iface_video->fbsnapshot_screen_id, g_iface_video->renderer_screen_id);
         static int imageTexW = 0, imageTexH = 0;
-        if (!imageTexture || exp_recreate || !video_sdl3_update_texture_from_surface(imageTexture, surface, imageTexW, imageTexH))
+        if (!imageTexture || !video_sdl3_update_texture_from_surface(imageTexture, surface, imageTexW, imageTexH))
         {
             if (imageTexture)
                 glDeleteTextures(1, &imageTexture);
@@ -148,10 +138,14 @@ static void video_sdlapp_imgui_render_cb(SdlAppWindow *win, gpointer user_data)
     };
 
 #ifdef __EMSCRIPTEN__
-    static const bool exp_blit = getenv("MZ_WASM_EXP_BLIT") != NULL;
-    g_video_blit_enabled = exp_blit;
+    /* Browser build: the screen is drawn by an attribute-less GL blit before
+     * ImGui (see video_sdl3_blit_texture) - some mobile drivers rendered half
+     * of ImGui's textured quad with zeroed vertex attributes. MZ_WASM_IMGUI_QUAD
+     * restores the ImGui quad for comparison. */
+    static const bool use_blit = getenv("MZ_WASM_IMGUI_QUAD") == NULL;
+    g_video_blit_enabled = use_blit;
     g_video_blit_texture = imageTexture;
-    imgui_main_window(exp_blit ? 0 : imageTexture);
+    imgui_main_window(use_blit ? 0 : imageTexture);
 #else
     imgui_main_window(imageTexture);
 #endif

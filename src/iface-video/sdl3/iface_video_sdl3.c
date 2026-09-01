@@ -202,15 +202,7 @@ gboolean video_sdl3_update_texture_from_surface(GLuint texture, SDL_Surface *sur
     if (!surface || !texture || surface->w != tex_w || surface->h != tex_h)
         return FALSE;
     SDL_Surface *converted = NULL;
-#ifdef __EMSCRIPTEN__
-    static const int exp_nolut = -1; /* resolved below */
-    static int use_lut = -1;
-    if (use_lut < 0) use_lut = (getenv("MZ_WASM_EXP_NOLUT") == NULL); /* NOLUT: SDL_ConvertSurface instead of the palette LUT */
-    (void)exp_nolut;
-#else
-    const int use_lut = 1;
-#endif
-    if (surface->format == SDL_PIXELFORMAT_INDEX8 && use_lut)
+    if (surface->format == SDL_PIXELFORMAT_INDEX8)
     {
         static SDL_Surface *scratch = NULL;
         if (!scratch || scratch->w != surface->w || scratch->h != surface->h)
@@ -355,7 +347,7 @@ void video_sdl3_set_GL_swap_interval(int value)
 #ifdef __EMSCRIPTEN__
 /* Attribute-less screen blit: one triangle generated from gl_VertexID, no
  * vertex/index buffers. Used instead of ImGui's textured quad when
- * MZ_WASM_EXP_BLIT is set (some mobile GL drivers returned zeroed
+ * the browser build runs (some mobile GL drivers returned zeroed
  * attributes for the quad's last vertex, corrupting half of the screen). */
 GLuint g_video_blit_texture = 0;
 gboolean g_video_blit_enabled = FALSE;
