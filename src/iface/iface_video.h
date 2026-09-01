@@ -8,6 +8,10 @@
 #include "emulator.h"
 #include "display.h"
 #include "emulator/emulator_measuring.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <stdio.h>
+#endif
 
 typedef struct iface_video_callbacks_t
 {
@@ -78,6 +82,14 @@ static inline bool iface_video_get_redraw_full_screen_request(void)
 
 static inline void iface_video_framebuffer_screen_done(uint8_t *pixels)
 {
+#if defined(__EMSCRIPTEN__) && defined(MZ_WASM_SPEED_METER)
+    { /* wasm speed meter: emulated frames per wall second, printed every 250 frames */
+        static int n = 0; static double t0 = 0;
+        double now = emscripten_get_now();
+        if (t0 == 0) t0 = now;
+        if (++n == 250) { printf("[speed] %.1f fps\n", 250000.0 / (now - t0)); fflush(stdout); n = 0; t0 = now; }
+    }
+#endif
 #if 0
     while (1)
     {
