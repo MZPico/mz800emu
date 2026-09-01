@@ -138,7 +138,7 @@ target_link_libraries(mz_json_glib INTERFACE PkgConfig::JSON_GLIB)
 # minizip-ng (snapshot system)
 # Linux používá static + transitivní deps, Windows dynamic
 # ----------------------------------------------------------------------------
-if(UNIX AND NOT EMSCRIPTEN)
+if(UNIX)
     pkg_check_modules(MINIZIP REQUIRED IMPORTED_TARGET minizip-ng)
     # Pro statické linkování - Linux variant
     pkg_check_modules(MINIZIP_STATIC REQUIRED minizip-ng)
@@ -240,7 +240,7 @@ endif()
 add_library(mz_platform INTERFACE)
 add_library(mz::platform ALIAS mz_platform)
 
-if(UNIX AND NOT EMSCRIPTEN)
+if(UNIX)
     target_compile_definitions(mz_platform INTERFACE
         LINUX
         _POSIX_C_SOURCE=200809L
