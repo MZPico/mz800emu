@@ -54,11 +54,12 @@ static void SDLCALL sdl3_audio_callback(void *userdata, SDL_AudioStream *astream
      * frame (20 ms), so keep pulling frames until the device request is
      * satisfied; otherwise emulation would be capped at one frame per callback
      * and the stream would underrun (crackle) with any comfortable buffer. */
-    /* additional_amount is in *device* format (e.g. 48 kHz on Windows) while we
-     * feed 44.1 kHz frames, so measure what the stream has ready after its own
-     * conversion instead of counting the bytes we pushed. */
+    /* total_amount is what the device wants queued, in *device* format (e.g.
+     * 48 kHz on Windows) while we feed 44.1 kHz frames; compare against what the
+     * stream has ready after its own conversion (which already includes data
+     * queued earlier), not against the bytes we push. */
     int guard = 0;
-    while (SDL_GetAudioStreamAvailable(astream) < additional_amount && guard++ < 16)
+    while (SDL_GetAudioStreamAvailable(astream) < total_amount && guard++ < 16)
     {
         size_t samples_size = 0;
         float *samples = iface_audio_wait_for_data(&samples_size);
