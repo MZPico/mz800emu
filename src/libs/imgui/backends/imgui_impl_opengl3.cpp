@@ -561,6 +561,7 @@ void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
             if (tex->Status != ImTextureStatus_OK)
                 ImGui_ImplOpenGL3_UpdateTexture(tex);
 
+#ifndef __EMSCRIPTEN__
     // Backup GL state
     GLenum last_active_texture; glGetIntegerv(GL_ACTIVE_TEXTURE, (GLint*)&last_active_texture);
     glActiveTexture(GL_TEXTURE0);
@@ -600,6 +601,7 @@ void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
     GLboolean last_enable_primitive_restart = (!bd->GlProfileIsES3 && bd->GlVersion >= 310) ? glIsEnabled(GL_PRIMITIVE_RESTART) : GL_FALSE;
 #endif
 
+#endif /* __EMSCRIPTEN__ */
     // Setup desired GL state
     // Recreate the VAO every time (this is to easily allow multiple GL contexts to be rendered to. VAO are not shared among GL contexts)
     // The renderer would actually work without any VAO bound, but then our VertexAttrib calls would overwrite the default one currently bound.
@@ -687,6 +689,7 @@ void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
     GL_CALL(glDeleteVertexArrays(1, &vertex_array_object));
 #endif
 
+#ifndef __EMSCRIPTEN__
     // Restore modified GL state
     // This "glIsProgram()" check is required because if the program is "pending deletion" at the time of binding backup, it will have been deleted by now and will cause an OpenGL error. See #6220.
     if (last_program == 0 || glIsProgram(last_program)) glUseProgram(last_program);
@@ -725,6 +728,21 @@ void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
     glViewport(last_viewport[0], last_viewport[1], (GLsizei)last_viewport[2], (GLsizei)last_viewport[3]);
     glScissor(last_scissor_box[0], last_scissor_box[1], (GLsizei)last_scissor_box[2], (GLsizei)last_scissor_box[3]);
     (void)bd; // Not all compilation paths use this
+#else
+    /* Browser build: skipping the ~27 synchronous WebGL state queries above;
+     * leave a known, neutral state for the host instead of restoring the old one. */
+    glUseProgram(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
+#ifdef IMGUI_IMPL_OPENGL_USE_VERTEX_ARRAY
+    glBindVertexArray(0);
+#endif
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    glViewport(0, 0, (GLsizei)fb_width, (GLsizei)fb_height);
+#endif /* __EMSCRIPTEN__ */
 }
 
 static void ImGui_ImplOpenGL3_DestroyTexture(ImTextureData* tex)
