@@ -60,6 +60,7 @@ typedef struct st_mzarch_main
 
     app_mutex_t *reset_request_mutex;
     bool reset_request;
+    bool rerun_mzf_request;     /**< Po resetu znovu spustit --run-mzf (in-place restart z hostitelské stránky). */
     unsigned reset_count;       /**< Inkrementuje se při každém dokončeném resetu. UI vlákno detekuje reset přes porovnání s předchozí hodnotou - umožňuje sync focus_addr na nové PC i při resetu z paused stavu (= bez normálního pause→run→pause přechodu). */
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED

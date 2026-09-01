@@ -10,8 +10,13 @@
 #include "emulator_measuring.h"
 #include "customspeed.h"
 #include "bootstrap.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #include "libs/sdlapp/sdlapp_options.h"
 #include "mzarch.h"
+
+static void mzarch_rerun_mzf_after_reset(void);
 #include "mzarch_platform.h"
 #include "libs/dasm-z80/z80_dasm.h"
 #include "hw-generic/memory/memory.h"
@@ -869,11 +874,15 @@ static inline void mzzarch_main_do_emulator_paused(void)
          * neodpauzne). */
         APP_MUTEX_LOCK(g_mzarch_main.reset_request_mutex);
         bool do_reset = g_mzarch_main.reset_request;
+        bool do_rerun = g_mzarch_main.rerun_mzf_request;
         if (do_reset)
-            g_mzarch_main.reset_request = false;
+            g_mzarch_main.reset_request = g_mzarch_main.rerun_mzf_request = false;
         APP_MUTEX_UNLOCK(g_mzarch_main.reset_request_mutex);
         if (do_reset)
+        {
             mzarch_main_reset();
+            if (do_rerun) mzarch_rerun_mzf_after_reset();
+        }
 
         g_usleep(20 * 1000);
     };
@@ -1054,19 +1063,36 @@ static uint8_t mzarch_debug_dasm_read(uint16_t addr, void *user_data)
     return memory_read_byte(addr);
 }
 
+/* CLI option --run-mzf: po resetu automaticky spustit zadaný MZF. */
+static void mzarch_rerun_mzf_after_reset(void)
+{
+    const char *mzf_path = sdlapp_option_value("--run-mzf");
+    if (mzf_path)
+    {
+        g_print("CLI --run-mzf: %s\n", mzf_path);
+        mzarch_bootstrap_run_mzf(mzf_path);
+    };
+}
+
+#ifdef __EMSCRIPTEN__
+/* Called from the embedding page (Module._mz_wasm_restart): reset the machine
+ * and run the --run-mzf program again, in place - no page reload, so the
+ * browser's fullscreen state survives. */
+EMSCRIPTEN_KEEPALIVE int mz_wasm_restart(void)
+{
+    if (g_mzarch_main.reset_request_mutex == NULL) return 1;
+    APP_MUTEX_LOCK(g_mzarch_main.reset_request_mutex);
+    g_mzarch_main.rerun_mzf_request = true;
+    g_mzarch_main.reset_request = true;
+    APP_MUTEX_UNLOCK(g_mzarch_main.reset_request_mutex);
+    return 0;
+}
+#endif
+
 void mzarch_main(void)
 {
     mzarch_main_reset();
-
-    /* CLI option --run-mzf: po resetu automaticky spustit zadaný MZF. */
-    {
-        const char *mzf_path = sdlapp_option_value("--run-mzf");
-        if (mzf_path)
-        {
-            g_print("CLI --run-mzf: %s\n", mzf_path);
-            mzarch_bootstrap_run_mzf(mzf_path);
-        };
-    }
+    mzarch_rerun_mzf_after_reset();
 
     g_print("%s main loop started\n", g_mzarch_full_name);
 
@@ -1076,9 +1102,11 @@ void mzarch_main(void)
         APP_MUTEX_LOCK(g_mzarch_main.reset_request_mutex);
         if (g_mzarch_main.reset_request)
         {
-            g_mzarch_main.reset_request = false;
+            bool do_rerun = g_mzarch_main.rerun_mzf_request;
+            g_mzarch_main.reset_request = g_mzarch_main.rerun_mzf_request = false;
             APP_MUTEX_UNLOCK(g_mzarch_main.reset_request_mutex);
             mzarch_main_reset();
+            if (do_rerun) mzarch_rerun_mzf_after_reset();
         }
         else
         {
