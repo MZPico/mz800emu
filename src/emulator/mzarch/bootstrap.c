@@ -24,6 +24,7 @@ static void mzarch_bootstrap_init(void)
     pio8255_write(3, 0x8a);
     pio8255_write(3, 0x07);
     pio8255_write(3, 0x05);
+    pio8255_write(3, 0x01); /* PC0 = CTC0 audio unmasked (MZ-800/MZ-1500 gate the speaker with it; the ROM sets it at boot) */
 
     // CTC init
     ctc8253_write_byte(3, 0x36); // channel 0 = sound: mode 3 (square wave), LSB+MSB — the monitor does this at boot
