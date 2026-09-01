@@ -33,6 +33,14 @@ void mzarch_platform_bootstrap_init(void)
      * CG-ROM v paměti: g_memory.ROM[0x1000-0x1FFF] (= addr & 0x3fff pro
      * bus 0x1000-0x1FFF, viz MEMORY_ROM_READ_BYTE makro). */
     memcpy ( g_memoryVRAM_I, &g_memory.ROM[ 0x1000 ], 0x1000 );
+
+    /* The monitor clears the MZ-700 mode text screen at boot: character VRAM
+     * (D000-D7FF = plane I + 0x1000) to 0x00 and attribute VRAM (D800-DFFF =
+     * plane I + 0x1800) to 0x71 (white on blue). Programs such as S-BASIC
+     * 1Z-013B never touch the attributes themselves and rely on this; without
+     * it the power-on VRAM pattern shows through as stripes. */
+    memset ( g_memoryVRAM_I + 0x1000, 0x00, 0x0800 );
+    memset ( g_memoryVRAM_I + 0x1800, 0x71, 0x0800 );
 }
 
 void mzarch_platform_load_prepare_body_map(uint16_t fstrt)
