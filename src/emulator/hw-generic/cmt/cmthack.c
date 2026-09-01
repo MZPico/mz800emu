@@ -50,6 +50,7 @@
 
 #include "baseui/baseui.h"
 #include "baseui/baseui_filechooser.h"
+#include "libs/sdlapp/sdlapp_options.h"
 #include "libs/generic_driver/generic_driver.h"
 #include "generic_driver/memory_driver.h"
 #include "libs/mzf/mzf.h"
@@ -158,7 +159,11 @@ void cmthack_load_file(void)
     emulator_measuring_maxspeed_stall_begin();
     framebuffer_flush_full_screen();
 
-    char *filename = baseui_filechooser_open_file_wait(_("Select a MZF File"), ".mzf, .m12, .*", NULL, NULL, g_cmthack.last_filename, NULL);
+    /* --cmthack-autofile <path>: answer the ROM's tape request with this file
+     * instead of opening the chooser (headless automation / scripted runs). */
+    const char *autofile = sdlapp_option_value("--cmthack-autofile");
+    char *filename = autofile ? g_strdup(autofile)
+                              : baseui_filechooser_open_file_wait(_("Select a MZF File"), ".mzf, .m12, .*", NULL, NULL, g_cmthack.last_filename, NULL);
 
     if (filename == NULL)
     {

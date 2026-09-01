@@ -71,6 +71,8 @@ static const st_SDLAPP_OPTION_DEF g_known_options[] = {
 #endif
     { "--run-mzf",          SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<filepath>",
       "Automatically load and run the given MZF file after the emulator boots." },
+    { "--cmthack-autofile",          SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<filepath>",
+      "Answer the ROM tape-load request (CMT hack) with this MZF instead of a file chooser." },
     { "--cdl-mode",         SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_ENUM,        MODE_VALUES, "<off|window|always>",
       "Set the CDL (Memory Heatmap) recording mode." },
     { "--cdl-dir",          SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<dirpath>",
