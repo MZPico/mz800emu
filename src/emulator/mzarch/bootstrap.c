@@ -50,14 +50,19 @@ static void mzarch_bootstrap_init(void)
     pioz80_write_byte(1, 0x07);
 #endif
 
-#if MZARCH != 700
-    /* The ROM leaves the 8253 channel-0 (speaker) gate open after boot (E008 bit 0);
-     * programs started directly rely on that, otherwise MZ-700-mode games stay silent. */
-    g_gdg.regct53g7 = 1;
-    ctc8253_gate(0, 1, gdg_get_insigeop_ticks());
-#endif
     // Zavolame platform-specific bootstrap init, ktery muze nastavit mapovani pameti a podobne
     mzarch_platform_bootstrap_init();
+
+    /* Monitor work area as the ROM leaves it before jumping to a loaded
+     * program (captured on the ROM path; only title-independent bytes):
+     *   1038h: JP 038Dh  - interrupt vector used by the ROM's RST 38h handler
+     *   119Dh..11A2h: 01 04 00 02 EC 04 - display/sound variables
+     * Written before the MZF body so a program loading over this range wins,
+     * exactly as on the real machine. */
+    static const uint8_t int_vector[] = { 0xc3, 0x8d, 0x03 };
+    static const uint8_t disp_vars[]  = { 0x01, 0x04, 0x00, 0x02, 0xec, 0x04 };
+    for (size_t i = 0; i < sizeof(int_vector); i++) memory_write_byte((uint16_t)(0x1038 + i), int_vector[i]);
+    for (size_t i = 0; i < sizeof(disp_vars); i++)  memory_write_byte((uint16_t)(0x119d + i), disp_vars[i]);
 }
 
 void mzarch_bootstrap_run_mzf(const char *filename)
@@ -104,8 +109,24 @@ void mzarch_bootstrap_run_mzf(const char *filename)
     z80_set_reg(g_mzarch_main.cpu, Z80_REG_HL, mzf_header.fstrt);
     z80_set_reg(g_mzarch_main.cpu, Z80_REG_BC, mzf_header.fsize);
     cmthack_read_mzf_body();
+    /* Register state as the monitor ROM's loader leaves it when it jumps to
+     * the program (measured on the ROM path: HL=1200h, BC=0100h, DE=0,
+     * IX=exec, IY=0, SP=10F0h). */
+    z80_set_reg(g_mzarch_main.cpu, Z80_REG_HL, 0x1200);
+    z80_set_reg(g_mzarch_main.cpu, Z80_REG_BC, 0x0100);
+    z80_set_reg(g_mzarch_main.cpu, Z80_REG_DE, 0x0000);
+    z80_set_reg(g_mzarch_main.cpu, Z80_REG_IX, mzf_header.fexec);
+    z80_set_reg(g_mzarch_main.cpu, Z80_REG_IY, 0x0000);
     z80_set_reg(g_mzarch_main.cpu, Z80_REG_SP, 0x10f0);
     z80_set_reg(g_mzarch_main.cpu, Z80_REG_PC, mzf_header.fexec);
+
+    /* The monitor ROM hands control to a loaded program with IM 1 and
+     * interrupts enabled; programs such as 1Z-016 BASIC install their own
+     * vector at 0x0038 but never execute EI themselves, so without this the
+     * 8253 interrupt (cursor blink, TIME$, music) never fires. */
+    g_mzarch_main.cpu->im = 1;
+    g_mzarch_main.cpu->iff1 = 1;
+    g_mzarch_main.cpu->iff2 = 1;
 
     g_print("Bootstrap done.\n");
 }
