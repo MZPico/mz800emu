@@ -23,4 +23,10 @@ extern "C"
 }
 #endif
 
+
+#ifdef __EMSCRIPTEN__
+    extern GLuint g_video_blit_texture;
+    extern gboolean g_video_blit_enabled;
+    extern void video_sdl3_blit_texture(GLuint texture, int fb_w, int fb_h);
+#endif
 #endif /* IFACE_VIDEO_SDL3_H */

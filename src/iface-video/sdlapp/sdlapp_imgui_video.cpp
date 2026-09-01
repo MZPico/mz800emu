@@ -147,7 +147,14 @@ static void video_sdlapp_imgui_render_cb(SdlAppWindow *win, gpointer user_data)
         }
     };
 
+#ifdef __EMSCRIPTEN__
+    static const bool exp_blit = getenv("MZ_WASM_EXP_BLIT") != NULL;
+    g_video_blit_enabled = exp_blit;
+    g_video_blit_texture = imageTexture;
+    imgui_main_window(exp_blit ? 0 : imageTexture);
+#else
     imgui_main_window(imageTexture);
+#endif
 
     // TODO: chtelo by to merit presneji a az po vyrenderovani obrazu
     // Pokud je nastaveno Custom FPS, tak pockame pozadovanou dobu

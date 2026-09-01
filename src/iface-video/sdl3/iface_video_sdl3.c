@@ -1,6 +1,9 @@
 #include <stdlib.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
+#ifdef __EMSCRIPTEN__
+#include <GLES3/gl3.h>
+#endif
 #include <glib.h>
 #include <stdint.h>
 #include "iface/iface_video.h"
@@ -348,3 +351,70 @@ void video_sdl3_set_GL_swap_interval(int value)
         };
     };
 }
+
+#ifdef __EMSCRIPTEN__
+/* Attribute-less screen blit: one triangle generated from gl_VertexID, no
+ * vertex/index buffers. Used instead of ImGui's textured quad when
+ * MZ_WASM_EXP_BLIT is set (some mobile GL drivers returned zeroed
+ * attributes for the quad's last vertex, corrupting half of the screen). */
+GLuint g_video_blit_texture = 0;
+gboolean g_video_blit_enabled = FALSE;
+
+static GLuint video_sdl3_blit_program(void)
+{
+    static GLuint prog = 0;
+    static gboolean tried = FALSE;
+    if (prog || tried) return prog;
+    tried = TRUE;
+    const char *vs_src =
+        "#version 300 es\n"
+        "out vec2 v_uv;\n"
+        "void main() {\n"
+        "  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));\n"
+        "  v_uv = vec2(p.x, 1.0 - p.y);\n"
+        "  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
+        "}\n";
+    const char *fs_src =
+        "#version 300 es\n"
+        "precision mediump float;\n"
+        "uniform sampler2D u_tex;\n"
+        "in vec2 v_uv;\n"
+        "out vec4 o_color;\n"
+        "void main() { o_color = texture(u_tex, v_uv); }\n";
+    GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vs, 1, &vs_src, NULL); glCompileShader(vs);
+    GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fs, 1, &fs_src, NULL); glCompileShader(fs);
+    GLint ok = 0;
+    glGetShaderiv(vs, GL_COMPILE_STATUS, &ok); if (!ok) { g_warning("blit: vertex shader failed"); return 0; }
+    glGetShaderiv(fs, GL_COMPILE_STATUS, &ok); if (!ok) { g_warning("blit: fragment shader failed"); return 0; }
+    prog = glCreateProgram();
+    glAttachShader(prog, vs); glAttachShader(prog, fs); glLinkProgram(prog);
+    glGetProgramiv(prog, GL_LINK_STATUS, &ok);
+    glDeleteShader(vs); glDeleteShader(fs);
+    if (!ok) { g_warning("blit: program link failed"); glDeleteProgram(prog); prog = 0; return 0; }
+    glUseProgram(prog);
+    glUniform1i(glGetUniformLocation(prog, "u_tex"), 0);
+    glUseProgram(0);
+    return prog;
+}
+
+void video_sdl3_blit_texture(GLuint texture, int fb_w, int fb_h)
+{
+    GLuint prog = video_sdl3_blit_program();
+    if (!prog || !texture) return;
+    glViewport(0, 0, fb_w, fb_h);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+    glUseProgram(prog);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glUseProgram(0);
+}
+#endif /* __EMSCRIPTEN__ */

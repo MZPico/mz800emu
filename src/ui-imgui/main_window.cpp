@@ -197,7 +197,10 @@ static void ShowFullScreenImageEmulatorWindow(GLuint texture)
         ImGui::OpenPopup("EmulatorPopupMenu");
     };
 
-    ImGui::Image(texture, ImVec2(viewport->Size.x, viewport->Size.y));
+    if (texture)
+        ImGui::Image(texture, ImVec2(viewport->Size.x, viewport->Size.y));
+    else
+        ImGui::Dummy(ImVec2(viewport->Size.x, viewport->Size.y)); /* screen drawn by the GL blit before ImGui */
     ImGui::PopStyleVar(2);
 
     // bool isPopupOpen = ImGui::IsPopupOpen("ContextMenu", ImGuiPopupFlags_AnyPopup);

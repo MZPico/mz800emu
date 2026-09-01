@@ -19,6 +19,11 @@
 #include "libs/sdlapp/sdlapp.h"
 #include "libs/sdlapp/sdlapp_options.h"
 #include "myimgui.h"
+#ifdef __EMSCRIPTEN__
+extern "C" {
+#include "iface-video/sdl3/iface_video_sdl3.h"
+}
+#endif
 #include "ui-imgui/filechooser/res/CustomFont.cpp"
 #include "ui-imgui/filechooser/res/CustomFont.h"
 
@@ -550,7 +555,10 @@ static void myimgui_rendering_sdl3_opengl(SdlAppWindow *win, gpointer user_data)
         glClearColor(gui->bg.r, gui->bg.g, gui->bg.b, gui->bg.a);
         glClear(GL_COLOR_BUFFER_BIT);
     }
-
+#ifdef __EMSCRIPTEN__
+    if (g_video_blit_enabled && g_video_blit_texture)
+        video_sdl3_blit_texture(g_video_blit_texture, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
+#endif
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
