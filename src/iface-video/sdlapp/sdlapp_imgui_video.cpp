@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include "main.h"
 #ifdef WINDOWS
 #include <windows.h>
@@ -122,11 +123,21 @@ static void video_sdlapp_imgui_render_cb(SdlAppWindow *win, gpointer user_data)
 #endif
 
     static GLuint imageTexture = 0;
+#ifdef __EMSCRIPTEN__
+    /* Device bisection switches (set from the embedding page via ENV, see ?exp=):
+     * RECREATE  - fresh texture every frame instead of glTexSubImage2D
+     * FULLREDRAW - upload every frame regardless of the emulator's change flag */
+    static const bool exp_recreate = getenv("MZ_WASM_EXP_RECREATE") != NULL;
+    static const bool exp_fullredraw = getenv("MZ_WASM_EXP_FULLREDRAW") != NULL;
+    if (exp_fullredraw) have_new_screen = TRUE;
+#else
+    const bool exp_recreate = false;
+#endif
     if ((have_new_screen) || (DISPLAY_TEST_FORCED_FULL_SCREEN_REDRAWING))
     {
         // g_print("Redrawing screen fb: %u, ren_id: %u\n", g_iface_video->fbsnapshot_screen_id, g_iface_video->renderer_screen_id);
         static int imageTexW = 0, imageTexH = 0;
-        if (!imageTexture || !video_sdl3_update_texture_from_surface(imageTexture, surface, imageTexW, imageTexH))
+        if (!imageTexture || exp_recreate || !video_sdl3_update_texture_from_surface(imageTexture, surface, imageTexW, imageTexH))
         {
             if (imageTexture)
                 glDeleteTextures(1, &imageTexture);

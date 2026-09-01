@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
 #include <glib.h>
@@ -198,7 +199,15 @@ gboolean video_sdl3_update_texture_from_surface(GLuint texture, SDL_Surface *sur
     if (!surface || !texture || surface->w != tex_w || surface->h != tex_h)
         return FALSE;
     SDL_Surface *converted = NULL;
-    if (surface->format == SDL_PIXELFORMAT_INDEX8)
+#ifdef __EMSCRIPTEN__
+    static const int exp_nolut = -1; /* resolved below */
+    static int use_lut = -1;
+    if (use_lut < 0) use_lut = (getenv("MZ_WASM_EXP_NOLUT") == NULL); /* NOLUT: SDL_ConvertSurface instead of the palette LUT */
+    (void)exp_nolut;
+#else
+    const int use_lut = 1;
+#endif
+    if (surface->format == SDL_PIXELFORMAT_INDEX8 && use_lut)
     {
         static SDL_Surface *scratch = NULL;
         if (!scratch || scratch->w != surface->w || scratch->h != surface->h)
