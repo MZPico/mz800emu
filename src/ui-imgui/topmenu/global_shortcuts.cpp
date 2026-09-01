@@ -28,6 +28,7 @@
 #include "ui-imgui/debugger/debugger_state.h"
 #include "ui-imgui/debugger/breakpoints/bpt_state.h"
 #include "ui-imgui/debugger/dbgapi_helpers.h"
+#include "libs/sdlapp/sdlapp_options.h"
 
 extern "C"
 {
@@ -42,6 +43,8 @@ extern "C"
 
 void imgui_global_shortcuts(void)
 {
+    if (sdlapp_option_present("--kiosk"))
+        return; /* kiosk: no emulator hotkeys, the MZ keyboard gets everything */
     // Globalni klavesove zkratky aplikovane na cely ImGui
 
     ImGuiIO &io = ImGui::GetIO();

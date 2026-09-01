@@ -201,6 +201,8 @@ static const st_SDLAPP_OPTION_DEF g_known_options[] = {
       "(MZ-800, MZ-1500)." },
     { "--no-save-ini",      SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
       "Do not write the .ini file at exit (CLI overrides become session-only)." },
+    { "--kiosk",            SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
+      "Kiosk mode: disable emulator hotkeys, context menu and dialogs (embedded/browser use)." },
     { "--no-first-run-windows", SDLAPP_OPTION_FLAG, SDLAPP_OPTVAL_NONE,     NULL,        NULL,
       "Suppress About + Version Check Setup windows shown automatically on first run "
       "(when no .ini file exists). Useful for headless / scripted launches." },

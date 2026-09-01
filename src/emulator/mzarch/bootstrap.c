@@ -26,6 +26,7 @@ static void mzarch_bootstrap_init(void)
     pio8255_write(3, 0x05);
 
     // CTC init
+    ctc8253_write_byte(3, 0x36); // channel 0 = sound: mode 3 (square wave), LSB+MSB — the monitor does this at boot
     ctc8253_write_byte(3, 0x74);
     ctc8253_write_byte(3, 0xb0);
     ctc8253_write_byte(2, 0xc0);

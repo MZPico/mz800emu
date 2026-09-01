@@ -13,6 +13,7 @@
 // #include "iface/iface_video.h"
 #include "topmenu.h"
 #include "ui-imgui/debugger/dbgapi_helpers.h"
+#include "libs/sdlapp/sdlapp_options.h"
 
 // #if HAVE_JOY
 // #include "iface/iface_joy.h"
@@ -64,6 +65,8 @@ void imgui_topmenu_body(void)
 
 void imgui_topmenu_handler(void) // pouzivame pokud je emulator zobrazen jako pozadi
 {
+    if (sdlapp_option_present("--kiosk"))
+        return; /* kiosk: no context menu */
     if (ImGui::BeginPopupContextVoid("EmulatorPopupMenu", ImGuiPopupFlags_MouseButtonRight))
     {
         imgui_topmenu_body();
