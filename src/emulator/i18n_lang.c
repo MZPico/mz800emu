@@ -140,7 +140,9 @@ void i18n_lang_set(en_I18N_LANG lang)
 
     /* Vynutit znovunačtení překladů */
     {
+#ifndef __EMSCRIPTEN__ /* glibc-internal hook; Emscripten's libc has no catalog cache */
         extern int _nl_msg_cat_cntr;
         ++_nl_msg_cat_cntr;
+#endif
     }
 }
