@@ -49,6 +49,25 @@ static void SDLCALL sdl3_audio_callback(void *userdata, SDL_AudioStream *astream
         return;
     };
 
+#ifdef __EMSCRIPTEN__
+    /* Browser: the ScriptProcessor buffer is usually larger than one emulated
+     * frame (20 ms), so keep pulling frames until the device request is
+     * satisfied; otherwise emulation would be capped at one frame per callback
+     * and the stream would underrun (crackle) with any comfortable buffer. */
+    int supplied = 0;
+    while (supplied < additional_amount)
+    {
+        size_t samples_size = 0;
+        float *samples = iface_audio_wait_for_data(&samples_size);
+        if (samples == NULL)
+        {
+            return;
+        };
+        SDL_PutAudioStreamData(astream, samples, samples_size);
+        SDL_free(samples);
+        supplied += (int)samples_size;
+    }
+#else
     size_t samples_size = 0;
     float *samples = iface_audio_wait_for_data(&samples_size);
     if (samples == NULL)
@@ -59,6 +78,7 @@ static void SDLCALL sdl3_audio_callback(void *userdata, SDL_AudioStream *astream
 
     SDL_PutAudioStreamData(astream, samples, samples_size);
     SDL_free(samples);
+#endif
 }
 
 void iface_audio_lowlevel_pause(void)
