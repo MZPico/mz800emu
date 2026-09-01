@@ -49,6 +49,12 @@ static void mzarch_bootstrap_init(void)
     pioz80_write_byte(1, 0x07);
 #endif
 
+#if MZARCH != 700
+    /* The ROM leaves the 8253 channel-0 (speaker) gate open after boot (E008 bit 0);
+     * programs started directly rely on that, otherwise MZ-700-mode games stay silent. */
+    g_gdg.regct53g7 = 1;
+    ctc8253_gate(0, 1, gdg_get_insigeop_ticks());
+#endif
     // Zavolame platform-specific bootstrap init, ktery muze nastavit mapovani pameti a podobne
     mzarch_platform_bootstrap_init();
 }

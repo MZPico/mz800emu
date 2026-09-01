@@ -1,5 +1,6 @@
 #include "main.h"
 #include "libs/sdlapp/sdlapp.h"
+#include "libs/sdlapp/sdlapp_options.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "libs/imgui/imgui.h"
 #include <SDL3/SDL.h>
@@ -191,7 +192,7 @@ static void ShowFullScreenImageEmulatorWindow(GLuint texture)
     };
 
     // Detekce pravého kliknutí -> otevření popup menu
-    if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+    if (!sdlapp_option_present("--kiosk") && ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
     {
         ImGui::OpenPopup("EmulatorPopupMenu");
     };

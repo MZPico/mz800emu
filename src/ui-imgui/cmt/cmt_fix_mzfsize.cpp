@@ -14,6 +14,7 @@
 #include "emulator/hw-generic/cmt/cmthack.h"
 #include "baseui/baseui_tools.h"
 #include "baseui/baseui_filechooser.h"
+#include "libs/sdlapp/sdlapp_options.h"
 
 extern "C"
 {
@@ -32,6 +33,8 @@ ui_cmt_mzfsize_t g_ui_cmt_mzfsize = {NULL, 0, 0};
 
 void imgui_cmt_fix_mzfsize_popup_activate(const char *filename, int valid_size, int file_size)
 {
+    if (sdlapp_option_present("--kiosk"))
+        return; /* kiosk: silently ignore padded MZF files, as the "Ignore" button would */
     g_print("MZF file size check: %s (%d) > %d\n", filename, file_size, valid_size);
 
     if (g_ui_cmt_mzfsize.filename != NULL)
