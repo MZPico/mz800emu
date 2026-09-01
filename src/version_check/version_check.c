@@ -30,7 +30,9 @@
 #include <strings.h>
 
 //#define VERCHECK_USE_LIBSOUP
-#define VERCHECK_USE_LIBCURL
+#ifndef __EMSCRIPTEN__
+#define VERCHECK_USE_LIBCURL   /* no network backend in the browser build */
+#endif
 
 #ifdef VERCHECK_USE_LIBSOUP
 #include <libsoup/soup.h>

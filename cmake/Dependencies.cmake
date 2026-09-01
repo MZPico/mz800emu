@@ -138,7 +138,7 @@ target_link_libraries(mz_json_glib INTERFACE PkgConfig::JSON_GLIB)
 # minizip-ng (snapshot system)
 # Linux používá static + transitivní deps, Windows dynamic
 # ----------------------------------------------------------------------------
-if(UNIX)
+if(UNIX AND NOT EMSCRIPTEN)
     pkg_check_modules(MINIZIP REQUIRED IMPORTED_TARGET minizip-ng)
     # Pro statické linkování - Linux variant
     pkg_check_modules(MINIZIP_STATIC REQUIRED minizip-ng)
@@ -160,7 +160,7 @@ endif()
 # argument v pkg_check_modules vyzaduje CMake >=3.29). Reseni: explicitni
 # find_package(ZLIB) + link na UNIX. Pokud je dostupna shared verze, link
 # je redundantni ale neskodi.
-if(UNIX)
+if(UNIX AND NOT EMSCRIPTEN)
     find_package(ZLIB REQUIRED)
     target_link_libraries(mz_minizip INTERFACE ZLIB::ZLIB)
 endif()
@@ -172,7 +172,7 @@ endif()
 add_library(mz_libcurl INTERFACE)
 add_library(mz::libcurl ALIAS mz_libcurl)
 
-if(UNIX)
+if(UNIX AND NOT EMSCRIPTEN)
     pkg_check_modules(CURL REQUIRED IMPORTED_TARGET libcurl)
     target_link_libraries(mz_libcurl INTERFACE PkgConfig::CURL)
 endif()
@@ -220,7 +220,7 @@ endif()
 add_library(mz_opengl INTERFACE)
 add_library(mz::opengl ALIAS mz_opengl)
 
-if(UNIX)
+if(UNIX AND NOT EMSCRIPTEN)
     if (APPLE)
         find_package(OpenGL REQUIRED)
         target_link_libraries(mz_opengl INTERFACE OpenGL::GL)
@@ -240,7 +240,7 @@ endif()
 add_library(mz_platform INTERFACE)
 add_library(mz::platform ALIAS mz_platform)
 
-if(UNIX)
+if(UNIX AND NOT EMSCRIPTEN)
     target_compile_definitions(mz_platform INTERFACE
         LINUX
         _POSIX_C_SOURCE=200809L
