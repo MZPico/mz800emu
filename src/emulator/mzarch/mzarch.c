@@ -137,6 +137,12 @@ static inline void mzarch_main_event_callback_20ms(unsigned event_ticks)
  */
 static inline void mz800_main_event_callback_screen_done(void)
 {
+    /* 556 cursor-blink timer: a PA7 low level that lasts across a whole frame
+     * holds the timer in reset (see pio8255_write, PORT A). */
+    if (!(g_pio8255.signal_PA & 0x80))
+    {
+        mz800_main_cursor_timer_reset();
+    };
 #ifdef MZ800EMU_CFG_CLK1M1_FAST
     ctc8253_on_screen_done_event();
 #endif

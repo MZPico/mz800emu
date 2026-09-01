@@ -243,10 +243,12 @@ void pio8255_write(int addr, uint8_t value)
         g_pio8255.signal_PA_joy2_enabled = (!(value & 0x40)) ? 1 : 0;
 
         // 7. bit cursor timer reset - aktivni pri L
-        if (!(value & 0x80))
-        {
-            mz800_main_cursor_timer_reset();
-        };
+        /* PA7 = /RESET of the 556 cursor-blink timer. A reset that is only
+         * pulsed for a few microseconds cannot discharge the timing capacitor,
+         * so it does not disturb the blink phase on real hardware; 1Z-016 BASIC
+         * pulses PA7 low on every keyboard scan (~1 kHz) and its cursor still
+         * blinks. Only a level held low across a frame holds the timer in
+         * reset - see mz800_main_event_callback_screen_done(). */
 
         break;
 
