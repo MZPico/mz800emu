@@ -1075,6 +1075,13 @@ static void mzarch_rerun_mzf_after_reset(void)
 }
 
 #ifdef __EMSCRIPTEN__
+/* Emulated-frame counter for the embedding page's pace indicator (PAL frame
+ * = 50 per emulated second). Resets with the machine; the page rebases. */
+EMSCRIPTEN_KEEPALIVE unsigned mz_wasm_total_screens(void)
+{
+    return (unsigned)g_gdg.total_elapsed.screens;
+}
+
 /* Called from the embedding page (Module._mz_wasm_restart): reset the machine
  * and run the --run-mzf program again, in place - no page reload, so the
  * browser's fullscreen state survives. */
