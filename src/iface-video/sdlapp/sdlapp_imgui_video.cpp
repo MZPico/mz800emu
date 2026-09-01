@@ -125,9 +125,15 @@ static void video_sdlapp_imgui_render_cb(SdlAppWindow *win, gpointer user_data)
     if ((have_new_screen) || (DISPLAY_TEST_FORCED_FULL_SCREEN_REDRAWING))
     {
         // g_print("Redrawing screen fb: %u, ren_id: %u\n", g_iface_video->fbsnapshot_screen_id, g_iface_video->renderer_screen_id);
-        if (imageTexture)
-            glDeleteTextures(1, &imageTexture);
-        imageTexture = SDL_SurfaceToTexture(surface);
+        static int imageTexW = 0, imageTexH = 0;
+        if (!imageTexture || !video_sdl3_update_texture_from_surface(imageTexture, surface, imageTexW, imageTexH))
+        {
+            if (imageTexture)
+                glDeleteTextures(1, &imageTexture);
+            imageTexture = SDL_SurfaceToTexture(surface);
+            imageTexW = surface->w;
+            imageTexH = surface->h;
+        }
     };
 
     imgui_main_window(imageTexture);

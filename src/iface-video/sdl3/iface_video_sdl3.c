@@ -114,24 +114,21 @@ SDL_Surface *ConvertIndexedSurfaceToRGBA(SDL_Surface *surface)
         return NULL;
     }
 
-    Uint8 *srcPixels = (Uint8 *)surface->pixels;
-    Uint32 *dstPixels = (Uint32 *)converted->pixels;
-    int pixelCount = surface->w * surface->h;
-
-    // Kopírujeme a převádíme indexované pixely na RGBA
-    for (int i = 0; i < pixelCount; i++)
+    /* 256-entry lookup table: one SDL_MapRGBA per palette entry instead of one per pixel. */
+    const SDL_PixelFormatDetails *rgba = SDL_GetPixelFormatDetails(SDL_PIXELFORMAT_RGBA32);
+    Uint32 lut[256];
+    for (int c = 0; c < 256; c++)
     {
-        Uint8 index = srcPixels[i];               // Index v paletě
-        SDL_Color color = palette->colors[index]; // Skutečná barva
-        dstPixels[i] = SDL_MapRGBA(SDL_GetPixelFormatDetails(SDL_PIXELFORMAT_RGBA32), NULL, color.r, color.g, color.b, 255);
-#if 0
-        if (i == 0) {
-            SDL_Log("First pixel index: %d (R=%d G=%d B=%d A=%d)",
-                index,
-                color.r, color.g, color.b, color.a);
-        };
-#endif
-    };
+        SDL_Color color = palette->colors[c];
+        lut[c] = SDL_MapRGBA(rgba, NULL, color.r, color.g, color.b, 255);
+    }
+    for (int y = 0; y < surface->h; y++)
+    {
+        const Uint8 *src = (const Uint8 *)surface->pixels + (size_t)y * surface->pitch;
+        Uint32 *dst = (Uint32 *)((Uint8 *)converted->pixels + (size_t)y * converted->pitch);
+        for (int x = 0; x < surface->w; x++)
+            dst[x] = lut[src[x]];
+    }
     return converted;
 }
 
@@ -191,6 +188,54 @@ GLuint SDL_SurfaceToTexture(SDL_Surface *surface)
     }
 
     return texture;
+}
+
+/* Re-upload a surface into an existing texture created by SDL_SurfaceToTexture()
+ * (same size), avoiding per-frame texture creation. Returns FALSE if the sizes
+ * differ (caller should recreate the texture). */
+gboolean video_sdl3_update_texture_from_surface(GLuint texture, SDL_Surface *surface, int tex_w, int tex_h)
+{
+    if (!surface || !texture || surface->w != tex_w || surface->h != tex_h)
+        return FALSE;
+    SDL_Surface *converted = NULL;
+    if (surface->format == SDL_PIXELFORMAT_INDEX8)
+    {
+        static SDL_Surface *scratch = NULL;
+        if (!scratch || scratch->w != surface->w || scratch->h != surface->h)
+        {
+            if (scratch) SDL_DestroySurface(scratch);
+            scratch = SDL_CreateSurface(surface->w, surface->h, SDL_PIXELFORMAT_RGBA32);
+            if (!scratch) return FALSE;
+        }
+        SDL_Palette *palette = SDL_GetSurfacePalette(surface);
+        if (!palette) return FALSE;
+        const SDL_PixelFormatDetails *rgba = SDL_GetPixelFormatDetails(SDL_PIXELFORMAT_RGBA32);
+        Uint32 lut[256];
+        for (int c = 0; c < 256; c++)
+        {
+            SDL_Color color = palette->colors[c];
+            lut[c] = SDL_MapRGBA(rgba, NULL, color.r, color.g, color.b, 255);
+        }
+        for (int y = 0; y < surface->h; y++)
+        {
+            const Uint8 *src = (const Uint8 *)surface->pixels + (size_t)y * surface->pitch;
+            Uint32 *dst = (Uint32 *)((Uint8 *)scratch->pixels + (size_t)y * scratch->pitch);
+            for (int x = 0; x < surface->w; x++)
+                dst[x] = lut[src[x]];
+        }
+        surface = scratch;
+    }
+    else if (surface->format != SDL_PIXELFORMAT_RGBA32)
+    {
+        converted = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA32);
+        if (!converted) return FALSE;
+        surface = converted;
+    }
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, surface->w, surface->h, GL_RGBA, GL_UNSIGNED_BYTE, surface->pixels);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    if (converted) SDL_DestroySurface(converted);
+    return TRUE;
 }
 
 gboolean video_sdl3_update_surface_from_framebuffer(SDL_Surface *surface)

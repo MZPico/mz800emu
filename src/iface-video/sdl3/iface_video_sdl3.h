@@ -15,6 +15,7 @@ extern "C"
     gboolean video_sdl3_update_surface_from_framebuffer(SDL_Surface *surface);
     void video_sdl3_render_surface_as_background(SDL_Surface *surface, SDL_Renderer *renderer, float aspect_ratio, gboolean have_new_screen);
     GLuint SDL_SurfaceToTexture(SDL_Surface *surface);
+    gboolean video_sdl3_update_texture_from_surface(GLuint texture, SDL_Surface *surface, int tex_w, int tex_h);
     SDL_Surface *ConvertIndexedSurfaceToRGBA(SDL_Surface *surface);
     void video_sdl3_set_render_vsync(bool enabled);
     void video_sdl3_set_GL_swap_interval(int value);
