@@ -263,7 +263,17 @@ static gboolean sdlapp_myimgui_video_init(void)
     // sdl3_backend_video_init();
     sdl3_backend_video_opengl_init();
 
+#ifdef __EMSCRIPTEN__
+    /* Not resizable in the browser: SDL's Emscripten backend answers every
+     * browser resize event (phones fire them on URL-bar/orientation changes)
+     * by shrinking the canvas drawing buffer to the canvas' CSS size, while
+     * the UI keeps its layout - only the top-left corner stays visible. With
+     * a fixed window the drawing buffer keeps the emulator's size and the
+     * embedding page scales the canvas with CSS (including fullscreen). */
+    SDL_WindowFlags flags = SDL_WINDOW_OPENGL;
+#else
     SDL_WindowFlags flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
+#endif
     // SdlAppRendererType renderer = SDLAPP_RENDERER_SDL;
     SdlAppRendererType renderer = SDLAPP_RENDERER_OPENGL;
 
