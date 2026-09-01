@@ -29,6 +29,9 @@
 #include "sdlapp_int.h"
 #include <SDL3/SDL.h>
 #include <glib.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 /* ======================================================================
  * Interní: SDL timer callback — doručí event do hlavního vlákna
@@ -327,7 +330,6 @@ static gboolean sdlapp_poll_events(SdlApp *app)
 void sdlapp_iteration(SdlApp *app)
 {
     sdlapp_poll_events(app);
-
     sdlapp_winmanager_process_render_for_all(app->manager);
 
     /* FPS limit — čekáme na zbývající čas do dalšího snímku */
@@ -350,6 +352,19 @@ void sdlapp_iteration(SdlApp *app)
 }
 
 /** @brief Spustí hlavní smyčku aplikace. */
+#ifdef __EMSCRIPTEN__
+static void sdlapp_emscripten_tick(void *arg)
+{
+    SdlApp *app = (SdlApp *)arg;
+    if (!app->running || app->quit_requested)
+    {
+        emscripten_cancel_main_loop();
+        return;
+    }
+    sdlapp_iteration(app);
+}
+#endif
+
 void sdlapp_run(SdlApp *app)
 {
     app->running = TRUE;
@@ -357,10 +372,19 @@ void sdlapp_run(SdlApp *app)
     /* Respektuj i quit_requested - pokud bylo ukončení vyžádáno ještě
      * před spuštěním smyčky (running se mezitím nastaví na TRUE), smyčka
      * se nesmí rozběhnout. */
+#ifdef __EMSCRIPTEN__
+    /* Browser: never block the main thread. Drive iterations from the
+     * browser's frame callback, poll events instead of waiting, and let
+     * requestAnimationFrame pace the frames instead of SDL_DelayNS. */
+    app->loop_mode = SDLAPP_LOOP_POLL;
+    app->fps_limit = 0;
+    emscripten_set_main_loop_arg(sdlapp_emscripten_tick, app, 0, 1);
+#else
     while (app->running && !app->quit_requested)
     {
         sdlapp_iteration(app);
     }
+#endif
 }
 
 /* ======================================================================
