@@ -564,8 +564,11 @@ static en_SNAPSHOT_RESULT snapshot_load_through_io(snapshot_io_t *io)
 
 en_SNAPSHOT_RESULT snapshot_load(const char *filepath)
 {
-    /* 1. Ověřit, že je emulátor v pauze */
-    if (!EMULATOR_TEST_PAUSED) return SNAPSHOT_ERR_NOT_PAUSED;
+    /* 1. Ověřit safe-point: emulátor v pauze NEBO dedikovaný snapshot
+     * safe-point (load volaný z emulačního vlákna mezi instrukcemi,
+     * viz mzarch_wasm_snapshot_service). */
+    if (!EMULATOR_TEST_PAUSED && !EMULATOR_TEST_SNAPSHOT_SAFEPOINT)
+        return SNAPSHOT_ERR_NOT_PAUSED;
 
     /* 2. Otevřít ZIP archiv pro čtení */
     snapshot_io_t *io = snapshot_io_open_read(filepath);

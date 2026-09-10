@@ -1094,6 +1094,54 @@ EMSCRIPTEN_KEEPALIVE int mz_wasm_restart(void)
     APP_MUTEX_UNLOCK(g_mzarch_main.reset_request_mutex);
     return 0;
 }
+
+/* Save/load of the whole machine for the embedding page ("continue where I
+ * left off"). The page asks, the emulation thread answers between two
+ * instructions - the same safe point as the reset request - so the state is
+ * never taken or replaced mid-instruction and no other thread touches the
+ * machine while it happens. The .mzs travels through MEMFS:
+ *   save: page calls mz_wasm_snapshot_request(1), polls mz_wasm_snapshot_status()
+ *         until it is not 1, then reads /mzwasm-save.mzs.
+ *   load: page writes /mzwasm-load.mzs, calls mz_wasm_snapshot_request(2), polls.
+ * Status: 0 idle, 1 pending, 2 done, negative = -en_SNAPSHOT_RESULT. */
+#include "snapshot/snapshot.h"
+
+#define MZWASM_SNAP_SAVE_PATH "/mzwasm-save.mzs"
+#define MZWASM_SNAP_LOAD_PATH "/mzwasm-load.mzs"
+
+static volatile int g_mzwasm_snap_request = 0;   /* 0 none, 1 save, 2 load */
+static volatile int g_mzwasm_snap_status = 0;
+
+EMSCRIPTEN_KEEPALIVE int mz_wasm_snapshot_request(int op)
+{
+    if (op != 1 && op != 2) return 2;
+    if (__atomic_load_n(&g_mzwasm_snap_status, __ATOMIC_SEQ_CST) == 1) return 1;
+    __atomic_store_n(&g_mzwasm_snap_status, 1, __ATOMIC_SEQ_CST);
+    __atomic_store_n(&g_mzwasm_snap_request, op, __ATOMIC_SEQ_CST);
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int mz_wasm_snapshot_status(void)
+{
+    return __atomic_load_n(&g_mzwasm_snap_status, __ATOMIC_SEQ_CST);
+}
+
+/* Emulation thread, between instructions. */
+static void mzarch_wasm_snapshot_service(int op)
+{
+    en_SNAPSHOT_RESULT res;
+    /* snapshot_save/_load guard against a running machine; this is the
+     * dedicated safe-point channel for exactly that (see st_EMULATOR). */
+    bool saved_sp = g_emulator.snapshot_safepoint;
+    g_emulator.snapshot_safepoint = true;
+    if (op == 1) {
+        res = snapshot_save(MZWASM_SNAP_SAVE_PATH, "mzpico.com");
+    } else {
+        res = snapshot_load(MZWASM_SNAP_LOAD_PATH);
+    }
+    g_emulator.snapshot_safepoint = saved_sp;
+    __atomic_store_n(&g_mzwasm_snap_status, res == SNAPSHOT_OK ? 2 : -(int) res, __ATOMIC_SEQ_CST);
+}
 #endif
 
 void mzarch_main(void)
@@ -1119,6 +1167,14 @@ void mzarch_main(void)
         {
             APP_MUTEX_UNLOCK(g_mzarch_main.reset_request_mutex);
         };
+
+#ifdef __EMSCRIPTEN__
+        if (__builtin_expect(g_mzwasm_snap_request != 0, 0))
+        {
+            int op = __atomic_exchange_n(&g_mzwasm_snap_request, 0, __ATOMIC_SEQ_CST);
+            if (op) mzarch_wasm_snapshot_service(op);
+        };
+#endif
 
         g_mzarch_main.instruction_addr = g_mzarch_main.cpu->pc;
 
