@@ -39,6 +39,7 @@
 #include "fs_layer.h"
 #include "cfgmain.h"
 #include "qdisk/qdisk.h"
+#include "unimgr_net.h"
 
 #include "ff_result.h"
 #include "unicard.h"
@@ -60,6 +61,12 @@ st_UNICARD g_unicard;
 
 static CFGELM *g_elm_connected;
 static CFGELM *g_elm_sd_root;
+static CFGELM *g_elm_net_relay;
+
+const char *unicard_get_net_relay ( void ) {
+    const char *v = g_elm_net_relay ? cfgelement_get_text_value ( g_elm_net_relay ) : NULL;
+    return ( v && v[0] ) ? v : "127.0.0.1:8766";
+}
 static CFGELM *g_elm_readonly;
 static CFGELM *g_elm_fw_version;
 static CFGELM *g_elm_runtime_check_on_connect;
@@ -842,6 +849,13 @@ void unicard_init ( void ) {
      * Bind oba směry: propagate handler -> hodnota z INI se po cfgmodule_propagate
      * zapíše do g_unicard.fw_emulated; save handler -> při shutdown se z téhož
      * pointeru čte aktuální hodnota a uloží do INI. */
+    /* MZPico NET extension (BomberNet/docs/net-protocol.md): identify as an
+     * MZPico (REVD subtype 'M', INFO) and serve the NET vendor commands; the
+     * native build reaches the relay through a TCP JSON-lines socket. */
+    CFGELM *elm_mzpico = cfgmodule_register_new_element ( cmod, "mzpico_mode", CFGENTYPE_BOOL, 0 );
+    cfgelement_set_handlers ( elm_mzpico, (void*) &g_unicard_mzpico_mode, (void*) &g_unicard_mzpico_mode );
+    g_elm_net_relay = cfgmodule_register_new_element ( cmod, "net_relay", CFGENTYPE_TEXT, "127.0.0.1:8766" );
+
     int default_fw = ( g_mzarch_platform_numeric == 800 )
                      ? (int) UNICARD_FW_UC1 : (int) UNICARD_FW_UC3;
     g_elm_fw_version = cfgmodule_register_new_element ( cmod, "fw_version", CFGENTYPE_BOOL, default_fw );

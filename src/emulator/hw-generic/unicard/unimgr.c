@@ -246,6 +246,7 @@
 #include "unimgr_commands.h"
 #include "unicard.h"
 #include "unimgr.h"
+#include "unimgr_net.h"
 
 #ifdef UNICARD_EMULATED
 const char FIRMWARE_REVISION[] = "mz800emu/rev.01"; //"trunk/rev.60";
@@ -322,6 +323,45 @@ typedef struct st_UNIMGR {
 } st_UNIMGR;
 
 st_UNIMGR g_unimgr;
+
+/* MZPico NET extension glue (unimgr_net.c): output staging, async state,
+ * and the vendor error code reported in status byte 2. */
+static uint8_t g_net_out[64];
+static int g_net_async = 0;
+static uint8_t g_net_err = 0;
+
+static void unimgr_net_finish ( int r, int len ) {
+    g_net_async = 0;
+    if ( r ) {
+        g_unimgr.sts_err = UNIMGR_STS_ERROR;
+        g_net_err = ( uint8_t ) r;
+        g_unimgr.cmd_phase = UNIMGR_CMDSTATE_DONE;
+        return;
+    }
+    g_unimgr.sts_err = UNIMGR_STS_OK;
+    g_net_err = 0;
+    if ( len ) {
+        memcpy ( g_unimgr.buf_byte, g_net_out, len );
+        g_unimgr.buf = g_unimgr.buf_byte;
+        g_unimgr.buf_count = len;
+        g_unimgr.cmd_phase = UNIMGR_CMDSTATE_DOUTRQ;
+    } else {
+        g_unimgr.cmd_phase = UNIMGR_CMDSTATE_DONE;
+    }
+}
+
+static void unimgr_net_do_exec ( void ) {
+    int len = 0;
+    int r = unimgr_net_exec ( g_unimgr.cmd, g_unimgr.buf_byte, g_net_out, &len );
+    if ( r == -1 ) {
+        g_net_async = 1;
+        g_net_err = 0;
+        g_unimgr.sts_err = UNIMGR_STS_OK;
+        g_unimgr.cmd_phase = UNIMGR_CMDSTATE_DONE;
+        return;
+    }
+    unimgr_net_finish ( r, len );
+}
 
 
 /* InputParams
@@ -686,6 +726,9 @@ static void do_cmdRESET ( void ) {
     unicard_chdir ( "/" );
     g_unimgr.ff_res = FR_OK;
     g_unimgr.sts_err = UNIMGR_STS_OK;
+    g_net_async = 0;
+    g_net_err = 0;
+    unimgr_net_reset ( );
 }
 
 
@@ -887,6 +930,18 @@ static void unimgr_write_CMD ( uint8_t data ) {
 
     g_unimgr.cmd = data;
     g_unimgr.sts_err = UNIMGR_STS_ERROR;
+    g_net_async = 0;
+
+    if ( unimgr_net_is_cmd ( data ) ) {
+        const char *fmt = unimgr_net_param_format ( data );
+        if ( fmt[0] == 0 ) {
+            unimgr_net_do_exec ( );
+        } else {
+            g_unimgr.param_format = fmt;
+            unimgr_input_params ( UNIMGR_CMDSTATE_START, 0 );
+        }
+        return;
+    }
 
     st_UNICARD_RTC rtc;
 
@@ -917,7 +972,11 @@ static void unimgr_write_CMD ( uint8_t data ) {
 
         case cmdREV:
             g_unimgr.sts_err = UNIMGR_STS_OK;
-            if ( unicard_get_fw ( ) == UNICARD_FW_UC1 ) {
+            if ( g_unicard_mzpico_mode ) {
+                snprintf ( (char*) g_unimgr.buf_byte, PARAM_BUFFER_SIZE, "MZPico v0.4.0 mz800emu" );
+                g_unimgr.buf = g_unimgr.buf_byte;
+                g_unimgr.buf_count = strlen ( (char*) g_unimgr.buf_byte ) + 1;
+            } else if ( unicard_get_fw ( ) == UNICARD_FW_UC1 ) {
                 /* uc1: stávající string konstanty (pointer do .rodata). */
                 g_unimgr.buf = (uint8_t*) FIRMWARE_REVISION;
                 g_unimgr.buf_count = strlen ( FIRMWARE_REVISION ) + 1; // + 0x0d
@@ -936,7 +995,14 @@ static void unimgr_write_CMD ( uint8_t data ) {
 
         case cmdREVD:
             g_unimgr.sts_err = UNIMGR_STS_OK;
-            if ( unicard_get_fw ( ) == UNICARD_FW_UC1 ) {
+            if ( g_unicard_mzpico_mode ) {
+                /* MZPico identity: {major, minor, 'M', board | 0x80 (W)} */
+                g_unimgr.buf_byte[0] = 0;
+                g_unimgr.buf_byte[1] = 4;
+                g_unimgr.buf_byte[2] = 0x4d;
+                g_unimgr.buf_byte[3] = 0x81;
+                g_unimgr.buf = g_unimgr.buf_byte;
+            } else if ( unicard_get_fw ( ) == UNICARD_FW_UC1 ) {
                 /* uc1: 4-byte LE = FIRMWARE_REVISION_DWORD (60). */
                 g_unimgr.buf = ( uint8_t* ) & FIRMWARE_REVISION_DWORD;
             } else {
@@ -1181,6 +1247,10 @@ static void unimgr_write_param ( uint8_t data ) {
             break;
 
         default:
+            if ( unimgr_net_is_cmd ( g_unimgr.cmd ) ) {
+                unimgr_net_do_exec ( );
+                break;
+            }
             fprintf ( stderr, "%s():%d - Not implemented UNIMGR command 0x%02x!\n", __func__, __LINE__, g_unimgr.cmd );
     };
 }
@@ -1290,6 +1360,10 @@ static uint8_t unimgr_read_DATA ( void ) {
                 break;
 
             default:
+                if ( unimgr_net_is_cmd ( g_unimgr.cmd ) ) {
+                    ret = unimgr_output_data_bin ( );
+                    break;
+                }
                 fprintf ( stderr, "%s():%d - Not implemented command 0x%02x\n", __func__, __LINE__, g_unimgr.cmd );
         };
 
@@ -1343,6 +1417,15 @@ static uint8_t unimgr_read_STATUS ( void ) {
     switch ( g_unimgr.sts_pos ) {
 
         case 0:
+            if ( g_net_async ) {
+                int len = 0;
+                int r = unimgr_net_async_poll ( g_net_out, &len );
+                if ( r == 0 ) {
+                    ret |= 0x40; // 6. bit - IN_PROGRESS (MZPico extension)
+                } else {
+                    unimgr_net_finish ( r == 1 ? 0 : r, len );
+                }
+            }
             if ( UNIMGR_CMDSTATE_PARAMRQ == g_unimgr.cmd_phase ) ret |= 0x01; // 0. bit - BUSY(paramRQ)=1
 
             if ( UNIMGR_CMDSTATE_DOUTRQ == g_unimgr.cmd_phase ) ret |= 0x02; // 1. bit - CMD_OUTPUT=1
@@ -1372,7 +1455,7 @@ static uint8_t unimgr_read_STATUS ( void ) {
 
         case 2: /* err code, ani data k predani ci vyzvednuti ? */
             if ( UNIMGR_STS_ERROR == g_unimgr.sts_err ) {
-                ret = 0x00; // err code unikarty - dopsat! ;)
+                ret = g_net_err; // MZPico vendor error code (0 for Unicard commands)
             } else if ( ( UNIMGR_CMDSTATE_DOUTRQ == g_unimgr.cmd_phase ) || ( UNIMGR_CMDSTATE_PARAMRQ == g_unimgr.cmd_phase ) ) {
                 ret = g_unimgr.buf_count; // tady je obcas zbyvajici pocet bajtu z prikazu k vyzvednuti
             } else if ( ( EXIT_SUCCESS == unicard_dir_is_open ( &g_unimgr.dir ) ) || ( EXIT_SUCCESS == unicard_file_is_open ( &g_unimgr.file ) ) ) {
