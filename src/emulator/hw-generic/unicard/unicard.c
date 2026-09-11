@@ -852,7 +852,14 @@ void unicard_init ( void ) {
     /* MZPico NET extension (BomberNet/docs/net-protocol.md): identify as an
      * MZPico (REVD subtype 'M', INFO) and serve the NET vendor commands; the
      * native build reaches the relay through a TCP JSON-lines socket. */
+#ifdef __EMSCRIPTEN__
+    /* the browser build is the mzpico.com player: identify as an MZPico so
+     * NET-aware programs find the device (the link stays down until the page
+     * opens a relay socket via mz_wasm_net_link) */
+    CFGELM *elm_mzpico = cfgmodule_register_new_element ( cmod, "mzpico_mode", CFGENTYPE_BOOL, 1 );
+#else
     CFGELM *elm_mzpico = cfgmodule_register_new_element ( cmod, "mzpico_mode", CFGENTYPE_BOOL, 0 );
+#endif
     cfgelement_set_handlers ( elm_mzpico, (void*) &g_unicard_mzpico_mode, (void*) &g_unicard_mzpico_mode );
     g_elm_net_relay = cfgmodule_register_new_element ( cmod, "net_relay", CFGENTYPE_TEXT, "127.0.0.1:8766" );
 
