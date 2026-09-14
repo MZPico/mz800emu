@@ -157,6 +157,7 @@ typedef struct {
     int linked;
     uint8_t state, slot, members, ready_mask, rtt, last_error;
     uint8_t slots, nbytes;
+    uint8_t full_mask;                  /* slots taking part (from start), a frame needs them all */
     uint8_t settings[SETTINGS_LEN];
     uint8_t settings_len;
     uint16_t seed, start_frame;
@@ -308,7 +309,7 @@ static void handle_line ( const char *l ) {
             g.settings_len = ( uint8_t ) hex_decode ( hex, g.settings, SETTINGS_LEN );
         if ( json_bool ( l, "spectator" ) || slot < 0 ) { g.slot = 0xff; g.state = NETST_SPECTATOR; }
         else { g.slot = ( uint8_t ) slot; g.state = NETST_INROOM; }
-        g.members = 1; g.ready_mask = 0; g.started = 0;
+        g.members = 1; g.ready_mask = 0; g.started = 0; g.full_mask = 0;
         frames_clear ( );
         if ( g.pending_cmd == cmdN_CREATE ) {
             memcpy ( g.pending_out, g.code, 4 );
@@ -332,6 +333,7 @@ static void handle_line ( const char *l ) {
         g.seed = ( uint16_t ) json_int ( l, "seed", 0 );
         g.start_frame = ( uint16_t ) json_int ( l, "frame", 0 );
         g.started = 1;
+        g.full_mask = ( uint8_t ) json_int ( l, "mask", ( 1 << g.slots ) - 1 );
         if ( g.state != NETST_SPECTATOR ) g.state = NETST_RUNNING;
         frames_clear ( );
         g.base = g.start_frame;
@@ -372,7 +374,7 @@ static void pump ( void ) {
 
 /* highest frame such that all frames from base to it are complete */
 static uint32_t avail_frame ( void ) {
-    uint8_t full = ( uint8_t ) ( ( 1 << g.slots ) - 1 );
+    uint8_t full = g.full_mask ? g.full_mask : ( uint8_t ) ( ( 1 << g.slots ) - 1 );
     while ( g.base < 0xffff && ( g.have[g.base % FRAMES] & full ) == full ) {
         /* frame base is complete: keep it (window) but advance the marker */
         uint32_t next = g.base + 1;
@@ -462,7 +464,7 @@ int unimgr_net_exec ( uint8_t cmd, const uint8_t *p, uint8_t *out, int *out_len 
         case cmdN_LEAVE:
             if ( g.state == NETST_NOLINK || g.state == NETST_READY ) return E_NOROOM;
             transport_send ( "{\"op\":\"leave\"}" );
-            g.state = NETST_READY; g.started = 0; g.members = 0; g.ready_mask = 0;
+            g.state = NETST_READY; g.started = 0; g.members = 0; g.ready_mask = 0; g.full_mask = 0;
             return 0;
 
         case cmdN_READY:
