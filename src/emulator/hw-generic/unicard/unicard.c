@@ -993,6 +993,14 @@ static char* unicard_normalize_emu_path ( const char *emu_path, int *escape_dete
 
     if ( !emu_path || emu_path[0] == 0x00 ) return naked;
 
+    /* MZPico volume prefixes: "sd:/x" and "flash:/x" both map onto the SD
+     * root (the MZPico menu/explorer address every path this way). */
+    if ( g_unicard_mzpico_mode ) {
+        if ( !g_ascii_strncasecmp ( emu_path, "sd:", 3 ) ) emu_path += 3;
+        else if ( !g_ascii_strncasecmp ( emu_path, "flash:", 6 ) ) emu_path += 6;
+        if ( emu_path[0] == 0x00 ) return naked;
+    }
+
     /* Pre-sanitization: backslash -> forward slash. Reálná Unicarta
      * separátor backslash nezná, ale guest SW může omylem poslat
      * Windows-style cestu. Pro účely detekce traversal je nutné mít

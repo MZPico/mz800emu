@@ -326,7 +326,7 @@ st_UNIMGR g_unimgr;
 
 /* MZPico NET extension glue (unimgr_net.c): output staging, async state,
  * and the vendor error code reported in status byte 2. */
-static uint8_t g_net_out[64];
+static uint8_t g_net_out[256];
 static int g_net_async = 0;
 static uint8_t g_net_err = 0;
 
@@ -352,6 +352,7 @@ static void unimgr_net_finish ( int r, int len ) {
 
 static void unimgr_net_do_exec ( void ) {
     int len = 0;
+    g_unimgr_mzpico_stream = 0;
     int r = unimgr_net_exec ( g_unimgr.cmd, g_unimgr.buf_byte, g_net_out, &len );
     if ( r == -1 ) {
         g_net_async = 1;
@@ -780,7 +781,21 @@ static void do_cmdREADDIR ( en_UNIMGR_CMDSTATE cmd_phase ) {
         g_unimgr.cmd = cmdREADDIR;
         st_UNICARD_FILINFO finfo;
         int eof = 0;
-        g_unimgr.ff_res = unicard_dir_read_filinfo ( &g_unimgr.dir, &finfo, &eof );
+        for ( ;; ) {
+            g_unimgr.ff_res = unicard_dir_read_filinfo ( &g_unimgr.dir, &finfo, &eof );
+            if ( FR_OK != g_unimgr.ff_res || eof || !g_unicard_mzpico_mode ) break;
+            /* MZPico explorer view: hide the emulator's runtime dir, the
+             * embedded '@' images and the explorer's own state file; with
+             * SETSORT bit 1 keep only directories and launchable files */
+            const char *nm = finfo.lfn_strlen ? finfo.lfname : finfo.fname;
+            const char *dot = strrchr ( nm, '.' );
+            int dir = finfo.fattrib & 0x10;
+            int launchable = dir || ( dot && ( !g_ascii_strcasecmp ( dot, ".mzf" ) || !g_ascii_strcasecmp ( dot, ".m12" ) ||
+                                             !g_ascii_strcasecmp ( dot, ".dsk" ) || !g_ascii_strcasecmp ( dot, ".mzq" ) ) );
+            if ( nm[0] == '@' || nm[0] == '.' || !g_ascii_strcasecmp ( nm, "unicard" ) || !g_ascii_strcasecmp ( nm, "mzpico.sav" ) ) continue;
+            if ( ( g_unimgr_mzpico_sort & 0x02 ) && !launchable ) continue;
+            break;
+        }
         if ( FR_OK != g_unimgr.ff_res ) {
             g_unimgr.sts_err = UNIMGR_STS_ERROR;
             g_unimgr.cmd_phase = UNIMGR_CMDSTATE_DONE;
@@ -1429,6 +1444,7 @@ static uint8_t unimgr_read_STATUS ( void ) {
             if ( UNIMGR_CMDSTATE_PARAMRQ == g_unimgr.cmd_phase ) ret |= 0x01; // 0. bit - BUSY(paramRQ)=1
 
             if ( UNIMGR_CMDSTATE_DOUTRQ == g_unimgr.cmd_phase ) ret |= 0x02; // 1. bit - CMD_OUTPUT=1
+            if ( g_unimgr_mzpico_stream && UNIMGR_CMDSTATE_DOUTRQ == g_unimgr.cmd_phase ) ret |= 0x04; // MZPico GETCONFIG record stream
 
             if ( EXIT_SUCCESS == unicard_dir_is_open ( &g_unimgr.dir ) ) ret |= 0x04; // 2. bit - READDIR_DATA=1
 

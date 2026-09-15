@@ -26,6 +26,8 @@ extern "C" {
 
     /* configuration (set by unicard.c from the INI) */
     extern int g_unicard_mzpico_mode;
+    extern int g_unimgr_mzpico_stream;
+    extern int g_unimgr_mzpico_sort;   /* current MZPico output is a record stream (status bit 2) */
     extern const char *unicard_get_net_relay ( void );   /* [UNICARD] net_relay, host:port */
 
     extern void unimgr_net_reset ( void );

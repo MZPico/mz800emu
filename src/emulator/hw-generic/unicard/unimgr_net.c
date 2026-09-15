@@ -389,13 +389,26 @@ static uint32_t avail_frame ( void ) {
 
 /* ---------------- command interface ---------------- */
 
+/* MZPico management extensions used by the MZPico menu and explorer (the
+ * firmware's unicard.cpp is the reference): enough of them to run those two
+ * programs in the emulator - volume list, [menu] config records, WiFi state,
+ * listing options, current mounts. */
+int g_unimgr_mzpico_stream = 0;   /* GETCONFIG output is a record STREAM (status bit 2) */
+int g_unimgr_mzpico_sort = 0;     /* SETSORT flags: bit 1 = launchable files only */
+static uint8_t g_mzpico_wifi = 3; /* CONNECTED */
+
 int unimgr_net_is_cmd ( uint8_t cmd ) {
-    return g_unicard_mzpico_mode && ( cmd == cmdX_INFO || ( cmd >= cmdN_STATUS && cmd <= cmdN_RECV ) );
+    if ( getenv ( "MZPICO_DEBUG" ) && cmd >= 0x90 ) fprintf ( stderr, "MZPICO is_cmd %02x mode=%d\n", cmd, g_unicard_mzpico_mode );
+    if ( !g_unicard_mzpico_mode ) return 0;
+    if ( cmd == cmdX_INFO || ( cmd >= cmdN_STATUS && cmd <= cmdN_RECV ) ) return 1;
+    return cmd == 0x90 || cmd == 0x92 || cmd == 0x93 || cmd == 0x96 || cmd == 0x98;
 }
 
 const char *unimgr_net_param_format ( uint8_t cmd ) {
     if ( !unimgr_net_is_cmd ( cmd ) ) return NULL;
     switch ( cmd ) {
+        case 0x92:        return "S";                            /* GETCONFIG section */
+        case 0x96:        return "B";                            /* SETSORT flags */
         case cmdN_CREATE: return "BBBBBBBBBBBBBBBBBBBBBBB";     /* game, build, slots, bytes, len, 16 settings */
         case cmdN_JOIN:   return "BBBBS";                       /* game, build, code */
         case cmdN_READY:  return "B";
@@ -426,6 +439,34 @@ int unimgr_net_exec ( uint8_t cmd, const uint8_t *p, uint8_t *out, int *out_len 
     *out_len = 0;
     pump ( );
     switch ( cmd ) {
+        case 0x90: {                                             /* LISTVOL */
+            const char *v = "sd:\r";
+            memcpy ( out, v, 4 ); *out_len = 4; return 0;
+        }
+        case 0x92: {                                             /* GETCONFIG: [menu] records key[16] value[64] */
+            if ( getenv ( "MZPICO_DEBUG" ) ) fprintf ( stderr, "MZPICO GETCONFIG '%s'\n", (const char*) p );
+            static const char *cfg[][2] = { { "key_b", "Basic|@basic" }, { "key_e", "Explorer|@explorer" },
+                                            { "key_c", "CP/M|sd:/cpm/CPM.dsk" } };
+            int n = 0;
+            if ( !strcmp ( (const char*) p, "menu" ) ) {
+                for ( int i = 0; i < 3; i++ ) {
+                    memset ( out + n, 0, 80 );
+                    strncpy ( (char*) out + n, cfg[i][0], 15 );
+                    strncpy ( (char*) out + n + 16, cfg[i][1], 63 );
+                    n += 80;
+                }
+            }
+            g_unimgr_mzpico_stream = n ? 1 : 0;
+            *out_len = n; return 0;
+        }
+        case 0x93:                                               /* WIFISTATUS */
+            out[0] = g_mzpico_wifi; *out_len = 1; return 0;
+        case 0x96:                                               /* SETSORT: order left to the Z80, bit 1 filters */
+            g_unimgr_mzpico_sort = p[0]; *out_len = 0; return 0;
+        case 0x98: {                                             /* MOUNTS */
+            const char *m = "1:sd:/cpm/CPM.dsk\r2:\r3:\r4:\rQ:sd:/games/QDisk-5Z001.mzq\r";
+            int l = strlen ( m ); memcpy ( out, m, l ); *out_len = l; return 0;
+        }
         case cmdX_INFO:
             memset ( out, 0, 16 );
             out[0] = 1;                  /* extensions protocol revision */
