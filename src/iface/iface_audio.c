@@ -374,6 +374,21 @@ void iface_audio_exit(void)
  */
 void iface_audio_20ms_sync(void)
 {
+    /* MZ800EMU_REALTIME=1 (headless testy, napr. mereni sitove latence):
+     * bez audio zarizeni by emulaci nic nesynchronizovalo, proto kazdy
+     * 20ms frame srovname podle monotonnich hodin. */
+    static int realtime = -1;
+    static gint64 next_us = 0;
+    if (realtime < 0) realtime = getenv("MZ800EMU_REALTIME") && getenv("MZ800EMU_REALTIME")[0] == '1';
+    if (realtime)
+    {
+        gint64 now = g_get_monotonic_time();
+        if (next_us == 0 || now - next_us > 200000) next_us = now;   /* first frame, or after a pause */
+        next_us += 20000;
+        if (next_us > now) g_usleep((gulong)(next_us - now));
+        return;
+    };
+
 #ifndef MZ800EMU_CFG_AUDIO_DISABLED
     // Oznamime, ze mame pripraveny dalsi audio frame
     APP_MUTEX_LOCK(g_iface_audio.mutex);
