@@ -53,6 +53,7 @@ extern "C" {
     extern void cmthack_exit ( void );
 
     extern void cmthack_load_file ( void );
+    extern void cmthack_set_autofile ( const char *filepath );
     extern void cmthack_load_mzf_filename ( const char *filename );
     extern void cmthack_read_mzf_body ( void );
 

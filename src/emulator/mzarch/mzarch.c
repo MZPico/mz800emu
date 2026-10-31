@@ -1066,10 +1066,14 @@ static uint8_t mzarch_debug_dasm_read(uint16_t addr, void *user_data)
     return memory_read_byte(addr);
 }
 
+/* The program to run after a reset: --run-mzf from the command line, or what
+ * the embedding page asked for last (MZWASM_MEDIA_RUN_MZF), which wins. */
+static char g_mzarch_run_mzf[512];
+
 /* CLI option --run-mzf: po resetu automaticky spustit zadaný MZF. */
 static void mzarch_rerun_mzf_after_reset(void)
 {
-    const char *mzf_path = sdlapp_option_value("--run-mzf");
+    const char *mzf_path = g_mzarch_run_mzf[0] ? g_mzarch_run_mzf : sdlapp_option_value("--run-mzf");
     if (mzf_path)
     {
         g_print("CLI --run-mzf: %s\n", mzf_path);
@@ -1124,6 +1128,8 @@ enum {
     MZWASM_MEDIA_QD_MOUNT,       /* path (empty = eject) */
     MZWASM_MEDIA_QD_PROTECT,     /* arg = 0/1 */
     MZWASM_MEDIA_RESET,          /* arg = 1 to run the --run-mzf program again */
+    MZWASM_MEDIA_TAPE,           /* path = the MZF the ROM's tape load reads (empty = empty deck) */
+    MZWASM_MEDIA_RUN_MZF,        /* path = an MZF to reset into and run, as --run-mzf does */
 };
 
 static volatile int g_mzwasm_media_op = MZWASM_MEDIA_NONE;
@@ -1133,7 +1139,7 @@ static char g_mzwasm_media_path[MZWASM_MEDIA_PATH_MAX];
 
 EMSCRIPTEN_KEEPALIVE int mz_wasm_media_request(int op, int arg, const char *path)
 {
-    if (op <= MZWASM_MEDIA_NONE || op > MZWASM_MEDIA_RESET) return 2;
+    if (op <= MZWASM_MEDIA_NONE || op > MZWASM_MEDIA_RUN_MZF) return 2;
     if (__atomic_load_n(&g_mzwasm_media_status, __ATOMIC_SEQ_CST) == 1) return 1;
     g_mzwasm_media_arg = arg;
     g_mzwasm_media_path[0] = 0;
@@ -1177,6 +1183,20 @@ static void mzarch_wasm_media_service(int op)
         case MZWASM_MEDIA_RESET:
             APP_MUTEX_LOCK(g_mzarch_main.reset_request_mutex);
             g_mzarch_main.rerun_mzf_request = g_mzwasm_media_arg ? true : false;
+            g_mzarch_main.reset_request = true;
+            APP_MUTEX_UNLOCK(g_mzarch_main.reset_request_mutex);
+            break;
+        case MZWASM_MEDIA_TAPE:
+            cmthack_set_autofile(g_mzwasm_media_path);
+            break;
+        case MZWASM_MEDIA_RUN_MZF:
+            /* The page wrote the file into MEMFS first; from here it is the
+             * same path the --run-mzf bootstrap takes after a reset. */
+            strncpy(g_mzarch_run_mzf, g_mzwasm_media_path, sizeof(g_mzarch_run_mzf) - 1);
+            g_mzarch_run_mzf[sizeof(g_mzarch_run_mzf) - 1] = 0;
+            cmthack_set_autofile(g_mzwasm_media_path);
+            APP_MUTEX_LOCK(g_mzarch_main.reset_request_mutex);
+            g_mzarch_main.rerun_mzf_request = true;
             g_mzarch_main.reset_request = true;
             APP_MUTEX_UNLOCK(g_mzarch_main.reset_request_mutex);
             break;
