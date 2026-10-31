@@ -289,6 +289,8 @@ extern "C"
     void qdisk_ui_mount(void);
     void qdisk_umount(void);
     void qdisk_set_write_protected(int value);
+    /** Mount a QD image by path (the file chooser path calls this too). */
+    void qdisk_open_image(char *filepath);
     void qdisk_create_image(char *filename);
     void qdisk_activate_unicard_boot_loader(void);
     void qdisk_deactivate_unicard_boot_loader(void);

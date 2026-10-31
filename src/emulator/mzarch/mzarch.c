@@ -34,7 +34,10 @@ static void mzarch_rerun_mzf_after_reset(void);
 #include "audio.h"
 
 #if CFG_HWEXT_HAVE_FDC
+#include <string.h>
+
 #include "hw-generic/fdc/fdc.h"
+#include "hw-generic/qdisk/qdisk.h"
 #endif
 
 #if CFG_HWEXT_HAVE_IDE8
@@ -1106,6 +1109,84 @@ EMSCRIPTEN_KEEPALIVE int mz_wasm_restart(void)
  * Status: 0 idle, 1 pending, 2 done, negative = -en_SNAPSHOT_RESULT. */
 #include "snapshot/snapshot.h"
 
+/* Media the page can change while the machine runs, the way the menus do it in
+ * the desktop build: a disk swapped in drive 1 because the game asked for disk
+ * 2, a Quick Disk put in, a drive emptied. Mounting touches state the emulation
+ * thread is reading, so the page leaves a request here and the emulation thread
+ * carries it out between two instructions — the same safe point the snapshots
+ * use. The page calls mz_wasm_media_request() and polls mz_wasm_media_status():
+ * 0 idle, 1 pending, 2 done, -1 refused. */
+#define MZWASM_MEDIA_PATH_MAX 256
+
+enum {
+    MZWASM_MEDIA_NONE = 0,
+    MZWASM_MEDIA_FDD_MOUNT,      /* arg = drive 0..3, path (empty = eject) */
+    MZWASM_MEDIA_QD_MOUNT,       /* path (empty = eject) */
+    MZWASM_MEDIA_QD_PROTECT,     /* arg = 0/1 */
+    MZWASM_MEDIA_RESET,          /* arg = 1 to run the --run-mzf program again */
+};
+
+static volatile int g_mzwasm_media_op = MZWASM_MEDIA_NONE;
+static volatile int g_mzwasm_media_status = 0;
+static int g_mzwasm_media_arg = 0;
+static char g_mzwasm_media_path[MZWASM_MEDIA_PATH_MAX];
+
+EMSCRIPTEN_KEEPALIVE int mz_wasm_media_request(int op, int arg, const char *path)
+{
+    if (op <= MZWASM_MEDIA_NONE || op > MZWASM_MEDIA_RESET) return 2;
+    if (__atomic_load_n(&g_mzwasm_media_status, __ATOMIC_SEQ_CST) == 1) return 1;
+    g_mzwasm_media_arg = arg;
+    g_mzwasm_media_path[0] = 0;
+    if (path) {
+        strncpy(g_mzwasm_media_path, path, MZWASM_MEDIA_PATH_MAX - 1);
+        g_mzwasm_media_path[MZWASM_MEDIA_PATH_MAX - 1] = 0;
+    };
+    __atomic_store_n(&g_mzwasm_media_status, 1, __ATOMIC_SEQ_CST);
+    __atomic_store_n(&g_mzwasm_media_op, op, __ATOMIC_SEQ_CST);
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int mz_wasm_media_status(void)
+{
+    return __atomic_load_n(&g_mzwasm_media_status, __ATOMIC_SEQ_CST);
+}
+
+/** What is in drive 0..3 right now, so the page can show it after a reload. */
+EMSCRIPTEN_KEEPALIVE const char *mz_wasm_fdd_path(int drive)
+{
+    const char *path = (drive >= 0 && drive < 4) ? fdc_get_dsk_filepath(&g_fdc[FDC0], (unsigned) drive) : NULL;
+    return path ? path : "";
+}
+
+/* Emulation thread, between instructions. */
+static void mzarch_wasm_media_service(int op)
+{
+    int ok = 1;
+    switch (op) {
+        case MZWASM_MEDIA_FDD_MOUNT:
+            if (g_mzwasm_media_arg < 0 || g_mzwasm_media_arg > 3) ok = 0;
+            else fdc_mount_dskfile(&g_fdc[FDC0], (unsigned) g_mzwasm_media_arg, g_mzwasm_media_path);
+            break;
+        case MZWASM_MEDIA_QD_MOUNT:
+            if (g_mzwasm_media_path[0]) qdisk_open_image(g_mzwasm_media_path);
+            else qdisk_umount();
+            break;
+        case MZWASM_MEDIA_QD_PROTECT:
+            qdisk_set_write_protected(g_mzwasm_media_arg ? 1 : 0);
+            break;
+        case MZWASM_MEDIA_RESET:
+            APP_MUTEX_LOCK(g_mzarch_main.reset_request_mutex);
+            g_mzarch_main.rerun_mzf_request = g_mzwasm_media_arg ? true : false;
+            g_mzarch_main.reset_request = true;
+            APP_MUTEX_UNLOCK(g_mzarch_main.reset_request_mutex);
+            break;
+        default:
+            ok = 0;
+            break;
+    };
+    __atomic_store_n(&g_mzwasm_media_status, ok ? 2 : -1, __ATOMIC_SEQ_CST);
+}
+
 #define MZWASM_SNAP_SAVE_PATH "/mzwasm-save.mzs"
 #define MZWASM_SNAP_LOAD_PATH "/mzwasm-load.mzs"
 
@@ -1173,6 +1254,12 @@ void mzarch_main(void)
         {
             int op = __atomic_exchange_n(&g_mzwasm_snap_request, 0, __ATOMIC_SEQ_CST);
             if (op) mzarch_wasm_snapshot_service(op);
+        };
+
+        if (__builtin_expect(g_mzwasm_media_op != MZWASM_MEDIA_NONE, 0))
+        {
+            int op = __atomic_exchange_n(&g_mzwasm_media_op, MZWASM_MEDIA_NONE, __ATOMIC_SEQ_CST);
+            if (op) mzarch_wasm_media_service(op);
         };
 #endif
 
