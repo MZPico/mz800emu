@@ -1133,6 +1133,7 @@ enum {
     MZWASM_MEDIA_CMT_INSERT,     /* path = a tape for the deck (empty = eject), arg = 1 to start it */
     MZWASM_MEDIA_CMT_CTL,        /* arg: 0 stop, 1 play, 2 pause, 3 continue */
     MZWASM_MEDIA_CMT_HACK,       /* arg = 1 to keep the instant load, 0 to make the ROM read the tape */
+    MZWASM_MEDIA_CMT_REC,        /* path = the tape to record onto (the machine's SAVE lands there) */
 };
 
 static volatile int g_mzwasm_media_op = MZWASM_MEDIA_NONE;
@@ -1142,7 +1143,7 @@ static char g_mzwasm_media_path[MZWASM_MEDIA_PATH_MAX];
 
 EMSCRIPTEN_KEEPALIVE int mz_wasm_media_request(int op, int arg, const char *path)
 {
-    if (op <= MZWASM_MEDIA_NONE || op > MZWASM_MEDIA_CMT_HACK) return 2;
+    if (op <= MZWASM_MEDIA_NONE || op > MZWASM_MEDIA_CMT_REC) return 2;
     if (__atomic_load_n(&g_mzwasm_media_status, __ATOMIC_SEQ_CST) == 1) return 1;
     g_mzwasm_media_arg = arg;
     g_mzwasm_media_path[0] = 0;
@@ -1234,6 +1235,9 @@ static void mzarch_wasm_media_service(int op)
             break;
         case MZWASM_MEDIA_CMT_HACK:
             cmthack_load_rom_patch(g_mzwasm_media_arg ? 1 : 0);
+            break;
+        case MZWASM_MEDIA_CMT_REC:
+            if (EXIT_SUCCESS != cmt_record_to_file(g_mzwasm_media_path)) ok = 0;
             break;
         default:
             ok = 0;
