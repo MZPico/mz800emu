@@ -1130,6 +1130,9 @@ enum {
     MZWASM_MEDIA_RESET,          /* arg = 1 to run the --run-mzf program again */
     MZWASM_MEDIA_TAPE,           /* path = the MZF the ROM's tape load reads (empty = empty deck) */
     MZWASM_MEDIA_RUN_MZF,        /* path = an MZF to reset into and run, as --run-mzf does */
+    MZWASM_MEDIA_CMT_INSERT,     /* path = a tape for the deck (empty = eject), arg = 1 to start it */
+    MZWASM_MEDIA_CMT_CTL,        /* arg: 0 stop, 1 play, 2 pause, 3 continue */
+    MZWASM_MEDIA_CMT_HACK,       /* arg = 1 to keep the instant load, 0 to make the ROM read the tape */
 };
 
 static volatile int g_mzwasm_media_op = MZWASM_MEDIA_NONE;
@@ -1139,7 +1142,7 @@ static char g_mzwasm_media_path[MZWASM_MEDIA_PATH_MAX];
 
 EMSCRIPTEN_KEEPALIVE int mz_wasm_media_request(int op, int arg, const char *path)
 {
-    if (op <= MZWASM_MEDIA_NONE || op > MZWASM_MEDIA_RUN_MZF) return 2;
+    if (op <= MZWASM_MEDIA_NONE || op > MZWASM_MEDIA_CMT_HACK) return 2;
     if (__atomic_load_n(&g_mzwasm_media_status, __ATOMIC_SEQ_CST) == 1) return 1;
     g_mzwasm_media_arg = arg;
     g_mzwasm_media_path[0] = 0;
@@ -1155,6 +1158,21 @@ EMSCRIPTEN_KEEPALIVE int mz_wasm_media_request(int op, int arg, const char *path
 EMSCRIPTEN_KEEPALIVE int mz_wasm_media_status(void)
 {
     return __atomic_load_n(&g_mzwasm_media_status, __ATOMIC_SEQ_CST);
+}
+
+/** The tape deck: 0 empty, 1 stopped, 2 playing, 3 paused, 4 recording. */
+EMSCRIPTEN_KEEPALIVE int mz_wasm_cmt_state(void)
+{
+    if (!CMT_TEST_FILLED) return 0;
+    if (CMT_TEST_RECORD) return 4;
+    if (CMT_TEST_STOP) return 1;
+    return CMT_TEST_PAUSED ? 3 : 2;
+}
+
+/** How far into the tape the deck has played, in seconds. */
+EMSCRIPTEN_KEEPALIVE double mz_wasm_cmt_playtime(void)
+{
+    return cmt_get_playtime();
 }
 
 /** What is in drive 0..3 right now, so the page can show it after a reload. */
@@ -1199,6 +1217,23 @@ static void mzarch_wasm_media_service(int op)
             g_mzarch_main.rerun_mzf_request = true;
             g_mzarch_main.reset_request = true;
             APP_MUTEX_UNLOCK(g_mzarch_main.reset_request_mutex);
+            break;
+        case MZWASM_MEDIA_CMT_INSERT:
+            /* The deck, as on the real machine: the tape plays its signal and
+             * the ROM reads it bit by bit (with the instant load switched off). */
+            if (!g_mzwasm_media_path[0]) cmt_eject();
+            else if (EXIT_SUCCESS != cmt_open_file_by_extension(g_mzwasm_media_path)) ok = 0;
+            else if (g_mzwasm_media_arg) cmt_play();
+            break;
+        case MZWASM_MEDIA_CMT_CTL:
+            if (g_mzwasm_media_arg == 0) cmt_stop();
+            else if (g_mzwasm_media_arg == 1) { cmt_pause(0); cmt_play(); }
+            else if (g_mzwasm_media_arg == 2) cmt_pause(1);
+            else if (g_mzwasm_media_arg == 3) cmt_pause(0);
+            else ok = 0;
+            break;
+        case MZWASM_MEDIA_CMT_HACK:
+            cmthack_load_rom_patch(g_mzwasm_media_arg ? 1 : 0);
             break;
         default:
             ok = 0;
