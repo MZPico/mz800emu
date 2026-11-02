@@ -3046,6 +3046,140 @@ async def emu_trace_save(channel: str, path: str = "") -> str:
 # EVENT subscribe pro profiler aktualizace je V1.D / V2.
 
 
+
+# === Non-stopping tracepoints, PSG write log, VRAM hash ==================
+# (src/emulator/debugger/tracepoints.h). A tracepoint records and does NOT
+# stop the emulation; records are collected in bulk with emu_trace_read.
+
+
+def _tp_call_result(resp: dict, name: str) -> str:
+    if not resp.get("success", False):
+        return json.dumps({"error": resp.get("error", name + " failed")})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_trace_add(addr: int, regs: Optional[list[str]] = None,
+                        mem: Optional[list[list[int]]] = None,
+                        vram_hash: bool = False, vram_len: int = 8000) -> str:
+    """Add a non-stopping tracepoint: every time the instruction at ``addr``
+    is about to execute, the emulator appends a record to a buffer and goes
+    on running (usable together with breakpoints and ``emu_run``).
+
+    Args:
+        addr: execution address 0..65535.
+        regs: register names to record (as ``emu_get_registers``: AF BC DE
+            HL AF_ BC_ DE_ HL_ IX IY SP PC WZ IR).
+        mem: memory ranges ``[[addr, len], ...]`` to record (CPU view through
+            the current banking, no side effects; 16 ranges, 64 KB in all).
+        vram_hash: also record the CRC-32 of the four VRAM planes
+            (see ``emu_vram_hash``).
+        vram_len: bytes hashed per plane (1..8192, default 8000).
+
+    Returns:
+        JSON ``{"id": int, "addr": int, "record_bytes": int}``.
+    """
+    data: dict[str, Any] = {"addr": addr, "vram_hash": vram_hash, "vram_len": vram_len}
+    if regs: data["regs"] = regs
+    if mem: data["mem"] = mem
+    return _tp_call_result(await _send_request("trace_add", data), "trace_add")
+
+
+@mcp.tool()
+async def emu_trace_clear(id: int = 0) -> str:
+    """Remove tracepoint ``id``, or (id 0) all tracepoints together with the
+    buffered records and the overflow state.
+
+    Returns:
+        JSON ``{"cleared": int}``.
+    """
+    return _tp_call_result(await _send_request("trace_clear", {"id": id} if id else None), "trace_clear")
+
+
+@mcp.tool()
+async def emu_trace_read(max: int = 10000) -> str:
+    """Remove and return up to ``max`` (1..100000) buffered tracepoint
+    records, oldest first.
+
+    Each record: ``id``, ``addr``, ``cycles`` (CPU total_cycles, 32 bits, as
+    ``emu_get_raster_pos``), ``ticks`` (GDG pixel clock since start, 64 bits;
+    5 per T-state on the MZ-800), ``frame``, ``regs`` {name: value}, ``mem``
+    [hex string per range], ``vram_crc32`` [4] (if requested).
+
+    Returns:
+        JSON ``{"records": [...], "count", "pending", "overflow", "dropped",
+        "total", "capacity", "on_full"}``. ``overflow``/``dropped``: records
+        lost since the previous read (never silently).
+    """
+    return _tp_call_result(await _send_request("trace_read", {"max": max}), "trace_read")
+
+
+@mcp.tool()
+async def emu_trace_config(capacity: int = 0, on_full: str = "") -> str:
+    """Configure the tracepoint buffer and report its state.
+
+    Args:
+        capacity: buffer size in bytes (0 = keep; default 64 MiB).
+        on_full: ``"pause"`` (default: the emulation pauses with
+            ``stopped_by: "trace_full"`` before a record would be lost) or
+            ``"drop"`` (records that do not fit are dropped and counted);
+            empty = keep.
+
+    Returns:
+        JSON buffer state + ``tracepoints`` [{id, addr, hits}].
+    """
+    data: dict[str, Any] = {}
+    if capacity: data["capacity"] = capacity
+    if on_full: data["on_full"] = on_full
+    return _tp_call_result(await _send_request("trace_config", data or None), "trace_config")
+
+
+@mcp.tool()
+async def emu_psg_log_start(capacity: int = 0, on_full: str = "pause") -> str:
+    """Start (and clear) the in-memory PSG write log: every byte the CPU
+    writes to the SN76489 with its time.
+
+    Args:
+        capacity: records (0 = default 1048576).
+        on_full: ``"pause"`` (default) or ``"drop"``, as ``emu_trace_config``.
+    """
+    data: dict[str, Any] = {"on_full": on_full}
+    if capacity: data["capacity"] = capacity
+    return _tp_call_result(await _send_request("psg_log_start", data), "psg_log_start")
+
+
+@mcp.tool()
+async def emu_psg_log_read(max: int = 100000) -> str:
+    """Remove and return up to ``max`` logged PSG writes, oldest first.
+
+    Returns:
+        JSON ``{"writes": [[ticks, cycles, frame, value, channel], ...],
+        "count", "pending", "overflow", "dropped", "total", "active"}``.
+        ``ticks`` is the tracepoints' time base (a write with ticks <= a
+        record's ticks happened before that record's instruction);
+        ``cycles`` = ticks / the CPU clock divider; ``channel`` = PSG mask
+        (mono = 1).
+    """
+    return _tp_call_result(await _send_request("psg_log_read", {"max": max}), "psg_log_read")
+
+
+@mcp.tool()
+async def emu_psg_log_stop() -> str:
+    """Stop the PSG write log; the logged writes stay readable."""
+    return _tp_call_result(await _send_request("psg_log_stop"), "psg_log_stop")
+
+
+@mcp.tool()
+async def emu_vram_hash(len: int = 8000) -> str:
+    """CRC-32 (zlib.crc32) of each MZ-800 VRAM plane I..IV, bytes 0..len-1
+    (default 8000 = the 320x200 screen; the bytes ``emu_region_read``
+    returns for regions 8..11). Read while paused for a consistent picture.
+
+    Returns:
+        JSON ``{"crc32": [4 ints], "len": int}``.
+    """
+    return _tp_call_result(await _send_request("vram_hash", {"len": len}), "vram_hash")
+
 @mcp.tool()
 async def emu_profiler_start() -> str:
     """Start CPU profiler recording (per-function call counts and

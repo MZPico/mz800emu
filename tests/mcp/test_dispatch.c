@@ -76,8 +76,12 @@
  * 0017 FÁZE 1 doplnil 4 Tracking lifecycle Tools (= trace_start,
  * trace_stop, trace_reset, trace_save, přidány na KONEC cmd_map[])
  * = 158 + 4 = 162.
+ *
+ * Non-stopping tracepoints (tracepoints.h): trace_add, trace_clear,
+ * trace_read, trace_config, psg_log_start, psg_log_read, psg_log_stop,
+ * vram_hash (na KONEC cmd_map[]) = 162 + 8 = 170.
  */
-#define MCP_EXPECTED_CMD_COUNT 162
+#define MCP_EXPECTED_CMD_COUNT 170
 
 
 /* ====================================================================== */

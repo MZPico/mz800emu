@@ -52,6 +52,7 @@ static void mzarch_rerun_mzf_after_reset(void);
 #include "debugger/breakpoints.h"
 #include "debugger/stack_regions.h"
 #include "debugger/stack_history.h"
+#include "debugger/tracepoints.h"
 #include "debugger/dbgapi_emu.h"
 #include "debugger/trace/cputrack.h"
 #include "debugger/trace/intlog.h"
@@ -1366,6 +1367,20 @@ void mzarch_main(void)
                 mzzarch_main_do_emulator_paused ( );
                 continue;   /* zpět na začátek - reset check, znovu instruction_addr,
                              * skip_bp_at_pc přeskočí BP check, instrukce se vykoná */
+            }
+        }
+
+        /* Non-stopping tracepoints (tracepoints.h): after the breakpoint check,
+         * so a breakpoint at the same address stops first and the record is
+         * taken when the instruction really executes (after the client's
+         * changes in the pause); re-entering the instruction after a pause
+         * does not record it twice. Default OFF = one byte load + branch.
+         * true = a trace buffer is full: pause, then restart the instruction. */
+        if ( g_tracepoints_hot ) {
+            if ( tracepoints_on_instruction ( (uint16_t) g_mzarch_main.instruction_addr )
+                 && EMULATOR_TEST_PAUSED ) {
+                mzzarch_main_do_emulator_paused ( );
+                continue;
             }
         }
 #endif

@@ -712,6 +712,50 @@ def main():
             print(f"Test 9 EVENT_E2E_ROUNDTRIP: FAIL "
                   f"(sub_resp={resp_sub}, poll_resp={resp})")
 
+        # 10. the non-stopping tracepoint tools through the wrapper: a
+        # tracepoint on the loop at 0x2000 (inc a; jr 0x2000), the PSG log,
+        # the VRAM hash (see tests/mcp/test_trace_pipe.py for the pipe level).
+        total += 1
+        call_id = [100]
+
+        def _tool(name, args):
+            call_id[0] += 1
+            _send_jsonrpc({"jsonrpc": "2.0", "id": call_id[0], "method": "tools/call",
+                           "params": {"name": name, "arguments": args}})
+            r = _read_jsonrpc_response(timeout_sec=15.0)
+            if not r or "result" not in r:
+                return {"error": r}
+            text_blob = "".join(c.get("text", "") for c in r["result"].get("content", []) if c.get("type") == "text")
+            try:
+                return json.loads(text_blob) if text_blob else {}
+            except json.JSONDecodeError:
+                return {"error": text_blob}
+
+        steps = []
+        steps.append(_tool("emu_mem_write", {"addr": 0x2000, "data_hex": "3c18fd"}))
+        steps.append(_tool("emu_set_register", {"reg": "PC", "value": 0x2000}))
+        tp = _tool("emu_trace_add", {"addr": 0x2000, "regs": ["AF"], "mem": [[0x2000, 3]]})
+        st = _tool("emu_psg_log_start", {})
+        run = _tool("emu_run", {"frames": 1})
+        rd = _tool("emu_trace_read", {"max": 10})
+        cfg = _tool("emu_trace_config", {})
+        pl = _tool("emu_psg_log_read", {})
+        sp = _tool("emu_psg_log_stop", {})
+        vh = _tool("emu_vram_hash", {})
+        cl = _tool("emu_trace_clear", {})
+        recs = rd.get("records", [])
+        ok = (tp.get("addr") == 0x2000 and len(recs) == 10 and recs[0].get("mem") == ["3c18fd"]
+              and "AF" in recs[0].get("regs", {}) and rd.get("pending", 0) > 0
+              and cfg.get("tracepoints", [{}])[0].get("hits", 0) >= 10 and "writes" in pl
+              and sp.get("active") is False and len(vh.get("crc32", [])) == 4 and cl.get("cleared") == 1
+              and st.get("active") is True)
+        if ok:
+            print(f"Test 10 TRACEPOINT_TOOLS: {rd.get('pending', 0) + len(recs)} records in a frame, PASS")
+            passed += 1
+        else:
+            print(f"Test 10 TRACEPOINT_TOOLS: FAIL (add={tp}, run={run}, read={str(rd)[:300]}, cfg={cfg}, "
+                  f"psg={str(pl)[:200]}, stop={sp}, vram={vh}, clear={cl}, setup={steps})")
+
         print(f"\n{passed}/{total} tests PASSED")
         return 0 if passed == total else 1
 

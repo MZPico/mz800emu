@@ -67,6 +67,14 @@ dokumentu [Resources overview](resources-overview.md).
 | `emu_trace_stop` | ne | Zastaví trace záznam kanálu (segment uzavřen) |
 | `emu_trace_reset` | ne | Vynuluje aktuální segment trace kanálu |
 | `emu_trace_save` | ne | Uloží/přesměruje segment trace kanálu (volitelný path) |
+| `emu_trace_add` | ne | Nezastavující tracepoint: zaznamená registry / paměť / hash VRAM na adrese, nezastaví |
+| `emu_trace_clear` | ne | Odstraní jeden tracepoint nebo všechny (i s buffrovanými záznamy) |
+| `emu_trace_read` | ne | Vybere buffrované záznamy tracepointů (přetečení hlášeno) |
+| `emu_trace_config` | ne | Kapacita bufferu tracepointů a politika při zaplnění (pause / drop), stav |
+| `emu_psg_log_start` | ne | Spustí PSG write log v paměti (každý bajt do SN76489 s časem) |
+| `emu_psg_log_read` | ne | Vybere zalogované zápisy do PSG |
+| `emu_psg_log_stop` | ne | Zastaví PSG write log |
+| `emu_vram_hash` | ne | CRC-32 (zlib) čtyř VRAM rovin |
 | `emu_profiler_start` | ne | Start CPU profileru (hot-path overhead) |
 | `emu_profiler_stop` | ne | Stop profileru (data zachována) |
 | `emu_profiler_reset` | ne | Vynuluje agregátor profileru |
@@ -818,6 +826,30 @@ Uloží / přesměruje segment kanálu. Argument:
   dir/name (= "ulož teď").
 
 Vrací `{"saved": true, "path": <str|null>}`.
+
+## Nezastavující tracepointy, PSG write log, hash VRAM
+
+Tracepoint zaznamená snapshot do omezeného bufferu a emulace běží dál (na
+rozdíl od breakpointu); klient vybírá záznamy hromadně. Pipe příkazy:
+`trace_add`, `trace_clear`, `trace_read`, `trace_config`, `psg_log_start`,
+`psg_log_read`, `psg_log_stop`, `vram_hash` (implementace
+`src/emulator/debugger/tracepoints.c`; podrobný popis parametrů a sémantiky
+v anglické verzi `docs/en/mcp-server/tools-overview.md`).
+
+- Časové značky: `cycles` (CPU `total_cycles`, 32 bitů, jako
+  `emu_get_raster_pos`), `ticks` (GDG pixel clock od startu, 64 bitů, 5 na
+  T-stav), `frame` (dokončené snímky).
+- Záznam vzniká **před** provedením instrukce na adrese; breakpoint na téže
+  adrese zastaví dřív a záznam vznikne po rozběhnutí (vidí změny klienta);
+  jedna instrukce se nikdy nezaznamená dvakrát. Zápis do PSG s `ticks <=`
+  `ticks` záznamu proběhl před jeho instrukcí.
+- Plný buffer: `on_full: "pause"` (výchozí) emulaci pozastaví dřív, než by se
+  záznam ztratil (`emu_run` vrátí `stopped_by: "trace_full"`);
+  `on_full: "drop"` záznamy zahodí a spočítá (`overflow`, `dropped` v
+  `trace_read` / `psg_log_read`). Nic se neztratí potichu.
+- `emu_vram_hash`: CRC-32 (`zlib.crc32`) každé VRAM roviny I-IV, bajty
+  0..`len`-1 (výchozí 8000 = obrazovka 320x200, stejné bajty jako
+  `emu_region_read` regiony 8..11).
 
 ## Profiler tools
 

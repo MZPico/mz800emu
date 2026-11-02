@@ -59,6 +59,8 @@ mz_add_test(mcp_dispatch
         ${CMAKE_SOURCE_DIR}/src/emulator/mcp/cooperation.c
         ${CMAKE_SOURCE_DIR}/src/emulator/mcp/event_bus.c
         ${CMAKE_SOURCE_DIR}/src/emulator/mcp/trap_manager.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/debugger/tracepoints.c
+        test_tracepoints_machine_stub.c
     LABELS   "standalone;mcp"
 )
 
@@ -68,6 +70,40 @@ target_compile_definitions(test_mcp_dispatch PRIVATE
 )
 
 target_link_libraries(test_mcp_dispatch PRIVATE
+    mz::glib
+    mz::json_glib
+)
+
+
+# ---------------------------------------------------------------
+# Test 2b: non-stopping tracepoints, PSG write log, VRAM hash
+# ---------------------------------------------------------------
+# src/emulator/debugger/tracepoints.c + its MCP commands in dispatch.c
+# against a fake machine (test_tracepoints_machine_stub.c); the hot loop
+# with the real binary: test_trace_pipe.py below.
+mz_add_test(mcp_tracepoints
+    TYPE     STANDALONE
+    SOURCES
+        test_tracepoints.c
+        test_tracepoints_machine_stub.c
+        test_dispatch_dbgapi_stub.c
+        test_hid_keymap_stub.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/mcp/dispatch.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/mcp/hid_keymap.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/mcp/jsonl_io.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/mcp/cooperation.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/mcp/event_bus.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/mcp/trap_manager.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/debugger/tracepoints.c
+    LABELS   "standalone;mcp"
+)
+
+target_compile_definitions(test_mcp_tracepoints PRIVATE
+    MZ800EMU_MCP_TEST_BUILD
+    MZ800EMU_CFG_MCP_SERVER_ENABLED
+)
+
+target_link_libraries(test_mcp_tracepoints PRIVATE
     mz::glib
     mz::json_glib
 )
@@ -111,6 +147,19 @@ if(Python3_FOUND)
     set_tests_properties(mcp_pipe_e2e PROPERTIES
         LABELS  "e2e;mcp;pipe"
         TIMEOUT 60
+    )
+    # Non-stopping tracepoints + PSG write log + VRAM hash with the real
+    # binary (the hot loop, the PSG port, the VRAM planes, breakpoints
+    # together with tracepoints, the trace_full pause).
+    add_test(
+        NAME    mcp_trace_pipe_e2e
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_trace_pipe.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_trace_pipe_e2e PROPERTIES
+        LABELS  "e2e;mcp;pipe"
+        TIMEOUT 120
     )
     # Pojistka pro paralelní ctest - test pipe sám spawnuje mz800emu
     # subprocess, takže by neměl běžet souběžně se sám sebou. Žádný

@@ -40,6 +40,7 @@
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 #include "debugger/trace/hwlog.h"
+#include "debugger/tracepoints.h"
 #include "debugger/bp_event.h"
 #endif
 
@@ -327,6 +328,13 @@ void psg_write_byte(unsigned channel, uint8_t value)
     /* HWE: psg:reg_write vyřazený (= IORQ_W na PSG port je expressivnější).
      * psg:int_pa5 vyřazený - PSG INT je viditelný přes irq:pioz80_b nebo
      * IRQ_SIG. */
+
+    /* In-memory PSG write log (MCP psg_log_*, tracepoints.h): every byte the
+     * CPU writes, with its time. Default OFF = one byte load + branch. */
+    if (g_tp_psg_log_active)
+    {
+        tracepoints_psg_write(value, g_psg_module.stereo ? channel : PSG_CH_LEFT, total_ticks);
+    }
 #endif
 
     if (!g_psg_module.stereo)
