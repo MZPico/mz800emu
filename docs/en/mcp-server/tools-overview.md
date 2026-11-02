@@ -67,6 +67,14 @@ documented separately in [Resources overview](resources-overview.md).
 | `emu_trace_stop` | no | Stop trace recording of a channel (segment closed) |
 | `emu_trace_reset` | no | Clear the current trace channel segment |
 | `emu_trace_save` | no | Save/redirect a trace channel segment (optional path) |
+| `emu_trace_add` | no | Non-stopping tracepoint: records registers / memory / VRAM hash at an address, does not stop |
+| `emu_trace_clear` | no | Remove one tracepoint or all (with the buffered records) |
+| `emu_trace_read` | no | Remove and return the buffered tracepoint records (overflow reported) |
+| `emu_trace_config` | no | Tracepoint buffer capacity and full policy (pause / drop), state |
+| `emu_psg_log_start` | no | Start the in-memory PSG write log (every SN76489 byte with its time) |
+| `emu_psg_log_read` | no | Remove and return the logged PSG writes |
+| `emu_psg_log_stop` | no | Stop the PSG write log |
+| `emu_vram_hash` | no | CRC-32 (zlib) of the four VRAM planes |
 | `emu_profiler_start` | no | Start CPU profiler (hot-path overhead) |
 | `emu_profiler_stop` | no | Stop profiler (data preserved) |
 | `emu_profiler_reset` | no | Clear profiler aggregator |
@@ -837,6 +845,95 @@ Saves / redirects the channel segment. Argument:
   existing dir/name (= "save now").
 
 Returns `{"saved": true, "path": <str|null>}`.
+
+## Non-stopping tracepoints, PSG write log, VRAM hash
+
+A breakpoint stops the emulation, and a client that only wants to *observe*
+a point (every interrupt, every game tick) pays a stop, a round trip and the
+pause loop's sleep per event. A **tracepoint** records a snapshot into a
+bounded buffer and lets the emulation run on; the client collects the
+records in bulk. Pipe commands: `trace_add`, `trace_clear`, `trace_read`,
+`trace_config`, `psg_log_start`, `psg_log_read`, `psg_log_stop`,
+`vram_hash` (implementation: `src/emulator/debugger/tracepoints.c`).
+
+Time stamps (records and PSG writes):
+
+- `cycles` - the CPU's `total_cycles` (32 bits, the counter
+  `emu_get_raster_pos` reports; wraps at 2^32 ~ 20 emulated minutes),
+- `ticks` - the GDG pixel-clock time since start (64 bits, monotonic; 5 per
+  T-state on the MZ-800; the time base of the GUI's PSG TSV log),
+- `frame` - completed frames (the counter `run(frames)` counts).
+
+A record is taken **before** the instruction at its address executes. When
+a breakpoint is at the same address, the breakpoint stops first and the
+record is taken when the instruction really executes after the resume (so
+it sees the client's changes made in the pause); re-entering an instruction
+after any pause never records it twice. A PSG write's `ticks` is the end of
+its I/O cycle (wait states included): a write with `ticks <=` a record's
+`ticks` happened before that record's instruction. Tracepoints add one byte
+load and a branch per instruction when none is defined.
+
+**Full buffers** (default 64 MiB of records, 1 Mi PSG writes): with
+`on_full: "pause"` (default) the emulation pauses before a record would be
+lost and `emu_run` answers `stopped_by: "trace_full"` (`complete: false`):
+read the buffer and run on. With `on_full: "drop"` records that do not fit
+are dropped and counted; `trace_read` / `psg_log_read` report `overflow`
+and `dropped` (since the previous read). Nothing is dropped silently.
+
+### `emu_trace_add`
+
+Args: `addr` (0..65535); `regs` (list of register names as
+`emu_get_registers`: AF BC DE HL AF_ BC_ DE_ HL_ IX IY SP PC WZ IR);
+`mem` (list of `[addr, len]`, CPU view through the current banking without
+side effects, as `emu_mem_read`; up to 16 ranges, 64 KB in all; a range
+wraps at 0xFFFF); `vram_hash` (bool: the planes' CRC-32s, as
+`emu_vram_hash`); `vram_len` (bytes per plane, default 8000). Up to 64
+tracepoints; several may share an address. Returns `{"id", "addr",
+"record_bytes"}`.
+
+### `emu_trace_clear`
+
+`id`: remove that tracepoint (its buffered records stay); no `id`: remove
+all, with the buffered records and the overflow state. Returns
+`{"cleared": n}`.
+
+### `emu_trace_read`
+
+Removes and returns up to `max` records (default 10000, 1..100000), oldest
+first. Record: `{"id", "addr", "cycles", "ticks", "frame", "regs": {name:
+value}, "mem": [hex string per range], "vram_crc32": [4]}` (`regs`, `mem`,
+`vram_crc32` only when requested). Also returns `count`, `pending` (left in
+the buffer), `overflow`, `dropped`, `total` (records taken since
+`trace_clear`), `capacity`, `on_full`.
+
+### `emu_trace_config`
+
+`capacity` (bytes; 0 / absent = keep) and `on_full` (`"pause"` /
+`"drop"`); without arguments it only reports. Returns the buffer state and
+`tracepoints: [{"id", "addr", "hits"}]`.
+
+### `emu_psg_log_start` / `emu_psg_log_read` / `emu_psg_log_stop`
+
+Every byte the CPU writes to the SN76489 (MZ-800 port 0xF2), recorded in
+memory. `psg_log_start` clears the log and starts it (`capacity` in
+records, `on_full` as above). `psg_log_read` (`max`, default 100000)
+removes and returns `writes: [[ticks, cycles, frame, value, channel], ...]`
+(`cycles` = `ticks` / the CPU clock divider, as `total_cycles` is only
+synchronised between instructions; `channel` = PSG mask, mono = 1) with
+`pending`, `overflow`, `dropped`, `total`, `active`. `psg_log_stop` stops
+recording; the logged writes stay readable.
+
+### `emu_vram_hash`
+
+The CRC-32 (IEEE 802.3, reflected polynomial 0xEDB88320, initial value and
+final XOR 0xFFFFFFFF: Python's `zlib.crc32`) of each VRAM plane I, II, III,
+IV, bytes 0..`len`-1 (default 8000 = the 320x200 screen: 40 bytes a row,
+bit 0 = the leftmost pixel; the bytes `emu_region_read` returns for regions
+8..11). Returns `{"crc32": [4], "len"}`. MZ-800 only. A client compares a
+reference render with four CRCs per screen instead of reading 32 KB; why a
+hash and not the compressed planes: the hash is 16 bytes a record and costs
+~50 us per screen in the emulator, Python computes the same value from its
+own planes at C speed, and only a screen that differs needs the full read.
 
 ## Profiler tools
 

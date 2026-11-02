@@ -23,7 +23,8 @@ typedef enum en_EMU_PAUSE_REASON
     EMU_PAUSE_REASON_NONE = 0,    /**< Bez konkrétního důvodu / běží. */
     EMU_PAUSE_REASON_FRAMES,      /**< Doběhl požadovaný počet framů (emu_run). */
     EMU_PAUSE_REASON_BREAKPOINT,  /**< Zastaveno breakpointem. */
-    EMU_PAUSE_REASON_MANUAL       /**< Manuální pauza (UI nebo MCP pause). */
+    EMU_PAUSE_REASON_MANUAL,      /**< Manuální pauza (UI nebo MCP pause). */
+    EMU_PAUSE_REASON_TRACE_FULL   /**< A tracepoint buffer / the PSG write log is full (tracepoints.h). */
 } en_EMU_PAUSE_REASON;
 
 /**

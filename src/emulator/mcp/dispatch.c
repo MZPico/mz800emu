@@ -91,6 +91,9 @@
  * PSG (= MZ-700, HAVE_PSG=0), tam ale report skipujeme. */
 #include "../hw-generic/psg/psg.h"
 
+/* non-stopping tracepoints, PSG write log, VRAM hash */
+#include "../debugger/tracepoints.h"
+
 /* PIO 8255 vkbd probe API (fix 0016 / cesta A) - skutečný readback
  * dosednutí vstříknuté klávesy. Hlavička taháa mzarch závislosti, které
  * v testovacím buildu (MZ800EMU_MCP_TEST_BUILD) nejsou dostupné; v test
@@ -352,6 +355,16 @@ static en_MCP_DISPATCH_RESULT _handle_trace_reset(const st_JSONL_MESSAGE *req,
                                                   char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_trace_save(const st_JSONL_MESSAGE *req,
                                                  char **out_response);
+
+/* Non-stopping tracepoints, PSG write log, VRAM hash (tracepoints.h) fwd decls */
+static en_MCP_DISPATCH_RESULT _handle_trace_add(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_trace_clear(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_trace_read(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_trace_config(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_psg_log_start(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_psg_log_read(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_psg_log_stop(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_vram_hash(const st_JSONL_MESSAGE *req, char **out_response);
 
 /* V1.A.7 - Profiler Tools fwd decls */
 static en_MCP_DISPATCH_RESULT _handle_profiler_start(const st_JSONL_MESSAGE *req,
@@ -945,6 +958,17 @@ static const st_MCP_CMD_MAP_ENTRY g_cmd_map[] = {
     { "trace_stop",              DBGAPI_CMD_TRACE_STOP,               _handle_trace_stop              },
     { "trace_reset",             DBGAPI_CMD_TRACE_RESET,              _handle_trace_reset             },
     { "trace_save",              DBGAPI_CMD_TRACE_SAVE,               _handle_trace_save              },
+    /* Non-stopping tracepoints + PSG write log + VRAM hash (tracepoints.h),
+     * at the END of the table (stable positions in hello commands). Local
+     * handlers: the module is thread-safe on its own (no dbgapi round trip). */
+    { "trace_add",               DBGAPI_CMD_NONE,                     _handle_trace_add               },
+    { "trace_clear",             DBGAPI_CMD_NONE,                     _handle_trace_clear             },
+    { "trace_read",              DBGAPI_CMD_NONE,                     _handle_trace_read              },
+    { "trace_config",            DBGAPI_CMD_NONE,                     _handle_trace_config            },
+    { "psg_log_start",           DBGAPI_CMD_NONE,                     _handle_psg_log_start           },
+    { "psg_log_read",            DBGAPI_CMD_NONE,                     _handle_psg_log_read            },
+    { "psg_log_stop",            DBGAPI_CMD_NONE,                     _handle_psg_log_stop            },
+    { "vram_hash",               DBGAPI_CMD_NONE,                     _handle_vram_hash               },
     /* sentinel */
     { NULL,              DBGAPI_CMD_NONE,              NULL                  },
 };
@@ -1271,6 +1295,7 @@ static en_MCP_DISPATCH_RESULT _handle_run(const st_JSONL_MESSAGE *req,
             case EMU_PAUSE_REASON_FRAMES:     stopped_by = "frames";     break;
             case EMU_PAUSE_REASON_BREAKPOINT: stopped_by = "breakpoint"; break;
             case EMU_PAUSE_REASON_MANUAL:     stopped_by = "manual";     break;
+            case EMU_PAUSE_REASON_TRACE_FULL: stopped_by = "trace_full"; break;
             default:                          stopped_by = "unknown";    break;
         }
         reached = (g_emulator.pause_reason == EMU_PAUSE_REASON_FRAMES);
@@ -12659,6 +12684,355 @@ static en_MCP_DISPATCH_RESULT _handle_eventlog_get_event(
     json_object_set_int_member(data, "subtype", param.subtype);
     json_object_set_int_member(data, "pc", param.pc);
     json_object_set_int_member(data, "payload", (gint64)param.payload);
+    return _ok_response(req_id, data, out_response);
+}
+
+
+
+/* ================================================================== */
+/* Non-stopping tracepoints, PSG write log, VRAM hash (tracepoints.h)  */
+/* ================================================================== */
+
+static const char *const g_tp_reg_names[TP_MAX_REGS] = {
+    "AF", "BC", "DE", "HL", "AF_", "BC_", "DE_", "HL_",
+    "IX", "IY", "SP", "PC", "WZ", "IR"
+};
+
+/** true/false (or 0/1) member, default def */
+static bool _tp_obj_bool_or(JsonObject *obj, const char *key, bool def) {
+    if (!obj || !json_object_has_member(obj, key)) return def;
+    JsonNode *n = json_object_get_member(obj, key);
+    if (!n || json_node_get_node_type(n) != JSON_NODE_VALUE) return def;
+    GType t = json_node_get_value_type(n);
+    if (t == G_TYPE_BOOLEAN) return json_node_get_boolean(n) ? true : false;
+    if (t == G_TYPE_INT64) return json_node_get_int(n) != 0;
+    return def;
+}
+
+/** on_full: "pause" (default) / "drop"; returns false for another value */
+static bool _tp_parse_on_full(JsonObject *obj, bool def, bool *out) {
+    *out = def;
+    if (!obj || !json_object_has_member(obj, "on_full")) return true;
+    JsonNode *n = json_object_get_member(obj, "on_full");
+    if (!n || json_node_is_null(n)) return true;
+    if (json_node_get_value_type(n) != G_TYPE_STRING) return false;
+    const char *v = json_node_get_string(n);
+    if (g_strcmp0(v, "pause") == 0) { *out = true; return true; }
+    if (g_strcmp0(v, "drop") == 0) { *out = false; return true; }
+    return false;
+}
+
+static void _tp_status_json(JsonObject *data, const st_TP_STATUS *st) {
+    json_object_set_int_member(data, "pending", st->pending);
+    json_object_set_boolean_member(data, "overflow", st->overflow);
+    json_object_set_int_member(data, "dropped", (gint64)st->dropped);
+    json_object_set_int_member(data, "total", (gint64)st->total);
+    json_object_set_int_member(data, "capacity", (gint64)st->capacity);
+    json_object_set_string_member(data, "on_full", st->pause_on_full ? "pause" : "drop");
+}
+
+/**
+ * @brief `trace_add` - a tracepoint that records and does not stop.
+ *
+ * data: `addr` (0..65535), `regs` (optional array of register names as in
+ * get_registers: AF BC DE HL AF_ BC_ DE_ HL_ IX IY SP PC WZ IR), `mem`
+ * (optional array of [addr, len] pairs, CPU view, len 1..65536, 16 ranges
+ * and 64 KB in all at most), `vram_hash` (optional bool: the CRC-32 of the
+ * VRAM planes, see vram_hash), `vram_len` (optional, bytes per plane).
+ * Each execution of the instruction at addr appends a record (trace_read).
+ * Answer: `id`, `addr`, `record_bytes`.
+ */
+static en_MCP_DISPATCH_RESULT _handle_trace_add(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonNode *data_node = (JsonNode *)jsonl_msg_get_data_node(req);
+    if (!data_node || json_node_get_node_type(data_node) != JSON_NODE_OBJECT)
+        return _err_response(req_id, "Invalid parameters", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    JsonObject *obj = json_node_get_object(data_node);
+    gint64 addr = _obj_int_or(obj, "addr", -1);
+    if (addr < 0 || addr > 0xFFFF)
+        return _err_response(req_id, "addr must be 0..65535", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    st_TP_DEF def;
+    memset(&def, 0, sizeof(def));
+    def.addr = (uint16_t)addr;
+    if (json_object_has_member(obj, "regs") && !json_node_is_null(json_object_get_member(obj, "regs"))) {
+        JsonNode *rn = json_object_get_member(obj, "regs");
+        if (json_node_get_node_type(rn) != JSON_NODE_ARRAY)
+            return _err_response(req_id, "regs must be an array of register names", MCP_DISPATCH_INVALID_PARAMS, out_response);
+        JsonArray *ra = json_node_get_array(rn);
+        guint n = json_array_get_length(ra);
+        if (n > TP_MAX_REGS)
+            return _err_response(req_id, "too many registers", MCP_DISPATCH_INVALID_PARAMS, out_response);
+        for (guint i = 0; i < n; i++) {
+            JsonNode *e = json_array_get_element(ra, i);
+            uint8_t id;
+            if (json_node_get_value_type(e) != G_TYPE_STRING || !_parse_reg_name(json_node_get_string(e), &id))
+                return _err_response(req_id, "unknown register name in regs", MCP_DISPATCH_INVALID_PARAMS, out_response);
+            def.regs[def.nregs++] = id;
+        }
+    }
+    if (json_object_has_member(obj, "mem") && !json_node_is_null(json_object_get_member(obj, "mem"))) {
+        JsonNode *mn = json_object_get_member(obj, "mem");
+        if (json_node_get_node_type(mn) != JSON_NODE_ARRAY)
+            return _err_response(req_id, "mem must be an array of [addr, len]", MCP_DISPATCH_INVALID_PARAMS, out_response);
+        JsonArray *ma = json_node_get_array(mn);
+        guint n = json_array_get_length(ma);
+        if (n > TP_MAX_MEM)
+            return _err_response(req_id, "too many memory ranges", MCP_DISPATCH_INVALID_PARAMS, out_response);
+        for (guint i = 0; i < n; i++) {
+            JsonNode *e = json_array_get_element(ma, i);
+            if (json_node_get_node_type(e) != JSON_NODE_ARRAY || json_array_get_length(json_node_get_array(e)) != 2)
+                return _err_response(req_id, "mem must be an array of [addr, len]", MCP_DISPATCH_INVALID_PARAMS, out_response);
+            JsonArray *pr = json_node_get_array(e);
+            gint64 a = json_array_get_int_element(pr, 0), l = json_array_get_int_element(pr, 1);
+            if (a < 0 || a > 0xFFFF || l < 1 || l > 65536)
+                return _err_response(req_id, "mem range out of bounds (addr 0..65535, len 1..65536)", MCP_DISPATCH_INVALID_PARAMS, out_response);
+            def.mem_addr[def.nmem] = (uint16_t)a;
+            def.mem_len[def.nmem] = (uint32_t)l;
+            def.nmem++;
+        }
+    }
+    def.vram_hash = _tp_obj_bool_or(obj, "vram_hash", false);
+    gint64 vl = _obj_int_or(obj, "vram_len", TP_VRAM_HASH_LEN);
+    if (vl < 1 || vl > TP_VRAM_PLANE_SIZE)
+        return _err_response(req_id, "vram_len must be 1..8192", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    def.vram_len = (uint16_t)vl;
+    const char *err = NULL;
+    int id = tracepoints_add(&def, &err);
+    if (id < 0)
+        return _err_response(req_id, err ? err : "trace_add failed", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    size_t bytes = 28u + 3u * def.nregs + (def.vram_hash ? 16u : 0u);
+    for (int i = 0; i < def.nmem; i++) bytes += 6u + def.mem_len[i];
+    JsonObject *data = json_object_new();
+    json_object_set_int_member(data, "id", id);
+    json_object_set_int_member(data, "addr", addr);
+    json_object_set_int_member(data, "record_bytes", (gint64)bytes);
+    return _ok_response(req_id, data, out_response);
+}
+
+/**
+ * @brief `trace_clear` - removes tracepoint `id`, or (no id) all of them
+ * together with the buffered records and the overflow state.
+ * Answer: `cleared` (count).
+ */
+static en_MCP_DISPATCH_RESULT _handle_trace_clear(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonNode *data_node = (JsonNode *)jsonl_msg_get_data_node(req);
+    JsonObject *obj = (data_node && json_node_get_node_type(data_node) == JSON_NODE_OBJECT)
+                      ? json_node_get_object(data_node) : NULL;
+    gint64 id = _obj_int_or(obj, "id", 0);
+    int n = tracepoints_clear((int)id);
+    if (n < 0)
+        return _err_response(req_id, "unknown tracepoint id", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    JsonObject *data = json_object_new();
+    json_object_set_int_member(data, "cleared", n);
+    return _ok_response(req_id, data, out_response);
+}
+
+/**
+ * @brief `trace_read` - removes and returns up to `max` (default 10000,
+ * 1..100000) buffered records, oldest first.
+ *
+ * Record: `id` (tracepoint), `addr`, `cycles` (CPU total_cycles, 32 bits),
+ * `ticks` (GDG pixel-clock time, 64 bits), `frame`, `regs` {name: value},
+ * `mem` [hex string per range, in trace_add's order], `vram_crc32` [4]
+ * (if requested). Answer: `records`, `count`, `pending` (left in the
+ * buffer), `overflow` + `dropped` (records lost since the previous read:
+ * on_full "drop", or the client resumed a full buffer without reading),
+ * `total` (records taken since trace_clear), `capacity`, `on_full`.
+ */
+static en_MCP_DISPATCH_RESULT _handle_trace_read(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonNode *data_node = (JsonNode *)jsonl_msg_get_data_node(req);
+    JsonObject *obj = (data_node && json_node_get_node_type(data_node) == JSON_NODE_OBJECT)
+                      ? json_node_get_object(data_node) : NULL;
+    gint64 max = _obj_int_or(obj, "max", 10000);
+    if (max < 1 || max > 100000)
+        return _err_response(req_id, "max must be 1..100000", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    st_TP_RECORD *recs = g_new(st_TP_RECORD, max);
+    uint8_t *blob = NULL;
+    st_TP_STATUS st;
+    int n = tracepoints_read((int)max, recs, &blob, &st);
+    JsonArray *arr = json_array_sized_new((guint)n);
+    GString *hex = g_string_sized_new(256);
+    static const char hx[] = "0123456789abcdef";
+    for (int i = 0; i < n; i++) {
+        const st_TP_RECORD *r = &recs[i];
+        JsonObject *o = json_object_new();
+        json_object_set_int_member(o, "id", r->id);
+        json_object_set_int_member(o, "addr", r->addr);
+        json_object_set_int_member(o, "cycles", (gint64)r->cycles);
+        json_object_set_int_member(o, "ticks", (gint64)r->ticks);
+        json_object_set_int_member(o, "frame", (gint64)r->frame);
+        if (r->nregs) {
+            JsonObject *ro = json_object_new();
+            for (int k = 0; k < r->nregs; k++)
+                json_object_set_int_member(ro, g_tp_reg_names[r->reg_id[k]], r->reg_val[k]);
+            json_object_set_object_member(o, "regs", ro);
+        }
+        if (r->nmem) {
+            JsonArray *ma = json_array_sized_new(r->nmem);
+            for (int k = 0; k < r->nmem; k++) {
+                g_string_truncate(hex, 0);
+                for (uint32_t b = 0; b < r->mem_len[k]; b++) {
+                    g_string_append_c(hex, hx[r->mem_data[k][b] >> 4]);
+                    g_string_append_c(hex, hx[r->mem_data[k][b] & 15]);
+                }
+                json_array_add_string_element(ma, hex->str);
+            }
+            json_object_set_array_member(o, "mem", ma);
+        }
+        if (r->has_vram) {
+            JsonArray *va = json_array_sized_new(TP_VRAM_PLANES);
+            for (int k = 0; k < TP_VRAM_PLANES; k++) json_array_add_int_element(va, (gint64)r->vram_crc[k]);
+            json_object_set_array_member(o, "vram_crc32", va);
+        }
+        json_array_add_object_element(arr, o);
+    }
+    g_string_free(hex, TRUE);
+    g_free(blob);
+    g_free(recs);
+    JsonObject *data = json_object_new();
+    json_object_set_array_member(data, "records", arr);
+    json_object_set_int_member(data, "count", n);
+    _tp_status_json(data, &st);
+    return _ok_response(req_id, data, out_response);
+}
+
+/**
+ * @brief `trace_config` - the trace buffer's `capacity` (bytes, optional,
+ * default 64 MiB) and `on_full` ("pause": the emulation pauses with
+ * stopped_by "trace_full" before a record would be lost; "drop": records
+ * that do not fit are dropped and counted). Without parameters it only
+ * reports. Answer: the buffer state (as trace_read) and `tracepoints`
+ * [{id, addr, hits}].
+ */
+static en_MCP_DISPATCH_RESULT _handle_trace_config(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonNode *data_node = (JsonNode *)jsonl_msg_get_data_node(req);
+    JsonObject *obj = (data_node && json_node_get_node_type(data_node) == JSON_NODE_OBJECT)
+                      ? json_node_get_object(data_node) : NULL;
+    st_TP_STATUS st;
+    tracepoints_status(&st);
+    gint64 cap = _obj_int_or(obj, "capacity", 0);
+    if (cap < 0 || cap > (gint64)1024 * 1024 * 1024)
+        return _err_response(req_id, "capacity must be 0..1 GiB", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    bool pause_on_full;
+    if (!_tp_parse_on_full(obj, st.pause_on_full, &pause_on_full))
+        return _err_response(req_id, "on_full must be \"pause\" or \"drop\"", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    tracepoints_config((size_t)cap, pause_on_full);
+    tracepoints_status(&st);
+    JsonObject *data = json_object_new();
+    _tp_status_json(data, &st);
+    int ids[TP_MAX_POINTS]; uint32_t hits[TP_MAX_POINTS]; st_TP_DEF defs[TP_MAX_POINTS];
+    int n = tracepoints_list(defs, ids, hits, TP_MAX_POINTS);
+    JsonArray *arr = json_array_new();
+    for (int i = 0; i < n; i++) {
+        JsonObject *o = json_object_new();
+        json_object_set_int_member(o, "id", ids[i]);
+        json_object_set_int_member(o, "addr", defs[i].addr);
+        json_object_set_int_member(o, "hits", hits[i]);
+        json_array_add_object_element(arr, o);
+    }
+    json_object_set_array_member(data, "tracepoints", arr);
+    return _ok_response(req_id, data, out_response);
+}
+
+/**
+ * @brief `psg_log_start` - starts the PSG write log (clears it first):
+ * every byte the CPU writes to the SN76489. `capacity` (records, optional,
+ * default 1048576), `on_full` ("pause" default / "drop", as trace_config).
+ */
+static en_MCP_DISPATCH_RESULT _handle_psg_log_start(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonNode *data_node = (JsonNode *)jsonl_msg_get_data_node(req);
+    JsonObject *obj = (data_node && json_node_get_node_type(data_node) == JSON_NODE_OBJECT)
+                      ? json_node_get_object(data_node) : NULL;
+    gint64 cap = _obj_int_or(obj, "capacity", 0);
+    if (cap < 0 || cap > 64 * 1024 * 1024)
+        return _err_response(req_id, "capacity must be 0..67108864 records", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    bool pause_on_full;
+    if (!_tp_parse_on_full(obj, true, &pause_on_full))
+        return _err_response(req_id, "on_full must be \"pause\" or \"drop\"", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    tracepoints_psg_log_start((size_t)cap, pause_on_full);
+    st_TP_STATUS st;
+    tracepoints_psg_log_status(&st);
+    JsonObject *data = json_object_new();
+    json_object_set_boolean_member(data, "active", TRUE);
+    _tp_status_json(data, &st);
+    return _ok_response(req_id, data, out_response);
+}
+
+/**
+ * @brief `psg_log_read` - removes and returns up to `max` (default 100000,
+ * 1..1000000) logged writes, oldest first: `writes` [[ticks, cycles, frame,
+ * value, channel], ...] (ticks: GDG pixel-clock time, the tracepoints'
+ * time base; cycles: CPU total_cycles; channel: PSG mask, mono = 1), and
+ * the buffer state (`pending`, `overflow`, `dropped`, `total`, `active`).
+ */
+static en_MCP_DISPATCH_RESULT _handle_psg_log_read(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonNode *data_node = (JsonNode *)jsonl_msg_get_data_node(req);
+    JsonObject *obj = (data_node && json_node_get_node_type(data_node) == JSON_NODE_OBJECT)
+                      ? json_node_get_object(data_node) : NULL;
+    gint64 max = _obj_int_or(obj, "max", 100000);
+    if (max < 1 || max > 1000000)
+        return _err_response(req_id, "max must be 1..1000000", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    st_TP_PSG_REC *w = g_new(st_TP_PSG_REC, max);
+    st_TP_STATUS st;
+    int n = tracepoints_psg_log_read((int)max, w, &st);
+    JsonArray *arr = json_array_sized_new((guint)n);
+    for (int i = 0; i < n; i++) {
+        JsonArray *e = json_array_sized_new(5);
+        json_array_add_int_element(e, (gint64)w[i].ticks);
+        json_array_add_int_element(e, (gint64)w[i].cycles);
+        json_array_add_int_element(e, (gint64)w[i].frame);
+        json_array_add_int_element(e, w[i].value);
+        json_array_add_int_element(e, w[i].channel);
+        json_array_add_array_element(arr, e);
+    }
+    g_free(w);
+    JsonObject *data = json_object_new();
+    json_object_set_array_member(data, "writes", arr);
+    json_object_set_int_member(data, "count", n);
+    json_object_set_boolean_member(data, "active", st.active);
+    _tp_status_json(data, &st);
+    return _ok_response(req_id, data, out_response);
+}
+
+/** @brief `psg_log_stop` - stops recording; the logged writes stay readable. */
+static en_MCP_DISPATCH_RESULT _handle_psg_log_stop(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    tracepoints_psg_log_stop();
+    st_TP_STATUS st;
+    tracepoints_psg_log_status(&st);
+    JsonObject *data = json_object_new();
+    json_object_set_boolean_member(data, "active", FALSE);
+    _tp_status_json(data, &st);
+    return _ok_response(req_id, data, out_response);
+}
+
+/**
+ * @brief `vram_hash` - CRC-32 (zlib.crc32) of each VRAM plane I..IV, bytes
+ * 0..len-1 (`len` optional, default 8000 = the 320x200 screen; 1..8192).
+ * Answer: `crc32` [4], `len`. MZ-800 only. Read while the emulation is
+ * paused (as after run(frames)) for a consistent picture.
+ */
+static en_MCP_DISPATCH_RESULT _handle_vram_hash(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonNode *data_node = (JsonNode *)jsonl_msg_get_data_node(req);
+    JsonObject *obj = (data_node && json_node_get_node_type(data_node) == JSON_NODE_OBJECT)
+                      ? json_node_get_object(data_node) : NULL;
+    gint64 len = _obj_int_or(obj, "len", TP_VRAM_HASH_LEN);
+    if (len < 1 || len > TP_VRAM_PLANE_SIZE)
+        return _err_response(req_id, "len must be 1..8192", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    uint32_t crc[TP_VRAM_PLANES];
+    if (!tracepoints_vram_hash((uint16_t)len, crc))
+        return _err_response(req_id, "this machine has no VRAM planes to hash", MCP_DISPATCH_EMU_ERROR, out_response);
+    JsonObject *data = json_object_new();
+    JsonArray *a = json_array_sized_new(TP_VRAM_PLANES);
+    for (int k = 0; k < TP_VRAM_PLANES; k++) json_array_add_int_element(a, (gint64)crc[k]);
+    json_object_set_array_member(data, "crc32", a);
+    json_object_set_int_member(data, "len", len);
     return _ok_response(req_id, data, out_response);
 }
 
