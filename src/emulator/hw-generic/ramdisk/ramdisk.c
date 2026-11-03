@@ -324,6 +324,8 @@ void ramdisk_propagatecfg ( void *m, void *data ) {
     char *mr1r18_filepath = cfgmodule_get_element_text_value_by_name ( (CFGMOD *) m, "mr1r18_filepath" );
 
     ramdisk_std_init ( mr1r18_pluged, mr1r18_type, mr1r18_size, mr1r18_filepath );
+
+    g_ramdisk.std.wait = cfgmodule_get_element_unsigned_value_by_name ( (CFGMOD *) m, "mr1r18_wait" );
 }
 
 
@@ -363,6 +365,12 @@ void ramdisk_init ( void ) {
 
     elm = cfgmodule_register_new_element ( cmod, "mr1r18_filepath", CFGENTYPE_TEXT, RAMDISK_DEFAULT_FILENAME );
     cfgelement_set_pointers ( elm, NULL, (void*) &g_ramdisk.std.filepath );
+
+    /* Extra WAIT T-states on every port access of the STD RAM disk (IN and OUT on E9h, EAh, EBh and the
+     * F8h-FAh aliases). 0 = the original emulation; a real card that asserts WAIT (e.g. MZPico: at least 1 T)
+     * is matched with 1 or more. The waits only stretch time (CPU, GDG, 8253 clocks run on), no result changes. */
+    elm = cfgmodule_register_new_element ( cmod, "mr1r18_wait", CFGENTYPE_UNSIGNED, 0, 0, 255 );
+    cfgelement_set_handlers ( elm, NULL, (void*) &g_ramdisk.std.wait );
 
     /* pezik e8 */
     elm = cfgmodule_register_new_element ( cmod, "pezik_e8_pluged", CFGENTYPE_BOOL, RAMDISK_DISCONNECTED );
@@ -424,6 +432,8 @@ uint8_t ramdisk_std_read_byte ( unsigned addr ) {
 
     DBGPRINTF ( DBGINF, "addr = 0x%02x\n", addr );
 
+    if ( g_ramdisk.std.wait ) mzarch_main_insideop_iorq_wait ( g_ramdisk.std.wait );
+
     switch ( addr ) {
 
         case 0xf8:
@@ -463,6 +473,8 @@ void ramdisk_std_write_byte ( unsigned addr, uint8_t value ) {
 #endif
 
     unsigned ramdisc_addr;
+
+    if ( g_ramdisk.std.wait ) mzarch_main_insideop_iorq_wait ( g_ramdisk.std.wait );
 
     switch ( addr & 0xff ) {
 

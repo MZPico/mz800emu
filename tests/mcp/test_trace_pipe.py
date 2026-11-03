@@ -21,6 +21,8 @@ increments B. A tracepoint at the INC records BC and the byte at 0x3000:
      128 regions), filled with 0xFF; on 16M, bank 200 written by region_write is what
      the Z80 reads through the ports (E9h page, EBh address, EAh data) and the byte the
      Z80 writes there is what region_read returns; no file is written
+  8. mr1r18_wait = 0 / 1 / 3 (1M): the RAM disk's port waits stretch INIR / OTIR by that many T a byte
+     (21 + w per repeated byte, 16 + w the last), the GDG ticks along (5 per T), and the bytes are the same
 
 Binary: $MZ_EMU, else <repo>/mz800emu, else <repo>/build/build-mz800emu/mz800emu.
 Exit code 0 = all passed.
@@ -135,6 +137,51 @@ def ramdisk_sizes(exe):
             dat = sorted(str(p.relative_to(d)) for p in Path(d).rglob('*.dat'))
             check('   no RAM-disk file written (files: %s)' % left, left == ['rd.ini'] and not dat, (left, dat))
 
+WAIT_PROGRAM = bytes([0xF3,                     # 2000 di
+                      0x3E, 0x03, 0xD3, 0xE9,   # 2001 ld a, 3; out (0xE9), a      = page 3
+                      0x01, 0xEB, 0x00, 0xAF, 0xED, 0x79,   # 2005 ld bc, 0x00EB; xor a; out (c), a  = address 0
+                      0x21, 0x00, 0x40,         # 200B ld hl, 0x4000
+                      0x01, 0xEA, 0x00,         # 200E ld bc, 0x00EA (B = 0: 256 bytes)
+                      0xED, 0xB2,               # 2011 inir                       = page 3 : 0-255 -> 0x4000
+                      0x21, 0x00, 0x40,         # 2013 ld hl, 0x4000
+                      0x01, 0xEA, 0x00,         # 2016 ld bc, 0x00EA
+                      0xED, 0xB3,               # 2019 otir                       = 0x4000 -> page 3 : 256-511
+                      0x18, 0xFE])              # 201B jr $
+W_INIR, W_LDHL2, W_OTIR, W_END = 0x2011, 0x2013, 0x2019, 0x201B
+
+def ramdisk_wait(exe):
+    pat = bytes((i * 37 + 11) & 255 for i in range(256))
+    for w in (0, 1, 3):
+        with tempfile.TemporaryDirectory() as d:
+            ini = Path(d) / 'rd.ini'
+            ini.write_text('[RAMDISK]\nmr1r18_pluged = 1\nmr1r18_type = STANDARD\nmr1r18_size = 1M\nmr1r18_wait = %d\n' % w)
+            e = Pipe(exe, ['--config', str(ini)], cwd=d)
+            try:
+                rid = [r for r in e.call('regions_list')['regions'] if r['kind'] == 'ramdisk_std'][3]['id']
+                e.call('pause'); e.call('bp_clear'); e.call('trace_clear')
+                e.call('region_write', region_id=rid, offset=0, data_b64=base64.b64encode(pat).decode())
+                e.call('mem_write', addr=0x2000, data_hex=WAIT_PROGRAM.hex())
+                e.call('set_register', reg='PC', value=0x2000)
+                ids = [e.call('trace_add', addr=a)['id'] for a in (W_INIR, W_LDHL2, W_OTIR, W_END)]
+                e.call('run', frames=1)
+                recs, _ = read_all(e)
+                at = {}
+                for x in recs: at.setdefault(x['id'], x)          # (the first hit of each; jr $ repeats)
+                t = [at.get(i) for i in ids]
+                if None in t:
+                    check('8. mr1r18_wait = %d: the tracepoints are hit' % w, False, recs[:4]); continue
+                want = 255 * (21 + w) + 16 + w
+                ci, co = t[1]['cycles'] - t[0]['cycles'], t[3]['cycles'] - t[2]['cycles']
+                ti, to = t[1]['ticks'] - t[0]['ticks'], t[3]['ticks'] - t[2]['ticks']
+                check('8. mr1r18_wait = %d: INIR / OTIR of 256 bytes take %d / %d T (%d expected)' % (w, ci, co, want),
+                      ci == want and co == want, (ci, co, want))
+                check('   the GDG clock runs on with the waits (5 ticks a T)', ti == 5 * ci and to == 5 * co, (ti, ci, to, co))
+                got = base64.b64decode(e.call('mem_read', addr=0x4000, len=256)['data_b64'])
+                back = base64.b64decode(e.call('region_read', region_id=rid, offset=256, length=256)['data_b64'])
+                check('   the bytes read and written are the same', got == pat and back == pat)
+            finally:
+                e.close()
+
 def main():
     exe = find_exe()
     e = Pipe(exe)
@@ -216,6 +263,7 @@ def main():
     finally:
         e.close()
     ramdisk_sizes(exe)
+    ramdisk_wait(exe)
     print('FAILED: %s' % FAILS if FAILS else 'all passed')
     sys.exit(1 if FAILS else 0)
 
