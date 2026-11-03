@@ -21,7 +21,7 @@ increments B. A tracepoint at the INC records BC and the byte at 0x3000:
      128 regions), filled with 0xFF; on 16M, bank 200 written by region_write is what
      the Z80 reads through the ports (E9h page, EBh address, EAh data) and the byte the
      Z80 writes there is what region_read returns; no file is written
-  8. mr1r18_wait = 0 / 1 / 3 (1M): the RAM disk's port waits stretch INIR / OTIR by that many T a byte
+  8. mr1r18_wait = 0 / 1 / 3 / 9 / 10 / 16 / 30 / 255, decimal, and 0x0A (1M): the RAM disk's port waits stretch INIR / OTIR by that many T a byte
      (21 + w per repeated byte, 16 + w the last), the GDG ticks along (5 per T), and the bytes are the same
 
 Binary: $MZ_EMU, else <repo>/mz800emu, else <repo>/build/build-mz800emu/mz800emu.
@@ -151,10 +151,10 @@ W_INIR, W_LDHL2, W_OTIR, W_END = 0x2011, 0x2013, 0x2019, 0x201B
 
 def ramdisk_wait(exe):
     pat = bytes((i * 37 + 11) & 255 for i in range(256))
-    for w in (0, 1, 3):
+    for txt, w in [(str(n), n) for n in (0, 1, 3, 9, 10, 16, 30, 255)] + [('0x0A', 10)]:
         with tempfile.TemporaryDirectory() as d:
             ini = Path(d) / 'rd.ini'
-            ini.write_text('[RAMDISK]\nmr1r18_pluged = 1\nmr1r18_type = STANDARD\nmr1r18_size = 1M\nmr1r18_wait = %d\n' % w)
+            ini.write_text('[RAMDISK]\nmr1r18_pluged = 1\nmr1r18_type = STANDARD\nmr1r18_size = 1M\nmr1r18_wait = %s\n' % txt)
             e = Pipe(exe, ['--config', str(ini)], cwd=d)
             try:
                 rid = [r for r in e.call('regions_list')['regions'] if r['kind'] == 'ramdisk_std'][3]['id']
@@ -163,17 +163,21 @@ def ramdisk_wait(exe):
                 e.call('mem_write', addr=0x2000, data_hex=WAIT_PROGRAM.hex())
                 e.call('set_register', reg='PC', value=0x2000)
                 ids = [e.call('trace_add', addr=a)['id'] for a in (W_INIR, W_LDHL2, W_OTIR, W_END)]
-                e.call('run', frames=1)
-                recs, _ = read_all(e)
+                e.call('set_speed', mode='max')
+                recs = []
+                for _ in range(10):                             # (255 waits: 2 x 70,651 T, two frames)
+                    e.call('run', frames=1)
+                    recs += read_all(e)[0]
+                    if any(x['id'] == ids[3] for x in recs): break
                 at = {}
                 for x in recs: at.setdefault(x['id'], x)          # (the first hit of each; jr $ repeats)
                 t = [at.get(i) for i in ids]
                 if None in t:
-                    check('8. mr1r18_wait = %d: the tracepoints are hit' % w, False, recs[:4]); continue
+                    check('8. mr1r18_wait = %s: the tracepoints are hit' % txt, False, recs[:4]); continue
                 want = 255 * (21 + w) + 16 + w
                 ci, co = t[1]['cycles'] - t[0]['cycles'], t[3]['cycles'] - t[2]['cycles']
                 ti, to = t[1]['ticks'] - t[0]['ticks'], t[3]['ticks'] - t[2]['ticks']
-                check('8. mr1r18_wait = %d: INIR / OTIR of 256 bytes take %d / %d T (%d expected)' % (w, ci, co, want),
+                check('8. mr1r18_wait = %s: INIR / OTIR of 256 bytes take %d / %d T (%d expected)' % (txt, ci, co, want),
                       ci == want and co == want, (ci, co, want))
                 check('   the GDG clock runs on with the waits (5 ticks a T)', ti == 5 * ci and to == 5 * co, (ti, ci, to, co))
                 got = base64.b64decode(e.call('mem_read', addr=0x4000, len=256)['data_b64'])
