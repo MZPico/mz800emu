@@ -91,6 +91,7 @@ typedef enum en_INSIDEOP
     INSIDEOP_MREQ_MZ800_VRAMCTRL_READ,   /* READ z MZ-800 grafickeho VRAM (HDL WAIT model) */
     INSIDEOP_MREQ_MZ800_VRAMCTRL_WRITE,  /* WRITE do MZ-800 grafickeho VRAM (HDL WAIT model + start horke faze) */
     INSIDEOP_IORQ_PSG_WRITE,             /* IORQ wite byte do PSG */
+    INSIDEOP_IORQ_WAIT,                  /* IORQ s pevnym poctem WAIT T-stavu (mzarch_main_insideop_iorq_wait) */
 } en_INSIDEOP;
 
 #ifdef __cplusplus
@@ -107,6 +108,7 @@ extern "C"
     extern void mzarch_main_insideop_mreq_mz800_vramctrl_read(void);
     extern void mzarch_main_insideop_mreq_mz800_vramctrl_write(void);
     extern void mzarch_main_insideop_iorq_psg_write(void);
+    extern void mzarch_main_insideop_iorq_wait(unsigned wait);
     extern void mzarch_rear_dip_switch_mz700_compat(unsigned value);
 
     /**

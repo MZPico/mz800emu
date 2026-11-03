@@ -43,6 +43,7 @@
  * je self-contained (jen stdint/stdbool/glib/dbgapi_cmdrq.h/bp_event.h). */
 #include "emulator/debugger/breakpoints.h"
 
+#include "emulator/debugger/dbgapi_regions.h"
 #include "test_dispatch_dbgapi_stub.h"
 
 /* V1.C.1 - hid_keymap stub funkce (definované v test_hid_keymap_stub.c). */
@@ -1326,6 +1327,59 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                 } else {
                     p->count = 0;
                 }
+            }
+            break;
+
+        case DBGAPI_CMD_REGIONS_ENUMERATE:
+            if (data_ptr) {
+                st_DBGAPI_REGIONS_ENUM_PARAM *p =
+                    (st_DBGAPI_REGIONS_ENUM_PARAM *)data_ptr;
+                st_REGION_DESC *out = (st_REGION_DESC *)p->out;
+                g_stub_state.regions_last_max_count = p->max_count;
+                int n = g_stub_state.regions_fake_count;
+                if (n > p->max_count) n = p->max_count;
+                for (int i = 0; i < n; i++) {
+                    memset(&out[i], 0, sizeof(out[i]));
+                    out[i].id = i;
+                    out[i].kind = REGION_KIND_RAMDISK_STD;
+                    out[i].sub_id = i;
+                    g_snprintf(out[i].name, sizeof(out[i].name),
+                               "Ramdisk bank %d", i);
+                    out[i].logical_base = 0xFFFFFFFFu;
+                    out[i].size = 0x10000;
+                    out[i].writable = 1;
+                    out[i].connected = 1;
+                }
+                p->out_count = n;
+            }
+            break;
+
+        case DBGAPI_CMD_REGIONS_READ:
+            if (data_ptr) {
+                st_DBGAPI_REGIONS_READ_PARAM *p =
+                    (st_DBGAPI_REGIONS_READ_PARAM *)data_ptr;
+                g_stub_state.regions_last_id = p->region_id;
+                if (p->region_id < 0
+                        || p->region_id >= g_stub_state.regions_fake_count) {
+                    p->out_count = -1;
+                    return false;
+                }
+                memset(p->buf, p->region_id & 0xFF, p->len);
+                p->out_count = (int)p->len;
+            }
+            break;
+
+        case DBGAPI_CMD_REGIONS_WRITE:
+            if (data_ptr) {
+                st_DBGAPI_REGIONS_WRITE_PARAM *p =
+                    (st_DBGAPI_REGIONS_WRITE_PARAM *)data_ptr;
+                g_stub_state.regions_last_id = p->region_id;
+                if (p->region_id < 0
+                        || p->region_id >= g_stub_state.regions_fake_count) {
+                    p->out_count = -1;
+                    return false;
+                }
+                p->out_count = (int)p->len;
             }
             break;
 

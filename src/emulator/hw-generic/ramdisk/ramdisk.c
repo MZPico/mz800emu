@@ -72,6 +72,7 @@
 #include "mzarch/mzarch.h"
 #include "ramdisk.h"
 #include "cfgmain.h"
+#include "libs/cfgfile/cfgtools.h"
 #include "baseui/baseui.h"
 
 //#define DBGLEVEL        ( DBGNON /* | DBGERR | DBGWAR | DBGINF */ )
@@ -296,6 +297,29 @@ void ramdisk_pezik_init ( int pezik_type, int connect, int portmask, int backupe
 }
 
 
+/**
+ * @brief mr1r18_wait from its INI text: decimal ("10" = 10 T) or hex with a 0x prefix, 0-255.
+ *
+ * A TEXT element, not CFGENTYPE_UNSIGNED: the cfg library reads every UNSIGNED value as hex
+ * (with or without 0x), so "10" would be 16 waits and "255" (0x255) out of range = 0.
+ * Not a number: 0; above 255: 255 (a message on stderr for both).
+ */
+static unsigned ramdisk_parse_wait ( char *txt ) {
+    if ( txt == NULL || txt[0] == 0x00 ) return 0;
+    int retcode;
+    long value = cfgtools_strtol ( txt, &retcode );
+    if ( retcode != EXIT_SUCCESS || value < 0 ) {
+        fprintf ( stderr, "%s(): mr1r18_wait '%s' is not a number 0-255: using 0\n", __func__, txt );
+        return 0;
+    };
+    if ( value > 255 ) {
+        fprintf ( stderr, "%s(): mr1r18_wait %ld is above 255: using 255\n", __func__, value );
+        return 255;
+    };
+    return (unsigned) value;
+}
+
+
 void ramdisk_propagatecfg ( void *m, void *data ) {
     (void) data;
     
@@ -324,6 +348,8 @@ void ramdisk_propagatecfg ( void *m, void *data ) {
     char *mr1r18_filepath = cfgmodule_get_element_text_value_by_name ( (CFGMOD *) m, "mr1r18_filepath" );
 
     ramdisk_std_init ( mr1r18_pluged, mr1r18_type, mr1r18_size, mr1r18_filepath );
+
+    g_ramdisk.std.wait = ramdisk_parse_wait ( cfgmodule_get_element_text_value_by_name ( (CFGMOD *) m, "mr1r18_wait" ) );
 }
 
 
@@ -363,6 +389,12 @@ void ramdisk_init ( void ) {
 
     elm = cfgmodule_register_new_element ( cmod, "mr1r18_filepath", CFGENTYPE_TEXT, RAMDISK_DEFAULT_FILENAME );
     cfgelement_set_pointers ( elm, NULL, (void*) &g_ramdisk.std.filepath );
+
+    /* Extra WAIT T-states on every port access of the STD RAM disk (IN and OUT on E9h, EAh, EBh and the
+     * F8h-FAh aliases). 0 = the original emulation; a real card that asserts WAIT (e.g. MZPico: at least 1 T)
+     * is matched with 1 or more. The waits only stretch time (CPU, GDG, 8253 clocks run on), no result changes. */
+    /* (TEXT, read as decimal: see ramdisk_parse_wait) */
+    elm = cfgmodule_register_new_element ( cmod, "mr1r18_wait", CFGENTYPE_TEXT, "0" );
 
     /* pezik e8 */
     elm = cfgmodule_register_new_element ( cmod, "pezik_e8_pluged", CFGENTYPE_BOOL, RAMDISK_DISCONNECTED );
@@ -424,6 +456,8 @@ uint8_t ramdisk_std_read_byte ( unsigned addr ) {
 
     DBGPRINTF ( DBGINF, "addr = 0x%02x\n", addr );
 
+    if ( g_ramdisk.std.wait ) mzarch_main_insideop_iorq_wait ( g_ramdisk.std.wait );
+
     switch ( addr ) {
 
         case 0xf8:
@@ -463,6 +497,8 @@ void ramdisk_std_write_byte ( unsigned addr, uint8_t value ) {
 #endif
 
     unsigned ramdisc_addr;
+
+    if ( g_ramdisk.std.wait ) mzarch_main_insideop_iorq_wait ( g_ramdisk.std.wait );
 
     switch ( addr & 0xff ) {
 

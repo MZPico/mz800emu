@@ -5008,6 +5008,12 @@ async def emu_regions_list() -> str:
           usually maps, or ``null`` if not in the Z80 view by default.
         - ``mapped_now`` indicates whether the region is currently
           visible in the Z80 address space (banking-aware).
+
+        Every region is listed (up to 1024, more than any configuration
+        has): one ``ramdisk_std`` region of 64 KB per RAM-disk bank,
+        ``sub_id`` = the bank, i.e. 256 of them with a 16 MB RAM disk,
+        all readable and writable by ID. (Before, the list stopped at
+        128 regions, cutting a 16 MB disk off above bank ~51.)
     """
     resp = await _send_request("regions_list")
     return json.dumps(_data_or_error(resp))

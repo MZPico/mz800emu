@@ -415,6 +415,9 @@ static const uint8_t mz800_vram_wait_tw_ww[ 80 ] = {
 };
 #endif /* MZARCH == 800 */
 
+/* Pocet WAIT T-stavu pro INSIDEOP_IORQ_WAIT (nastavuje mzarch_main_insideop_iorq_wait). */
+static unsigned s_insideop_iorq_wait = 0;
+
 static inline void mzarch_main_insideop(const en_INSIDEOP insideop)
 {
 
@@ -552,6 +555,18 @@ static inline void mzarch_main_insideop(const en_INSIDEOP insideop)
         break;
 #endif /* MZARCH != 700 */
 
+    case INSIDEOP_IORQ_WAIT:
+        /* A fixed number of WAIT T-states on the current I/O cycle (e.g. the STD RAM disk's mr1r18_wait).
+         * Called after the IORQ's own mzarch_main_insideop_iorq() sync, as the PSG write path. */
+        z80_add_wait_states(g_mzarch_main.cpu, (int) s_insideop_iorq_wait);
+        {
+            uint64_t sum = (uint64_t) g_mzarch_main.instruction_wait_tstates + s_insideop_iorq_wait;
+            g_mzarch_main.instruction_wait_tstates = (sum > 0xFFFFFFFFu) ? 0xFFFFFFFFu : (uint32_t) sum;
+        }
+        ticks_to_sync = s_insideop_iorq_wait * GDGCLK2CPU_DIVIDER;
+        instruction_ticks = g_mzarch_main.instruction_insideop_sync_ticks + ticks_to_sync;
+        break;
+
     default:
         tstates = g_mzarch_main.instruction_tstates + g_mzarch_main.cpu->op_tstate;
         instruction_ticks = tstates * GDGCLK2CPU_DIVIDER;
@@ -622,6 +637,12 @@ void mzarch_main_insideop_mreq_mz800_vramctrl_write(void)
 void mzarch_main_insideop_iorq_psg_write(void)
 {
     mzarch_main_insideop(INSIDEOP_IORQ_PSG_WRITE);
+}
+
+void mzarch_main_insideop_iorq_wait(unsigned wait)
+{
+    s_insideop_iorq_wait = wait;
+    mzarch_main_insideop(INSIDEOP_IORQ_WAIT);
 }
 
 /*******************************************************************************

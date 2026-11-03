@@ -4113,6 +4113,78 @@ static JsonNode *_v1d1_dispatch_and_get_data(const char *cmd,
 }
 
 
+/**
+ * @brief regions_list lists every region the backend has (here 300 =
+ *        e.g. a 16 MB RAM disk's 256 banks + the rest), not only 128;
+ *        region_read / region_write accept the IDs above 127 and refuse
+ *        an ID at or above the limit without calling the backend.
+ */
+void test_regions_list_all_regions_beyond_128(void) {
+    dispatch_stub_reset();
+    g_stub_state.regions_fake_count = 300;
+    char *raw = NULL;
+    JsonNode *data = _v1d1_dispatch_and_get_data("regions_list", &raw);
+    TEST_ASSERT_NOT_NULL(data);
+    TEST_ASSERT_TRUE(g_stub_state.regions_last_max_count >= 1024);
+    JsonObject *obj = json_node_get_object(data);
+    TEST_ASSERT_EQUAL_INT(300, json_object_get_int_member(obj, "count"));
+    JsonArray *regs = json_object_get_array_member(obj, "regions");
+    TEST_ASSERT_EQUAL_UINT(300, json_array_get_length(regs));
+    JsonObject *last = json_array_get_object_element(regs, 299);
+    TEST_ASSERT_EQUAL_INT(299, json_object_get_int_member(last, "id"));
+    TEST_ASSERT_EQUAL_STRING("ramdisk_std",
+                             json_object_get_string_member(last, "kind"));
+    json_node_free(data);
+    free(raw);
+}
+
+void test_region_read_write_id_above_128(void) {
+    dispatch_stub_reset();
+    g_stub_state.regions_fake_count = 300;
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"req_id\":81,\"cmd\":\"region_read\","
+        "\"data\":{\"region_id\":299,\"offset\":65532,\"length\":4}}");
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, mcp_dispatch_request(req, &resp));
+    TEST_ASSERT_EQUAL_INT(299, g_stub_state.regions_last_id);
+    /* 4 bajty 0x2B (= 299 & 0xFF) */
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"data_b64\":\"KysrKw==\""));
+    free(resp);
+    jsonl_msg_free(req);
+
+    req = _make_request(
+        "{\"type\":\"request\",\"req_id\":82,\"cmd\":\"region_write\","
+        "\"data\":{\"region_id\":200,\"offset\":0,\"data_b64\":\"AAE=\"}}");
+    resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, mcp_dispatch_request(req, &resp));
+    TEST_ASSERT_EQUAL_INT(200, g_stub_state.regions_last_id);
+    free(resp);
+    jsonl_msg_free(req);
+
+    /* ID mimo limit: invalid params, backend se nevolá. */
+    g_stub_state.regions_last_id = -7;
+    req = _make_request(
+        "{\"type\":\"request\",\"req_id\":83,\"cmd\":\"region_read\","
+        "\"data\":{\"region_id\":1024,\"offset\":0,\"length\":4}}");
+    resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS,
+                          mcp_dispatch_request(req, &resp));
+    TEST_ASSERT_EQUAL_INT(-7, g_stub_state.regions_last_id);
+    free(resp);
+    jsonl_msg_free(req);
+
+    /* ID pod limitem, ale neexistující: backend selže = invalid params. */
+    req = _make_request(
+        "{\"type\":\"request\",\"req_id\":84,\"cmd\":\"region_read\","
+        "\"data\":{\"region_id\":300,\"offset\":0,\"length\":4}}");
+    resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS,
+                          mcp_dispatch_request(req, &resp));
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
 void test_get_config_settings_returns_filtered_or_sections(void) {
     dispatch_stub_reset();
     /* Stub vrátí non-OK pro SETTINGS_GET (= settings_fake_result = -2),
@@ -6004,6 +6076,8 @@ int main(void) {
     RUN_TEST(test_get_stack_history_disabled_returns_empty_samples);
     RUN_TEST(test_get_stack_history_enabled_serializes_samples);
     RUN_TEST(test_get_stack_regions_returns_two_named_regions);
+    RUN_TEST(test_regions_list_all_regions_beyond_128);
+    RUN_TEST(test_region_read_write_id_above_128);
 
     /* V1.D.2.B - Medium debug Resources */
     RUN_TEST(test_get_watch_empty);

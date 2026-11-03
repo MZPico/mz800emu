@@ -90,6 +90,7 @@ extern "C" {
         uint16_t offset;
         uint8_t bank;
         uint8_t *memory;
+        unsigned wait; /* extra T-states (WAIT) on every port access (E9h-EBh, F8h-FAh), INI mr1r18_wait, default 0 */
     } st_RAMDISKSTD;
 
 

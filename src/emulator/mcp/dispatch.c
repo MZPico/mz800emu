@@ -12133,19 +12133,24 @@ static const char *_region_kind_to_str(int kind) {
  * si vybere region a použije ID v `region_read`. ID jsou stable v
  * rámci session, NE per HW reconfigure (= memext/ramdisk attach/detach
  * invaliduje, klient musí re-enumerate).
+ *
+ * Lists every region the backend enumerates (up to DBGAPI_REGIONS_MAX,
+ * the backend cache's own size): a 16 MB RAM disk alone has 256 bank
+ * regions, so the former limit of 128 cut its banks off above ~51.
+ * The descriptor array is on the heap (~100 KB at the maximum).
  */
-#define MCP_REGIONS_MAX 128
+#define MCP_REGIONS_MAX DBGAPI_REGIONS_MAX
 static en_MCP_DISPATCH_RESULT _handle_regions_list(
     const st_JSONL_MESSAGE *req, char **out_response) {
     int64_t req_id = jsonl_msg_get_req_id(req);
-    st_REGION_DESC descs[MCP_REGIONS_MAX];
-    memset(descs, 0, sizeof(descs));
+    st_REGION_DESC *descs = g_new0(st_REGION_DESC, MCP_REGIONS_MAX);
     st_DBGAPI_REGIONS_ENUM_PARAM param = {
         .out = descs,
         .max_count = MCP_REGIONS_MAX,
         .out_count = 0,
     };
     if (!_submit_dbgapi(DBGAPI_CMD_REGIONS_ENUMERATE, &param, NULL)) {
+        g_free(descs);
         return _err_response(req_id, "REGIONS_ENUMERATE failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
     }
@@ -12172,6 +12177,7 @@ static en_MCP_DISPATCH_RESULT _handle_regions_list(
     }
     json_object_set_array_member(data, "regions", arr);
     json_object_set_int_member(data, "count", param.out_count);
+    g_free(descs);
     return _ok_response(req_id, data, out_response);
 }
 
@@ -12201,7 +12207,7 @@ static en_MCP_DISPATCH_RESULT _handle_region_read(
     gint64 region_id = _obj_int_or(obj, "region_id", -1);
     gint64 offset    = _obj_int_or(obj, "offset",    0);
     gint64 length    = _obj_int_or(obj, "length",    -1);
-    if (region_id < 0 || region_id > MCP_REGIONS_MAX
+    if (region_id < 0 || region_id >= MCP_REGIONS_MAX
             || offset < 0 || offset > 0xFFFFFFFFu
             || length < 1 || length > 65536) {
         return _err_response(req_id, "Invalid parameters",
@@ -12412,7 +12418,7 @@ static en_MCP_DISPATCH_RESULT _handle_region_write(
     JsonObject *obj = json_node_get_object(data_node);
     gint64 region_id = _obj_int_or(obj, "region_id", -1);
     gint64 offset    = _obj_int_or(obj, "offset",    0);
-    if (region_id < 0 || region_id > MCP_REGIONS_MAX
+    if (region_id < 0 || region_id >= MCP_REGIONS_MAX
             || offset < 0 || offset > 0xFFFFFFFFu) {
         return _err_response(req_id, "Invalid parameters",
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
