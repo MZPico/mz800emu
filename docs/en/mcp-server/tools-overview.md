@@ -1738,6 +1738,12 @@ ramdisk_pezik, prohibited_shadow`.
 `sub_id` disambiguates regions of the same kind (= plane index, bank
 index, PEZIK instance).
 
+**Completeness**: every region is listed (up to 1024, more than any
+configuration has). The STD RAM disk contributes one 64 KB
+`ramdisk_std` region per bank (`sub_id` = the bank): 256 regions with
+a 16 MB RAM disk, all accepted by `region_read` / `region_write`.
+(Earlier builds stopped at 128 regions.)
+
 **ID stability**: per session, NOT per HW reconfigure. After
 `periph_attach/detach` or `media_insert/eject` the client must call
 `regions_list` again for new IDs.

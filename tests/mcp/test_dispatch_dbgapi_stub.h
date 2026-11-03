@@ -519,6 +519,23 @@ typedef struct st_DISPATCH_STUB_STATE {
     uint16_t             stack_regions_fake_sp_now;
     int                  stack_regions_calls;
 
+    /* Memory regions (regions_list / region_read / region_write):
+     *
+     * Stub odpovídá na DBGAPI_CMD_REGIONS_ENUMERATE / READ / WRITE.
+     *
+     *   regions_fake_count    - kolik regionů ENUMERATE vrátí (clamp na
+     *                            max_count, který posílá dispatch).
+     *                            Region i: id = i, kind = RAMDISK_STD,
+     *                            sub_id = i, size = 0x10000.
+     *   regions_last_max_count - max_count, s nímž dispatch volal ENUMERATE.
+     *   regions_last_id        - region_id posledního READ / WRITE.
+     *   READ / WRITE uspějí pro id < regions_fake_count (READ vyplní
+     *   buf bajty (id & 0xFF)), jinak out_count = -1 a selžou.
+     */
+    int                  regions_fake_count;
+    int                  regions_last_max_count;
+    int                  regions_last_id;
+
     /* V1.D.2.B - Stack dump Resource backing scenario:
      *
      * Stub odpovídá na DBGAPI_CMD_STACK_DUMP. Naplní buf[], sp_now, sp_odd

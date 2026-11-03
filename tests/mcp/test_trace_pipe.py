@@ -16,11 +16,16 @@ increments B. A tracepoint at the INC records BC and the byte at 0x3000:
   5. a small buffer: run pauses with stopped_by "trace_full", nothing lost;
      on_full "drop": the overflow is reported with the dropped count
   6. trace_clear: no more records; the old commands answer as before
+  7. the in-memory RAM disk (mr1r18_type = STANDARD) with 512K / 1M / 16M: regions_list
+     lists all its banks (8 / 16 / 256 ramdisk_std regions, beyond the former limit of
+     128 regions), filled with 0xFF; on 16M, bank 200 written by region_write is what
+     the Z80 reads through the ports (E9h page, EBh address, EAh data) and the byte the
+     Z80 writes there is what region_read returns; no file is written
 
 Binary: $MZ_EMU, else <repo>/mz800emu, else <repo>/build/build-mz800emu/mz800emu.
 Exit code 0 = all passed.
 """
-import base64, json, os, subprocess, sys, zlib
+import base64, json, os, subprocess, sys, tempfile, zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -34,9 +39,9 @@ def find_exe():
     print('ERROR: mz800emu binary not found', file=sys.stderr); sys.exit(1)
 
 class Pipe:
-    def __init__(self, exe):
-        self.p = subprocess.Popen([str(exe), '--mcp-pipe', '--no-save-ini'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                  stderr=subprocess.DEVNULL, text=True, bufsize=1)
+    def __init__(self, exe, args=(), cwd=None):
+        self.p = subprocess.Popen([str(exe), '--mcp-pipe', '--no-save-ini'] + list(args), stdin=subprocess.PIPE,
+                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1, cwd=cwd)
         self.n = 0
         self.hello = self.read()
         for _ in range(100):
@@ -86,8 +91,53 @@ def read_all(e):
         d = e.call('trace_read', max=50000); out += d['records']
         if not d['pending']: return out, d
 
+RD_PROGRAM = bytes([0xF3,                       # 2000 di
+                    0x3E, 0xC8, 0xD3, 0xE9,     # 2001 ld a, 200; out (0xE9), a   = page 200
+                    0x01, 0xEB, 0x12,           # 2005 ld bc, 0x12EB
+                    0x3E, 0x34, 0xED, 0x79,     # 2008 ld a, 0x34; out (c), a     = address 0x1234
+                    0xDB, 0xEA,                 # 200C in a, (0xEA)               = page 200 : 0x1234
+                    0x32, 0x00, 0x30,           # 200E ld (0x3000), a
+                    0x3E, 0x5A, 0xD3, 0xEA,     # 2011 ld a, 0x5A; out (0xEA), a  = page 200 : 0x1235
+                    0x18, 0xFE])                # 2015 jr $
+
+def ramdisk_sizes(exe):
+    for size, banks in (('512K', 8), ('1M', 16), ('16M', 256)):
+        with tempfile.TemporaryDirectory() as d:
+            ini = Path(d) / 'rd.ini'
+            ini.write_text('[RAMDISK]\nmr1r18_pluged = 1\nmr1r18_type = STANDARD\nmr1r18_size = %s\n'
+                           'mr1r18_filepath = rd-test.dat\n' % size)
+            e = Pipe(exe, ['--config', str(ini)], cwd=d)
+            try:
+                regs = e.call('regions_list')['regions']
+                rd = [r for r in regs if r['kind'] == 'ramdisk_std']
+                check('7. %s in-memory RAM disk: %d ramdisk_std regions of 64 KB (%d regions in all)' % (size, len(rd), len(regs)),
+                      [r['sub_id'] for r in rd] == list(range(banks)) and all(r['size'] == 0x10000 and r['writable'] for r in rd),
+                      [(r['id'], r['sub_id']) for r in rd][-3:])
+                top = rd[-1]
+                b = base64.b64decode(e.call('region_read', region_id=top['id'], offset=0, length=0x10000)['data_b64'])
+                check('   the top bank (region %d) is readable, filled with 0xFF' % top['id'], b == b'\xff' * 0x10000, b[:4])
+                if banks == 256:
+                    rid = rd[200]['id']
+                    e.call('pause')
+                    e.call('region_write', region_id=rid, offset=0x1234, data_b64=base64.b64encode(b'\xa7').decode())
+                    e.call('mem_write', addr=0x2000, data_hex=RD_PROGRAM.hex())
+                    e.call('set_register', reg='PC', value=0x2000)
+                    e.call('run', frames=1)
+                    got = base64.b64decode(e.call('mem_read', addr=0x3000, len=1)['data_b64'])
+                    back = base64.b64decode(e.call('region_read', region_id=rid, offset=0x1234, length=2)['data_b64'])
+                    check('   bank 200 (region %d): the Z80 reads the byte region_write put there' % rid, got == b'\xa7', got)
+                    check('   ... and region_read returns the byte the Z80 wrote', back == b'\xa7\x5a', back)
+            finally:
+                e.close()
+            # (the emulator creates its SD-mz800/ and cdl-export/ directories regardless; the RAM-disk
+            # file would be rd-test.dat in the directory itself)
+            left = sorted(p.name for p in Path(d).iterdir() if not p.is_dir())
+            dat = sorted(str(p.relative_to(d)) for p in Path(d).rglob('*.dat'))
+            check('   no RAM-disk file written (files: %s)' % left, left == ['rd.ini'] and not dat, (left, dat))
+
 def main():
-    e = Pipe(find_exe())
+    exe = find_exe()
+    e = Pipe(exe)
     try:
         cmds = set(e.hello.get('commands', []))
         new = {'trace_add', 'trace_clear', 'trace_read', 'trace_config', 'psg_log_start', 'psg_log_read', 'psg_log_stop', 'vram_hash'}
@@ -165,6 +215,7 @@ def main():
         check('   run without tracepoints as before', r['stopped_by'] == 'frames' and r['complete'] and r['actual_frames'] == 2, r)
     finally:
         e.close()
+    ramdisk_sizes(exe)
     print('FAILED: %s' % FAILS if FAILS else 'all passed')
     sys.exit(1 if FAILS else 0)
 

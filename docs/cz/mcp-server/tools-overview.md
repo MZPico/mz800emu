@@ -1640,6 +1640,12 @@ ramdisk_pezik, prohibited_shadow`.
 `sub_id` disambiguuje regiony stejného kindu (= plane index, bank
 index, PEZIK instance).
 
+**Úplnost**: vypisují se všechny regiony (až 1024, víc než má
+jakákoli konfigurace). STD ramdisk přispívá jedním 64 KB regionem
+`ramdisk_std` na banku (`sub_id` = banka): 256 regionů pro 16 MB
+ramdisk, všechny přijímá `region_read` / `region_write`. (Starší
+buildy končily na 128 regionech.)
+
 **Stabilita ID**: per session, NE per HW reconfigure. Po
 `periph_attach/detach` nebo `media_insert/eject` klient musí volat
 `regions_list` znovu pro nové IDs.

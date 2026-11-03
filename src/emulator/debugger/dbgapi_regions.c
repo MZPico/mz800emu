@@ -78,7 +78,7 @@
  * Zaokrouhlujeme na 1024 pro bezpečnost.
  * ============================================================================ */
 
-#define REGION_CACHE_MAX 1024
+#define REGION_CACHE_MAX DBGAPI_REGIONS_MAX
 
 static st_REGION_DESC s_region_cache[REGION_CACHE_MAX];
 static int s_region_cache_count = 0;

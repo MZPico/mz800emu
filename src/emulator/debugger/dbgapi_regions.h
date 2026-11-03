@@ -103,6 +103,16 @@ typedef enum en_REGION_KIND
  *   - logical_base = 0xFFFFFFFF znamená "region není mapovaný do Z80 prostoru
  *     ve výchozím stavu" (např. fyzická plane, off-bank, PROHIBITED shadow)
  */
+/**
+ * @brief Maximum number of regions one enumeration returns.
+ *
+ * Worst case (MZ-800, Luftner Memext + STD RAM disk 16M + 2x PEZIK) is
+ * ~541 regions; the backend cache and the MCP regions_list use this
+ * limit, so every region (all 256 banks of a 16 MB RAM disk included)
+ * gets an ID that region_read / region_write accept.
+ */
+#define DBGAPI_REGIONS_MAX 1024
+
 typedef struct st_REGION_DESC
 {
     int             id;             /**< Stable ID 0..N-1 v rámci session. */
