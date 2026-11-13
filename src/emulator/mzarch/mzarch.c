@@ -95,6 +95,14 @@ st_mzarch_main g_mzarch_main;
  * requestu z paused stavu. */
 static void mzarch_main_reset(void);
 
+#ifdef __EMSCRIPTEN__
+/* Warp (the page's "run fast until the program is ready"): the step the machine
+ * waits for, see mz_wasm_warp_start below. */
+static volatile int g_mzwasm_warp_pc = -1;      /* the step's PC, -1: no PC (tested every frame) or no warp */
+static volatile int g_mzwasm_warp_frame = 0;    /* 1: the step has no PC, its memory tests run at every frame */
+static void mzarch_wasm_warp_test(void);
+#endif
+
 static inline void mzarch_main_event_callback_20ms(unsigned event_ticks)
 {
     audiolog_finish_20ms_frame(gdg_compute_total_ticks(event_ticks));
@@ -112,6 +120,10 @@ static inline void mzarch_main_event_callback_20ms(unsigned event_ticks)
             emulator_measuring_frame_timing_event();
         };
     };
+
+#ifdef __EMSCRIPTEN__
+    if (__builtin_expect(g_mzwasm_warp_frame, 0)) mzarch_wasm_warp_test();
+#endif
 
     customspeed_event_set_next();
     framebudef_set_flag_20ms_passed();
@@ -1304,6 +1316,212 @@ static void mzarch_wasm_snapshot_service(int op)
     g_emulator.snapshot_safepoint = saved_sp;
     __atomic_store_n(&g_mzwasm_snap_status, res == SNAPSHOT_OK ? 2 : -(int) res, __ATOMIC_SEQ_CST);
 }
+
+/* Warp: a program with a long loader (a floppy boot that fills a RAM disk, a
+ * long tape) runs unthrottled - the emulator's max speed - until it reaches a
+ * point the page names, then the machine goes back to normal speed by itself,
+ * at that very instruction or frame. Emulated time is not touched: the program
+ * sees the same clocks, interrupts and drive timings as at normal speed, it
+ * only takes less wall time.
+ *
+ * The page calls mz_wasm_warp_start(spec, 1) and polls mz_wasm_warp_status():
+ *   0 idle, 1 warping, 2 reached (normal speed again), 3 stopped by the page,
+ *   -1 the spec did not parse (nothing armed).
+ * mz_wasm_warp_stop() ends a warp early (the page's time cap). With fast = 0
+ * the machine keeps its speed and the status only says when the point is
+ * reached (to measure a loader at normal speed).
+ *
+ * spec: steps separated by ';', reached in order; a step is tests joined by
+ * "&&", all of which must hold at once:
+ *   pc == A          the CPU is about to execute the instruction at A
+ *   [A] == V         RAM byte A is V: the DRAM the CPU sees at A when RAM is
+ *                    mapped there (a MEMEXT bank included), whatever is mapped now
+ *   [A] != V
+ *   [A] & M == V     (and != V) the byte masked with M
+ * Numbers are C literals (0x2000, 8192). A step with a pc test is checked
+ * before each instruction while the PC is A; a step without one at the end of
+ * every frame. Example: "pc == 0x2000 && [0x02a2] == 0x10; [0x0800] != 0". */
+#define MZWASM_WARP_STEPS 4
+#define MZWASM_WARP_TESTS 4
+#define MZWASM_WARP_SPEC_MAX 256
+
+typedef struct st_MZWASM_WARP_TEST {
+    uint16_t addr;
+    uint8_t mask;
+    uint8_t value;
+    uint8_t ne;
+} st_MZWASM_WARP_TEST;
+
+typedef struct st_MZWASM_WARP_STEP {
+    int pc;
+    int ntests;
+    st_MZWASM_WARP_TEST test[MZWASM_WARP_TESTS];
+} st_MZWASM_WARP_STEP;
+
+static st_MZWASM_WARP_STEP g_mzwasm_warp_steps[MZWASM_WARP_STEPS];
+static int g_mzwasm_warp_nsteps = 0;
+static int g_mzwasm_warp_step = 0;
+static volatile int g_mzwasm_warp_status = 0;
+static volatile int g_mzwasm_warp_request = 0;  /* 1 start (spec below), 2 stop */
+static int g_mzwasm_warp_fast = 1;              /* 0: only watch for the point (a measurement), no max speed */
+static char g_mzwasm_warp_spec[MZWASM_WARP_SPEC_MAX];
+
+static const char *mzwasm_warp_skip(const char *p)
+{
+    while (*p == ' ' || *p == '\t') p++;
+    return p;
+}
+
+static int mzwasm_warp_number(const char **pp, long max, long *out)
+{
+    char *end;
+    const char *p = mzwasm_warp_skip(*pp);
+    long v = strtol(p, &end, 0);
+    if (end == p || v < 0 || v > max) return 0;
+    *out = v;
+    *pp = mzwasm_warp_skip(end);
+    return 1;
+}
+
+/** One step ("a && b && c", up to ';' or the end); 0 = does not parse. */
+static int mzwasm_warp_parse_step(const char **pp, st_MZWASM_WARP_STEP *st)
+{
+    const char *p = *pp;
+    st->pc = -1;
+    st->ntests = 0;
+    while (1) {
+        long a, m = 0xff, v;
+        p = mzwasm_warp_skip(p);
+        if (!strncmp(p, "pc", 2)) {
+            p = mzwasm_warp_skip(p + 2);
+            if (strncmp(p, "==", 2) || st->pc >= 0) return 0;
+            p += 2;
+            if (!mzwasm_warp_number(&p, 0xffff, &a)) return 0;
+            st->pc = (int) a;
+        } else if (*p == '[') {
+            p++;
+            if (!mzwasm_warp_number(&p, 0xffff, &a) || *p != ']') return 0;
+            p = mzwasm_warp_skip(p + 1);
+            if (*p == '&' && p[1] != '&') {
+                p++;
+                if (!mzwasm_warp_number(&p, 0xff, &m)) return 0;
+            };
+            int ne;
+            if (!strncmp(p, "==", 2)) ne = 0;
+            else if (!strncmp(p, "!=", 2)) ne = 1;
+            else return 0;
+            p += 2;
+            if (!mzwasm_warp_number(&p, 0xff, &v)) return 0;
+            if (st->ntests == MZWASM_WARP_TESTS) return 0;
+            st->test[st->ntests++] = (st_MZWASM_WARP_TEST) { (uint16_t) a, (uint8_t) m, (uint8_t) (v & m), (uint8_t) ne };
+        } else {
+            return 0;
+        };
+        p = mzwasm_warp_skip(p);
+        if (!strncmp(p, "&&", 2)) { p += 2; continue; };
+        if (*p == ';' || *p == 0) break;
+        return 0;
+    };
+    if (st->pc < 0 && st->ntests == 0) return 0;
+    *pp = p;
+    return 1;
+}
+
+static int mzwasm_warp_parse(const char *spec)
+{
+    const char *p = spec;
+    g_mzwasm_warp_nsteps = 0;
+    while (1) {
+        if (g_mzwasm_warp_nsteps == MZWASM_WARP_STEPS) return 0;
+        if (!mzwasm_warp_parse_step(&p, &g_mzwasm_warp_steps[g_mzwasm_warp_nsteps])) return 0;
+        g_mzwasm_warp_nsteps++;
+        if (*p == 0) return 1;
+        p = mzwasm_warp_skip(p + 1);   /* ';' */
+        if (*p == 0) return 1;         /* a trailing ';' */
+    };
+}
+
+/* Arm the current step, or end the warp after the last one. */
+static void mzwasm_warp_arm(void)
+{
+    if (g_mzwasm_warp_step >= g_mzwasm_warp_nsteps) {
+        g_mzwasm_warp_pc = -1;
+        g_mzwasm_warp_frame = 0;
+        if (g_mzwasm_warp_fast) emulator_max_speed(false);
+        __atomic_store_n(&g_mzwasm_warp_status, 2, __ATOMIC_SEQ_CST);
+        return;
+    };
+    const st_MZWASM_WARP_STEP *st = &g_mzwasm_warp_steps[g_mzwasm_warp_step];
+    g_mzwasm_warp_pc = st->pc;
+    g_mzwasm_warp_frame = st->pc < 0;
+}
+
+/* Emulation thread: the PC matched the step's (before the instruction), or a
+ * frame ended (a step without a PC). */
+static void mzarch_wasm_warp_test(void)
+{
+    const st_MZWASM_WARP_STEP *st = &g_mzwasm_warp_steps[g_mzwasm_warp_step];
+    for (int i = 0; i < st->ntests; i++) {
+        const st_MZWASM_WARP_TEST *t = &st->test[i];
+        int eq = (g_memory.memram_read[t->addr >> 12][t->addr & 0x0fff] & t->mask) == t->value;
+        if (eq == t->ne) return;
+    };
+    g_mzwasm_warp_step++;
+    mzwasm_warp_arm();
+}
+
+/* Emulation thread, between instructions. */
+static void mzarch_wasm_warp_service(int op)
+{
+    if (op == 1) {
+        g_mzwasm_warp_pc = -1;
+        g_mzwasm_warp_frame = 0;
+        g_mzwasm_warp_step = 0;
+        if (!mzwasm_warp_parse(g_mzwasm_warp_spec)) {
+            g_mzwasm_warp_nsteps = 0;
+            __atomic_store_n(&g_mzwasm_warp_status, -1, __ATOMIC_SEQ_CST);
+            return;
+        };
+        if (g_mzwasm_warp_fast) emulator_max_speed(true);
+        __atomic_store_n(&g_mzwasm_warp_status, 1, __ATOMIC_SEQ_CST);
+        mzwasm_warp_arm();
+    } else if (__atomic_load_n(&g_mzwasm_warp_status, __ATOMIC_SEQ_CST) == 1) {
+        g_mzwasm_warp_pc = -1;
+        g_mzwasm_warp_frame = 0;
+        if (g_mzwasm_warp_fast) emulator_max_speed(false);
+        __atomic_store_n(&g_mzwasm_warp_status, 3, __ATOMIC_SEQ_CST);
+    };
+}
+
+EMSCRIPTEN_KEEPALIVE int mz_wasm_warp_start(const char *spec, int fast)
+{
+    if (!spec || strlen(spec) >= MZWASM_WARP_SPEC_MAX) return 2;
+    if (__atomic_load_n(&g_mzwasm_warp_request, __ATOMIC_SEQ_CST) != 0) return 1;
+    strcpy(g_mzwasm_warp_spec, spec);
+    g_mzwasm_warp_fast = fast ? 1 : 0;
+    __atomic_store_n(&g_mzwasm_warp_request, 1, __ATOMIC_SEQ_CST);
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int mz_wasm_warp_stop(void)
+{
+    if (__atomic_load_n(&g_mzwasm_warp_request, __ATOMIC_SEQ_CST) != 0) return 1;
+    __atomic_store_n(&g_mzwasm_warp_request, 2, __ATOMIC_SEQ_CST);
+    return 0;
+}
+
+/** 0 idle, 1 warping, 2 reached, 3 stopped, -1 bad spec; a pending start reads as 1. */
+EMSCRIPTEN_KEEPALIVE int mz_wasm_warp_status(void)
+{
+    if (__atomic_load_n(&g_mzwasm_warp_request, __ATOMIC_SEQ_CST) == 1) return 1;
+    return __atomic_load_n(&g_mzwasm_warp_status, __ATOMIC_SEQ_CST);
+}
+
+/** The step the warp waits for now (0-based; = the number of steps once reached). */
+EMSCRIPTEN_KEEPALIVE int mz_wasm_warp_step(void)
+{
+    return g_mzwasm_warp_step;
+}
 #endif
 
 void mzarch_main(void)
@@ -1342,9 +1560,18 @@ void mzarch_main(void)
             int op = __atomic_exchange_n(&g_mzwasm_media_op, MZWASM_MEDIA_NONE, __ATOMIC_SEQ_CST);
             if (op) mzarch_wasm_media_service(op);
         };
+
+        if (__builtin_expect(g_mzwasm_warp_request != 0, 0))
+        {
+            int op = __atomic_exchange_n(&g_mzwasm_warp_request, 0, __ATOMIC_SEQ_CST);
+            if (op) mzarch_wasm_warp_service(op);
+        };
 #endif
 
         g_mzarch_main.instruction_addr = g_mzarch_main.cpu->pc;
+#ifdef __EMSCRIPTEN__
+        if (__builtin_expect(g_mzwasm_warp_pc == (int) g_mzarch_main.instruction_addr, 0)) mzarch_wasm_warp_test();
+#endif
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
         /* BP enforcement check před vykonáním instrukce.
