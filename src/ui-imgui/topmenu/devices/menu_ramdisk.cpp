@@ -142,6 +142,21 @@ void imgui_menu_ramdisk(void)
                 ramdisk_std_init(RAMDISK_CONNECTED, g_ramdisk.std.type, RAMDISK_SIZE_1M, g_ramdisk.std.filepath);
             };
 
+            if (MenuRadioItem(_("2 MB"), RAMDISK_TEST_STD_SIZE(RAMDISK_SIZE_2M)))
+            {
+                ramdisk_std_init(RAMDISK_CONNECTED, g_ramdisk.std.type, RAMDISK_SIZE_2M, g_ramdisk.std.filepath);
+            };
+
+            if (MenuRadioItem(_("4 MB"), RAMDISK_TEST_STD_SIZE(RAMDISK_SIZE_4M)))
+            {
+                ramdisk_std_init(RAMDISK_CONNECTED, g_ramdisk.std.type, RAMDISK_SIZE_4M, g_ramdisk.std.filepath);
+            };
+
+            if (MenuRadioItem(_("8 MB"), RAMDISK_TEST_STD_SIZE(RAMDISK_SIZE_8M)))
+            {
+                ramdisk_std_init(RAMDISK_CONNECTED, g_ramdisk.std.type, RAMDISK_SIZE_8M, g_ramdisk.std.filepath);
+            };
+
             if (MenuRadioItem(_("16 MB"), RAMDISK_TEST_STD_SIZE(RAMDISK_SIZE_16M)))
             {
                 ramdisk_std_init(RAMDISK_CONNECTED, g_ramdisk.std.type, RAMDISK_SIZE_16M, g_ramdisk.std.filepath);

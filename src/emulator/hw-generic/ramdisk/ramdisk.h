@@ -64,6 +64,9 @@ extern "C" {
         RAMDISK_SIZE_256 = 0x03,
         RAMDISK_SIZE_512 = 0x07,
         RAMDISK_SIZE_1M = 0x0f,
+        RAMDISK_SIZE_2M = 0x1f,
+        RAMDISK_SIZE_4M = 0x3f,
+        RAMDISK_SIZE_8M = 0x7f,
         RAMDISK_SIZE_16M = 0xff
     } en_RAMDISK_BANKMASK;
 

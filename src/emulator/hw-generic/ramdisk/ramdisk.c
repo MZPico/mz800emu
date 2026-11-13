@@ -383,6 +383,9 @@ void ramdisk_init ( void ) {
                                            RAMDISK_SIZE_256, "256K",
                                            RAMDISK_SIZE_512, "512K",
                                            RAMDISK_SIZE_1M, "1M",
+                                           RAMDISK_SIZE_2M, "2M",
+                                           RAMDISK_SIZE_4M, "4M",
+                                           RAMDISK_SIZE_8M, "8M",
                                            RAMDISK_SIZE_16M, "16M",
                                            -1 );
     cfgelement_set_handlers ( elm, NULL, (void*) &g_ramdisk.std.size );
